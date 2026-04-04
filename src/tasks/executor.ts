@@ -65,6 +65,61 @@ export class TaskExecutor {
     }
   }
 
+  private async executeToolAndFormatResult(params: {
+    toolName: string;
+    rawArguments: string;
+    workspace: string;
+  }): Promise<{ content: string; isError: boolean }> {
+    const tool = this.toolRegistry.get(params.toolName);
+    if (!tool) {
+      return {
+        content: `工具 ${params.toolName} 未找到`,
+        isError: true,
+      };
+    }
+
+    let args: any = {};
+    try {
+      args = params.rawArguments ? JSON.parse(params.rawArguments) : {};
+    } catch (error: any) {
+      return {
+        content: `工具参数解析失败: ${error.message}`,
+        isError: true,
+      };
+    }
+
+    try {
+      const result = await tool.call(args, {
+        workDir: params.workspace || process.cwd(),
+        taskId: Date.now().toString(),
+        mode: 'ask'
+      });
+
+      const { processToolResultBlock } = await import('../tools/tool-result-storage');
+      const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const sessionId = Date.now().toString();
+      const processedResult = await processToolResultBlock(
+        tool,
+        result.data,
+        toolUseId,
+        sessionId
+      );
+      const content = typeof processedResult.content === 'string'
+        ? processedResult.content
+        : JSON.stringify(processedResult.content);
+
+      return {
+        content: content || (result.error || ''),
+        isError: Boolean(result.error),
+      };
+    } catch (error: any) {
+      return {
+        content: `工具执行错误: ${error.message}`,
+        isError: true,
+      };
+    }
+  }
+
   private async buildMessages(
     instruction: string,
     workspace: string,
@@ -142,29 +197,79 @@ export class TaskExecutor {
     history?: Message[]
   ): Promise<string> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
-    const messages = await this.buildMessages(instruction, workspace, history);
+    const messages: Array<Record<string, any>> = await this.buildMessages(instruction, workspace, history);
 
-    const response = await fetch(`${endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: config.modelName || 'gpt-4-turbo',
-        messages,
-        temperature: config.temperature || 0.7,
-        max_tokens: config.maxTokens || 4096
-      })
-    });
+    const tools = this.toolRegistry.getAll();
+    const toolsParam = tools.length > 0 ? tools.map(t => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: zodToJsonSchema(t.inputSchema, { $refStrategy: 'none' })
+      }
+    })) : undefined;
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API 调用失败: ${response.status} ${error}`);
+    const maxToolRounds = 8;
+    let finalText = '';
+
+    for (let round = 0; round < maxToolRounds; round++) {
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: config.modelName || 'gpt-4-turbo',
+          messages,
+          temperature: config.temperature || 0.7,
+          max_tokens: config.maxTokens || 4096,
+          tools: toolsParam
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API 调用失败: ${response.status} ${error}`);
+      }
+
+      const result = await response.json();
+      const message = result.choices?.[0]?.message || {};
+      const assistantContent = typeof message.content === 'string' ? message.content : '';
+      if (assistantContent) {
+        finalText += assistantContent;
+      }
+
+      const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+      messages.push({
+        role: 'assistant',
+        content: assistantContent || null,
+        tool_calls: rawToolCalls.length > 0 ? rawToolCalls : undefined
+      });
+
+      if (rawToolCalls.length === 0) {
+        return finalText || '';
+      }
+
+      for (const toolCall of rawToolCalls) {
+        const toolName = toolCall?.function?.name || '';
+        const rawArguments = toolCall?.function?.arguments || '';
+        const toolCallId = toolCall?.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const toolResult = await this.executeToolAndFormatResult({
+          toolName,
+          rawArguments,
+          workspace,
+        });
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCallId,
+          content: toolResult.content
+        });
+      }
     }
 
-    const result = await response.json();
-    return result.choices[0].message.content;
+    return `${finalText}\n\n⚠️ 工具调用轮次达到上限，已停止自动继续。`.trim();
   }
 
   private async callOpenAIAPIStream(
@@ -175,7 +280,8 @@ export class TaskExecutor {
     onChunk: (chunk: string) => void
   ): Promise<void> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
-    const messages = await this.buildMessages(instruction, workspace, history);
+    const initialMessages = await this.buildMessages(instruction, workspace, history);
+    const messages: Array<Record<string, any>> = [...initialMessages];
 
     // 获取所有注册的 tools
     const tools = this.toolRegistry.getAll();
@@ -192,46 +298,47 @@ export class TaskExecutor {
     })) : undefined;
 
     console.log(`[Executor] 发送给 API 的工具参数:`, JSON.stringify(toolsParam, null, 2));
+    const maxToolRounds = 8;
+    for (let round = 0; round < maxToolRounds; round++) {
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: config.modelName || 'gpt-4-turbo',
+          messages,
+          temperature: config.temperature || 0.7,
+          max_tokens: config.maxTokens || 4096,
+          tools: toolsParam,
+          stream: true
+        })
+      });
 
-    const response = await fetch(`${endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: config.modelName || 'gpt-4-turbo',
-        messages,
-        temperature: config.temperature || 0.7,
-        max_tokens: config.maxTokens || 4096,
-        tools: toolsParam,
-        stream: true
-      })
-    });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API 调用失败: ${response.status} ${error}`);
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API 调用失败: ${response.status} ${error}`);
-    }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
 
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let assistantContent = '';
+      const toolCalls: any[] = [];
 
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let toolCalls: any[] = [];
-    let currentToolCall: any = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') continue;
 
@@ -239,59 +346,99 @@ export class TaskExecutor {
             const parsed = JSON.parse(data);
             const delta = parsed.choices[0]?.delta;
 
-            // 处理文本内容
-            if (delta?.content) {
+            if (typeof delta?.content === 'string') {
+              assistantContent += delta.content;
               onChunk(delta.content);
             }
 
-            // 处理 tool_calls
             if (delta?.tool_calls) {
               for (const toolCall of delta.tool_calls) {
-                if (toolCall.index !== undefined) {
-                  if (!toolCalls[toolCall.index]) {
-                    toolCalls[toolCall.index] = {
-                      id: toolCall.id || '',
-                      type: 'function',
-                      function: {
-                        name: toolCall.function?.name || '',
-                        arguments: ''
-                      }
-                    };
-                  }
+                if (toolCall.index === undefined) continue;
+                if (!toolCalls[toolCall.index]) {
+                  toolCalls[toolCall.index] = {
+                    id: toolCall.id || '',
+                    type: 'function',
+                    function: {
+                      name: toolCall.function?.name || '',
+                      arguments: ''
+                    }
+                  };
+                }
 
-                  if (toolCall.function?.arguments) {
-                    toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
-                  }
+                if (toolCall.id) {
+                  toolCalls[toolCall.index].id = toolCall.id;
+                }
+                if (toolCall.function?.name) {
+                  toolCalls[toolCall.index].function.name = toolCall.function.name;
+                }
+                if (toolCall.function?.arguments) {
+                  toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
                 }
               }
             }
-          } catch (e) {
-            // Skip invalid JSON
+          } catch {
+            // Skip invalid JSON chunks
           }
         }
       }
-    }
 
-    // 执行 tool calls
-    if (toolCalls.length > 0) {
-      console.log(`[Executor] 检测到 ${toolCalls.length} 个工具调用`);
+      // 本轮没有工具调用，说明模型已给出最终回答
+      if (toolCalls.length === 0) {
+        console.log(`[Executor] 第 ${round + 1} 轮未检测到工具调用，流式回复完成`);
+        return;
+      }
+
+      console.log(`[Executor] 第 ${round + 1} 轮检测到 ${toolCalls.length} 个工具调用`);
       onChunk('\n\n[执行工具调用...]\n');
 
+      // 先把 assistant tool_call 消息加入上下文，再追加每个 tool result
+      messages.push({
+        role: 'assistant',
+        content: assistantContent || null,
+        tool_calls: toolCalls.map((toolCall) => ({
+          id: toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          type: 'function',
+          function: {
+            name: toolCall.function?.name || '',
+            arguments: toolCall.function?.arguments || ''
+          }
+        }))
+      });
+
       for (const toolCall of toolCalls) {
-        const tool = this.toolRegistry.get(toolCall.function.name);
+        const toolName = toolCall.function?.name || '';
+        const toolUseId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const tool = this.toolRegistry.get(toolName);
+
         if (!tool) {
-          onChunk(`\n❌ 工具 ${toolCall.function.name} 未找到\n`);
+          const notFound = `工具 ${toolName} 未找到`;
+          onChunk(`\n❌ ${notFound}\n`);
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolUseId,
+            content: notFound
+          });
           continue;
         }
 
         try {
-          // 调试：输出原始参数
           console.log('Tool call arguments:', toolCall.function.arguments);
+          let args: any = {};
+          try {
+            args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
+          } catch (parseError: any) {
+            const parseMessage = `工具参数解析失败: ${parseError.message}`;
+            onChunk(`\n❌ ${parseMessage}\n`);
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolUseId,
+              content: parseMessage
+            });
+            continue;
+          }
 
-          const args = JSON.parse(toolCall.function.arguments);
           console.log('Parsed args:', args);
-
-          onChunk(`\n🔧 调用工具: ${toolCall.function.name}\n`);
+          onChunk(`\n🔧 调用工具: ${toolName}\n`);
 
           const result = await tool.call(args, {
             workDir: workspace || process.cwd(),
@@ -299,11 +446,8 @@ export class TaskExecutor {
             mode: 'ask'
           });
 
-          // 处理工具结果 - 应用映射和持久化
           const { processToolResultBlock } = await import('../tools/tool-result-storage');
-          const sessionId = Date.now().toString(); // 使用 taskId 作为 sessionId
-          const toolUseId = toolCall.id || `tool_${Date.now()}`;
-
+          const sessionId = Date.now().toString();
           const processedResult = await processToolResultBlock(
             tool,
             result.data,
@@ -311,26 +455,38 @@ export class TaskExecutor {
             sessionId
           );
 
+          const resultContent = typeof processedResult.content === 'string'
+            ? processedResult.content
+            : JSON.stringify(processedResult.content);
+
           if (result.error) {
             onChunk(`\n❌ 工具执行失败: ${result.error}\n`);
           } else {
-            // 显示处理后的结果
-            const content = typeof processedResult.content === 'string'
-              ? processedResult.content
-              : JSON.stringify(processedResult.content);
-            onChunk(`\n✅ 工具执行成功: ${content}\n`);
+            onChunk(`\n✅ 工具执行成功: ${resultContent}\n`);
           }
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolUseId,
+            content: resultContent || (result.error || '')
+          });
         } catch (error: any) {
           console.error('Tool execution error:', error);
-          onChunk(`\n❌ 工具执行错误: ${error.message}\n参数: ${toolCall.function.arguments}\n`);
+          const errorMessage = `工具执行错误: ${error.message}`;
+          onChunk(`\n❌ ${errorMessage}\n参数: ${toolCall.function.arguments}\n`);
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolUseId,
+            content: errorMessage
+          });
         }
       }
 
-      console.log(`[Executor] 所有工具调用执行完成，工具数量: ${toolCalls.length}`);
-      onChunk('\n\n[工具调用完成]\n');
-    } else {
-      console.log(`[Executor] 没有检测到工具调用`);
+      console.log(`[Executor] 第 ${round + 1} 轮工具调用执行完成，继续向模型请求后续输出`);
+      onChunk('\n\n[工具调用完成，继续生成...]\n');
     }
+
+    onChunk('\n⚠️ 工具调用轮次达到上限，已停止自动继续。\n');
   }
 
   private async callAnthropicAPI(
@@ -342,7 +498,7 @@ export class TaskExecutor {
     const endpoint = config.apiEndpoint || 'https://api.anthropic.com/v1';
 
     // Anthropic API 不支持 system role 在 messages 中，需要单独传递
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: Array<Record<string, any>> = [];
 
     // 添加历史消息
     if (history && history.length > 0) {
@@ -371,82 +527,81 @@ export class TaskExecutor {
       input_schema: zodToJsonSchema(t.inputSchema, { $refStrategy: 'none' })
     })) : undefined;
 
-    const response = await fetch(`${endpoint}/messages`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': config.apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: config.modelName || 'claude-3-5-sonnet-20241022',
-        max_tokens: config.maxTokens || 4096,
-        temperature: config.temperature || 0.7,
-        system: `你是一个专业的 AI 助手，帮助用户完成各种任务。你能记住之前的对话内容。
+    const maxToolRounds = 8;
+    let finalText = '';
+
+    for (let round = 0; round < maxToolRounds; round++) {
+      const response = await fetch(`${endpoint}/messages`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: config.modelName || 'claude-3-5-sonnet-20241022',
+          max_tokens: config.maxTokens || 4096,
+          temperature: config.temperature || 0.7,
+          system: `你是一个专业的 AI 助手，帮助用户完成各种任务。你能记住之前的对话内容。
 当前工作目录（必须遵守）: ${workspace || process.cwd()}
 所有需要文件系统/命令行的操作，都必须在该工作目录下执行。
 当执行 git clone 且用户没有指定目标目录时，必须显式指定目标路径到该工作目录下（例如：git clone <repo> "<工作目录>/<仓库名>"）。`,
-        messages,
-        tools: toolsParam
-      })
-    });
+          messages,
+          tools: toolsParam
+        })
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API 调用失败: ${response.status} ${error}`);
-    }
-
-    const result = await response.json();
-
-    // 处理工具调用
-    if (result.stop_reason === 'tool_use') {
-      let responseText = '';
-
-      for (const content of result.content) {
-        if (content.type === 'text') {
-          responseText += content.text;
-        } else if (content.type === 'tool_use') {
-          const tool = this.toolRegistry.get(content.name);
-          if (tool) {
-            try {
-              responseText += `\n\n[执行工具: ${content.name}]\n`;
-
-              const toolResult = await tool.call(content.input, {
-                workDir: workspace || process.cwd(),
-                taskId: Date.now().toString(),
-                mode: 'ask'
-              });
-
-              // 处理工具结果
-              const { processToolResultBlock } = await import('../tools/tool-result-storage');
-              const sessionId = Date.now().toString();
-              const toolUseId = content.id || `tool_${Date.now()}`;
-
-              const processedResult = await processToolResultBlock(
-                tool,
-                toolResult.data,
-                toolUseId,
-                sessionId
-              );
-
-              const resultContent = typeof processedResult.content === 'string'
-                ? processedResult.content
-                : JSON.stringify(processedResult.content);
-
-              responseText += `✅ ${resultContent}\n`;
-            } catch (error: any) {
-              responseText += `❌ 工具执行错误: ${error.message}\n`;
-            }
-          } else {
-            responseText += `\n❌ 工具 ${content.name} 未找到\n`;
-          }
-        }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API 调用失败: ${response.status} ${error}`);
       }
 
-      return responseText;
+      const result = await response.json();
+      const contents = Array.isArray(result.content) ? result.content : [];
+      const toolUses = contents.filter((content: any) => content.type === 'tool_use');
+      const text = contents
+        .filter((content: any) => content.type === 'text')
+        .map((content: any) => content.text || '')
+        .join('');
+
+      if (text) {
+        finalText += text;
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: contents
+      });
+
+      if (toolUses.length === 0) {
+        return finalText || '';
+      }
+
+      const toolResults: any[] = [];
+      for (const toolUse of toolUses) {
+        const toolName = toolUse.name || '';
+        const rawArguments = JSON.stringify(toolUse.input || {});
+        const toolResult = await this.executeToolAndFormatResult({
+          toolName,
+          rawArguments,
+          workspace: workspace || process.cwd(),
+        });
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: toolResult.content,
+          is_error: toolResult.isError
+        });
+      }
+
+      messages.push({
+        role: 'user',
+        content: toolResults
+      });
     }
 
-    return result.content[0].text;
+    return `${finalText}\n\n⚠️ 工具调用轮次达到上限，已停止自动继续。`.trim();
   }
 
   async execute(request: ExecuteRequest): Promise<ExecuteResult> {
