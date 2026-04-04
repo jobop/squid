@@ -142,6 +142,9 @@ export class TaskExecutor {
 
     // 获取所有注册的 tools
     const tools = this.toolRegistry.getAll();
+    console.log(`[Executor] 注册的工具数量: ${tools.length}`);
+    console.log(`[Executor] 工具列表:`, tools.map(t => t.name).join(', '));
+
     const toolsParam = tools.length > 0 ? tools.map(t => ({
       type: 'function',
       function: {
@@ -150,6 +153,8 @@ export class TaskExecutor {
         parameters: zodToJsonSchema(t.inputSchema, { $refStrategy: 'none' })
       }
     })) : undefined;
+
+    console.log(`[Executor] 发送给 API 的工具参数:`, JSON.stringify(toolsParam, null, 2));
 
     const response = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
@@ -232,6 +237,7 @@ export class TaskExecutor {
 
     // 执行 tool calls
     if (toolCalls.length > 0) {
+      console.log(`[Executor] 检测到 ${toolCalls.length} 个工具调用`);
       onChunk('\n\n[执行工具调用...]\n');
 
       for (const toolCall of toolCalls) {
@@ -282,6 +288,11 @@ export class TaskExecutor {
           onChunk(`\n❌ 工具执行错误: ${error.message}\n参数: ${toolCall.function.arguments}\n`);
         }
       }
+
+      console.log(`[Executor] 所有工具调用执行完成，工具数量: ${toolCalls.length}`);
+      onChunk('\n\n[工具调用完成]\n');
+    } else {
+      console.log(`[Executor] 没有检测到工具调用`);
     }
   }
 

@@ -20,7 +20,20 @@ interface CronCreateOutput {
 
 export const CronCreateTool: Tool<typeof CronCreateInputSchema, CronCreateOutput> = {
   name: 'cron_create',
-  description: '创建定时任务。当用户要求"设置定时任务"、"定时执行"、"在某个时间执行"时使用此工具。需要将用户的时间描述转换为标准 cron 表达式（如 "33 22 * * *" 表示每天22:33，"*/5 * * * *" 表示每5分钟）。',
+  description: `创建定时任务。
+
+使用场景：
+- 用户说"设置定时任务"、"定时执行"、"在XX点执行"、"每隔XX分钟/小时执行"
+- 用户要求在未来某个时间自动执行某个操作
+
+参数说明：
+- cron_expression: 标准 cron 表达式（5个字段：分 时 日 月 星期）
+  例如："39 22 * * *" = 每天22:39
+  例如："*/5 * * * *" = 每5分钟
+  例如："0 9 * * 1-5" = 工作日9点
+- task_content: 任务内容，会在定时触发时作为指令执行
+
+重要：当用户提到"定时"、"在XX点"、"每隔XX"时，必须使用此工具！`,
   inputSchema: CronCreateInputSchema,
   maxResultSizeChars: 10000,
 
