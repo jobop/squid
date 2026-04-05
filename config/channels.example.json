@@ -4,6 +4,10 @@
       "enabled": true,
       "port": 8080,
       "heartbeatInterval": 30000
+    },
+    "feishu": {
+      "enabled": false,
+      "note": "默认 WebSocket 长连接入站，见 ~/.squid/feishu-channel.json 与 docs/QUICK_START.md"
     }
   }
 }

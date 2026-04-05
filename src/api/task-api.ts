@@ -145,6 +145,18 @@ export class TaskAPI {
     }
   }
 
+  /**
+   * 为外部 Channel（飞书等）准备持久化会话：先尝试从磁盘加载，否则按固定 ID 创建。
+   */
+  async prepareExternalConversation(conversationId: string, workspace: string): Promise<void> {
+    await this.conversationManager.loadConversation(conversationId);
+    if (!this.conversationManager.getConversation(conversationId)) {
+      await this.conversationManager.createConversationWithId(conversationId, workspace);
+    } else {
+      await this.conversationManager.setConversationWorkspace(conversationId, workspace);
+    }
+  }
+
   async listTasks(): Promise<TaskListItem[]> {
     return Array.from(this.tasks.values()).sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

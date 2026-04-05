@@ -4,7 +4,16 @@ import { ClawServer } from '../claw/server';
 import { CronScheduler } from '../scheduler/cron-scheduler';
 import { MCPConnectionManager } from '../mcp/connection-manager';
 import { TaskAPI } from '../api/task-api';
-import { initializeBuiltinChannels } from '../channels/index';
+import {
+  handleFeishuWebhookRequest,
+  initializeBuiltinChannels,
+  registerFeishuSquidBridge,
+} from '../channels/index';
+import {
+  loadFeishuChannelConfig,
+  saveFeishuChannelConfig,
+  toFeishuConfigPublicView,
+} from '../channels/feishu/config-store';
 import { cronManager } from '../tools/cron-manager';
 
 async function main() {
@@ -634,6 +643,54 @@ async function main() {
         }
       }
 
+      // Feishu event subscription webhook (POST, raw body for signature)
+      if (url.pathname === '/api/feishu/webhook' && req.method === 'POST') {
+        try {
+          return await handleFeishuWebhookRequest(req);
+        } catch (error: any) {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
+      // Feishu channel config (no full secrets in GET response)
+      if (url.pathname === '/api/channels/feishu/config' && req.method === 'GET') {
+        try {
+          const c = await loadFeishuChannelConfig();
+          return new Response(JSON.stringify(toFeishuConfigPublicView(c)), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
+      if (url.pathname === '/api/channels/feishu/config' && req.method === 'POST') {
+        try {
+          const body = await req.json();
+          const result = await saveFeishuChannelConfig(body);
+          if (!result.ok) {
+            return new Response(JSON.stringify({ success: false, errors: result.errors }), {
+              status: 400,
+              headers,
+            });
+          }
+          const c = await loadFeishuChannelConfig();
+          return new Response(
+            JSON.stringify({ success: true, config: toFeishuConfigPublicView(c) }),
+            { headers }
+          );
+        } catch (error: any) {
+          return new Response(JSON.stringify({ success: false, error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
       return new Response('Not Found', { status: 404 });
     }
   });
@@ -707,7 +764,8 @@ async function main() {
 
   // Initialize channel system
   await initializeBuiltinChannels();
-  console.log('Channel system initialized');
+  registerFeishuSquidBridge(taskAPI);
+  console.log('Channel system initialized (Feishu ↔ squid 入站桥接已注册)');
 
   // 设置 cronManager 的通知回调，连接到 EventBridge
   cronManager.setNotificationCallback((taskId: string, content: string) => {

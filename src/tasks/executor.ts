@@ -236,16 +236,22 @@ export class TaskExecutor {
       const result = await response.json();
       const message = result.choices?.[0]?.message || {};
       const assistantContent = typeof message.content === 'string' ? message.content : '';
+      const assistantReasoning =
+        typeof message.reasoning_content === 'string' ? message.reasoning_content : '';
       if (assistantContent) {
         finalText += assistantContent;
       }
 
       const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-      messages.push({
+      const assistantMsg: Record<string, unknown> = {
         role: 'assistant',
         content: assistantContent || null,
         tool_calls: rawToolCalls.length > 0 ? rawToolCalls : undefined
-      });
+      };
+      if (rawToolCalls.length > 0) {
+        assistantMsg.reasoning_content = assistantReasoning;
+      }
+      messages.push(assistantMsg);
 
       if (rawToolCalls.length === 0) {
         return finalText || '';
@@ -327,6 +333,8 @@ export class TaskExecutor {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
+      /** 思考链/推理内容：开启 thinking 的模型在 tool_calls 轮次要求回传 reasoning_content */
+      let assistantReasoning = '';
       const toolCalls: any[] = [];
 
       while (true) {
@@ -345,6 +353,12 @@ export class TaskExecutor {
           try {
             const parsed = JSON.parse(data);
             const delta = parsed.choices[0]?.delta;
+
+            if (typeof delta?.reasoning_content === 'string') {
+              assistantReasoning += delta.reasoning_content;
+            } else if (typeof delta?.reasoning === 'string') {
+              assistantReasoning += delta.reasoning;
+            }
 
             if (typeof delta?.content === 'string') {
               assistantContent += delta.content;
@@ -382,20 +396,23 @@ export class TaskExecutor {
         }
       }
 
+      const resolvedToolCalls = toolCalls.filter(Boolean);
+
       // 本轮没有工具调用，说明模型已给出最终回答
-      if (toolCalls.length === 0) {
+      if (resolvedToolCalls.length === 0) {
         console.log(`[Executor] 第 ${round + 1} 轮未检测到工具调用，流式回复完成`);
         return;
       }
 
-      console.log(`[Executor] 第 ${round + 1} 轮检测到 ${toolCalls.length} 个工具调用`);
+      console.log(`[Executor] 第 ${round + 1} 轮检测到 ${resolvedToolCalls.length} 个工具调用`);
       onChunk('\n\n[执行工具调用...]\n');
 
       // 先把 assistant tool_call 消息加入上下文，再追加每个 tool result
       messages.push({
         role: 'assistant',
         content: assistantContent || null,
-        tool_calls: toolCalls.map((toolCall) => ({
+        reasoning_content: assistantReasoning,
+        tool_calls: resolvedToolCalls.map((toolCall) => ({
           id: toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           type: 'function',
           function: {
@@ -405,7 +422,7 @@ export class TaskExecutor {
         }))
       });
 
-      for (const toolCall of toolCalls) {
+      for (const toolCall of resolvedToolCalls) {
         const toolName = toolCall.function?.name || '';
         const toolUseId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const tool = this.toolRegistry.get(toolName);

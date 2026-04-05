@@ -82,11 +82,22 @@
 ```typescript
 OpenClaw 接口                    →  jobopx-desktop 接口
 ─────────────────────────────────────────────────────────
-sendMessageFeishu()              →  outbound.sendText()
-监听 webhook                      →  inbound.onMessage()
-inspectFeishuCredentials()       →  status.check()
-resolveFeishuAccount()           →  config.get('appId')
+sendMessageFeishu()              →  FeishuChannelPlugin.outbound.sendText() + 开放平台 im/v1/messages
+监听 webhook                      →  POST /api/feishu/webhook → submitFeishuInboundToEventBridge()
+                                  →  eventBridge.onChannelInbound（非 inbound.onMessage）
+inspectFeishuCredentials()       →  status.check()（tenant token 探测）
+resolveFeishuAccount()           →  config.getAll() 脱敏视图 / ~/.squid/feishu-channel.json
 ```
+
+## 实现状态（已验证，P0）
+
+- **发送文本**：`src/channels/feishu/lark-client.ts` + `FeishuChannelPlugin`；需配置 `defaultReceiveId` / `defaultReceiveIdType`。
+- **默认入站（WebSocket 长连接）**：`src/channels/feishu/feishu-ws-inbound.ts`，使用 `@larksuiteoapi/node-sdk` 的 `WSClient` + `EventDispatcher`，本机主动连飞书，**无需公网 Webhook / 穿透**。`connectionMode` 默认为 `websocket`。
+- **可选 Webhook 入站**：`src/channels/feishu/webhook-handler.ts`（`connectionMode: webhook` 时使用）；签名算法与 OpenClaw `monitor.transport.ts` 一致。机器人自身发送的消息（`sender_type === app`）不会再次入站。
+- **消息解析**：`src/channels/feishu/message-inbound.ts`（`parseFeishuImReceiveForInbound`）供 WS 与 HTTP 共用。
+- **与 squid 对话**：`src/channels/feishu/squid-bridge.ts`（`registerFeishuSquidBridge`）将用户消息接到 `TaskAPI.executeTaskStream`，回复 `sendFeishuTextMessageTo` 到原 `chat_id`。
+- **配置**：`~/.squid/feishu-channel.json`；`GET/POST /api/channels/feishu/config`（响应不含完整密钥）。
+- **兼容性结论**：见 `docs/COMPATIBILITY.md`。
 
 ## 实现优先级
 

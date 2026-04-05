@@ -22,6 +22,23 @@ export interface CommandEvent {
   timestamp: number;
 }
 
+/** 与 `channel:inbound` 事件名一致，供测试与文档引用 */
+export const CHANNEL_INBOUND_EVENT = 'channel:inbound' as const;
+
+/**
+ * 通用 Channel 入站事件（飞书等经 Adapter 投递）
+ */
+export interface ChannelInboundEvent {
+  channelId: string;
+  text: string;
+  chatId?: string;
+  messageId?: string;
+  senderOpenId?: string;
+  accountId?: string;
+  raw?: Record<string, unknown>;
+  timestamp: number;
+}
+
 /**
  * 事件总线 - 连接执行引擎和 channel 的双向通信
  */
@@ -88,6 +105,22 @@ export class EventBridge extends EventEmitter {
    */
   offCommand(callback: (event: CommandEvent) => void): void {
     this.off('command', callback);
+  }
+
+  emitChannelInbound(payload: Omit<ChannelInboundEvent, 'timestamp'> & { timestamp?: number }): void {
+    const event: ChannelInboundEvent = {
+      ...payload,
+      timestamp: payload.timestamp ?? Date.now(),
+    };
+    this.emit(CHANNEL_INBOUND_EVENT, event);
+  }
+
+  onChannelInbound(callback: (event: ChannelInboundEvent) => void): void {
+    this.on(CHANNEL_INBOUND_EVENT, callback);
+  }
+
+  offChannelInbound(callback: (event: ChannelInboundEvent) => void): void {
+    this.off(CHANNEL_INBOUND_EVENT, callback);
   }
 }
 

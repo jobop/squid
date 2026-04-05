@@ -192,6 +192,20 @@ Jobopx 可以连接 GitHub、Slack、Notion、Jira：
 3. 在 Jobopx 中配置 Notion 连接器
 4. AI 就可以读写你的 Notion 页面了！
 
+### 飞书 / Lark 机器人（可选）
+
+1. 在[飞书开放平台](https://open.feishu.cn/app)创建企业自建应用，开通机器人与 **「接收消息」**（`im.message.receive_v1`）等事件权限，取得 **App ID / App Secret**，并记录事件订阅里的 **Encrypt Key**、**Verification Token**（与控制台一致）。
+2. **推荐：长连接（WebSocket）入站（默认，无需公网地址与穿透）**  
+   在开放平台「事件订阅」中将接收方式设为 **使用长连接**（或等价选项）。squid 启动后会用官方 SDK **主动连接飞书**，本机只需能访问外网即可，**不要**再配置请求 URL / 内网穿透。  
+   若必须使用 HTTP 回调，可在 `feishu-channel.json` 中设置 **`"connectionMode": "webhook"`**，并将事件 URL 指向 **`http://<可达主机>:50001/api/feishu/webhook`**（该模式才需要公网或穿透）。
+3. 在本地创建或写入 **`~/.squid/feishu-channel.json`**（亦可通过 `POST /api/channels/feishu/config` 保存），至少包含：
+   - `appId`、`appSecret`
+   - `encryptKey`（与控制台一致；长连接与加密事件解密依赖此项）
+   - `verificationToken`（与控制台一致）
+   - `defaultReceiveId`（如群 `chat_id`）、`defaultReceiveIdType`（一般为 `chat_id`）
+   - 可选：`connectionMode`（默认 **`websocket`**）、`feishuDomain`（国际 Lark 填 **`lark`**）
+4. 重启应用；若出站配置完整，启动日志会出现「已注册 Feishu Channel」「Feishu ↔ squid 入站桥接已注册」及 **「正在建立飞书事件长连接」**。在飞书会话里发消息 → **长连接入站** → **自动走 squid 的 ask 流式任务**，回复发回同一聊天（需已配置模型 API Key 与工作区）。
+
 ## ❓ 常见问题
 
 **Q: 我的 API 密钥安全吗？**  

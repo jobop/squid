@@ -81,6 +81,22 @@ export class ConversationManager {
     return id;
   }
 
+  /** 固定 ID（如飞书会话 `feishubot_<chat_id>`），不存在则创建 */
+  async createConversationWithId(conversationId: string, workspace?: string): Promise<void> {
+    if (this.conversations.has(conversationId)) {
+      return;
+    }
+    const conversation: Conversation = {
+      id: conversationId,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      workspace
+    };
+    this.conversations.set(conversationId, conversation);
+    await this.saveConversation(conversationId);
+  }
+
   async addMessage(conversationId: string, role: 'user' | 'assistant', content: string) {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) {
