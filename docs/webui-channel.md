@@ -4,6 +4,8 @@
 
 WebUI Channel 是一个内置的 channel 插件，将聊天界面作为一个标准的 channel 实现，通过 WebSocket 实现与执行引擎的双向通信。
 
+在应用侧栏进入 **「渠道」** 可查看包含 WebUI 在内的 Channel 列表与健康状态；WebUI 详情为只读说明，无 Web 端写配置入口。
+
 ## 功能特性
 
 - ✅ 实时接收任务完成通知

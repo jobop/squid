@@ -50,6 +50,7 @@ export async function cleanupChannels(): Promise<void> {
   console.log('[Channels] 所有 channel 插件已清理');
 }
 
+export { getChannelsOverview } from './channel-overview';
 export { FeishuChannelPlugin } from './feishu/plugin';
 export { handleFeishuWebhookRequest } from './feishu/webhook-handler';
 export { registerFeishuSquidBridge } from './feishu/squid-bridge';

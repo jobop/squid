@@ -1113,6 +1113,10 @@
         <i data-lucide="brain" class="nav-item-icon"></i>
         <span>记忆</span>
       </a>
+      <a href="#" class="nav-item" data-page="channels">
+        <i data-lucide="plug" class="nav-item-icon"></i>
+        <span>渠道</span>
+      </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings" class="nav-item-icon"></i>
         <span>设置</span>
@@ -1431,6 +1435,78 @@
             <i data-lucide="brain" style="width: 64px; height: 64px; margin: 0 auto 16px; opacity: 0.3;"></i>
             <p style="font-size: 16px; margin-bottom: 8px;">还没有记忆</p>
             <p style="font-size: 14px;">创建第一个记忆来帮助 AI 记住重要信息</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="channels-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
+      <div class="main-header">
+        <h1 id="channelsPageTitle">渠道</h1>
+        <div class="header-actions">
+          <button type="button" class="btn btn-secondary" id="channelsBackBtn" style="display: none;">← 返回列表</button>
+          <button type="button" class="btn" id="channelsRefreshBtn">刷新状态</button>
+        </div>
+      </div>
+      <div class="main-content" style="flex: 1; overflow-y: auto;">
+        <div class="page-content">
+          <p id="channelsLoadError" style="display: none; color: #c00; margin-bottom: 12px;"></p>
+          <div id="channelsListView">
+            <div id="channelsTableWrap"></div>
+          </div>
+          <div id="channelsDetailView" style="display: none;">
+            <div id="channelsDetailReadonly" class="card" style="display: none;"></div>
+            <div id="channelsDetailFeishu" class="card" style="display: none;">
+              <h3>飞书 / Lark 配置</h3>
+              <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+                保存至 ~/.squid/feishu-channel.json。App Secret、Encrypt Key 留空则不修改已有值；修改出站接收方请填写 defaultReceiveId。
+              </p>
+              <div class="form-group">
+                <label>App ID</label>
+                <input type="text" id="feishuCfgAppId" placeholder="cli_xxx" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label>App Secret</label>
+                <input type="password" id="feishuCfgAppSecret" placeholder="留空则不修改" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label>Encrypt Key（事件订阅）</label>
+                <input type="password" id="feishuCfgEncryptKey" placeholder="留空则不修改" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label>Verification Token</label>
+                <input type="text" id="feishuCfgVerificationToken" placeholder="可选；留空可清空已保存值" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label>连接模式</label>
+                <select id="feishuCfgConnectionMode">
+                  <option value="websocket">websocket（长连接）</option>
+                  <option value="webhook">webhook</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>域名</label>
+                <select id="feishuCfgFeishuDomain">
+                  <option value="feishu">feishu（国内）</option>
+                  <option value="lark">lark（国际）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>默认接收方 ID（出站）</label>
+                <input type="text" id="feishuCfgDefaultReceiveId" placeholder="群 chat_id 等" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label>接收方 ID 类型</label>
+                <select id="feishuCfgDefaultReceiveIdType">
+                  <option value="chat_id">chat_id</option>
+                  <option value="open_id">open_id</option>
+                  <option value="user_id">user_id</option>
+                  <option value="union_id">union_id</option>
+                </select>
+              </div>
+              <button type="button" class="btn" id="feishuCfgSaveBtn">保存</button>
+              <p id="feishuCfgSaveHint" style="margin-top: 12px; font-size: 13px; color: #666;"></p>
+            </div>
           </div>
         </div>
       </div>
@@ -2104,6 +2180,13 @@
         console.error('saveWorkspaceConfigBtn not found!');
       }
 
+      const channelsBackBtn = document.getElementById('channelsBackBtn');
+      if (channelsBackBtn) channelsBackBtn.addEventListener('click', () => channelsShowList());
+      const channelsRefreshBtn = document.getElementById('channelsRefreshBtn');
+      if (channelsRefreshBtn) channelsRefreshBtn.addEventListener('click', () => loadChannelsList());
+      const feishuCfgSaveBtn = document.getElementById('feishuCfgSaveBtn');
+      if (feishuCfgSaveBtn) feishuCfgSaveBtn.addEventListener('click', () => saveFeishuChannelForm());
+
       // 确保所有输入框支持粘贴
       document.querySelectorAll('input, textarea').forEach(element => {
         element.addEventListener('paste', (e) => {
@@ -2553,6 +2636,207 @@
       }
     }
 
+    let channelsListCache = [];
+
+    function escapeHtmlChannels(s) {
+      if (s == null || s === '') return '';
+      const d = document.createElement('div');
+      d.textContent = String(s);
+      return d.innerHTML;
+    }
+
+    async function loadChannelsList() {
+      const errEl = document.getElementById('channelsLoadError');
+      const wrap = document.getElementById('channelsTableWrap');
+      if (errEl) errEl.style.display = 'none';
+      if (wrap) wrap.innerHTML = '<p style="color:#666">加载中…</p>';
+      try {
+        const response = await fetch('http://localhost:50001/api/channels');
+        if (!response.ok) throw new Error(response.statusText || String(response.status));
+        channelsListCache = await response.json();
+        renderChannelsTable(channelsListCache);
+      } catch (e) {
+        if (errEl) {
+          errEl.textContent = '加载失败: ' + e.message;
+          errEl.style.display = 'block';
+        }
+        if (wrap) wrap.innerHTML = '';
+      }
+    }
+
+    function renderChannelsTable(items) {
+      const wrap = document.getElementById('channelsTableWrap');
+      if (!wrap) return;
+      if (!items.length) {
+        wrap.innerHTML = '<p style="color:#666">暂无渠道数据</p>';
+        return;
+      }
+      let html =
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="text-align:left;border-bottom:1px solid #e5e5e5;"><th style="padding:8px;">渠道</th><th style="padding:8px;">ID</th><th style="padding:8px;">状态</th><th style="padding:8px;">说明</th><th style="padding:8px;"></th></tr></thead><tbody>';
+      for (const c of items) {
+        const ok = c.healthy;
+        const badge = ok
+          ? '<span style="color:#059669;">正常</span>'
+          : '<span style="color:#b45309;">异常</span>';
+        const reg = c.registered
+          ? ''
+          : ' <span style="color:#666;font-size:12px;">(未注册)</span>';
+        html +=
+          '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;">' +
+          escapeHtmlChannels(c.name) +
+          reg +
+          '</td><td style="padding:8px;"><code>' +
+          escapeHtmlChannels(c.id) +
+          '</code></td><td style="padding:8px;">' +
+          badge +
+          '</td><td style="padding:8px;color:#555;">' +
+          escapeHtmlChannels(c.statusMessage) +
+          '</td><td style="padding:8px;"><button type="button" class="btn btn-secondary channels-open-detail" data-channel-id="' +
+          escapeHtmlChannels(c.id) +
+          '">详情</button></td></tr>';
+      }
+      html += '</tbody></table>';
+      wrap.innerHTML = html;
+      wrap.querySelectorAll('.channels-open-detail').forEach((btn) => {
+        btn.addEventListener('click', () => openChannelDetail(btn.getAttribute('data-channel-id')));
+      });
+    }
+
+    function channelsShowList() {
+      const listV = document.getElementById('channelsListView');
+      const detailV = document.getElementById('channelsDetailView');
+      const backBtn = document.getElementById('channelsBackBtn');
+      const refBtn = document.getElementById('channelsRefreshBtn');
+      const title = document.getElementById('channelsPageTitle');
+      if (listV) listV.style.display = 'block';
+      if (detailV) detailV.style.display = 'none';
+      if (backBtn) backBtn.style.display = 'none';
+      if (refBtn) refBtn.style.display = 'inline-block';
+      if (title) title.textContent = '渠道';
+      loadChannelsList();
+    }
+
+    function openChannelDetail(id) {
+      const listV = document.getElementById('channelsListView');
+      const detailV = document.getElementById('channelsDetailView');
+      const backBtn = document.getElementById('channelsBackBtn');
+      const refBtn = document.getElementById('channelsRefreshBtn');
+      const title = document.getElementById('channelsPageTitle');
+      if (listV) listV.style.display = 'none';
+      if (detailV) detailV.style.display = 'block';
+      if (backBtn) backBtn.style.display = 'inline-block';
+      if (refBtn) refBtn.style.display = 'none';
+      if (title) title.textContent = '渠道详情';
+      const ch = channelsListCache.find((c) => c.id === id);
+      const ro = document.getElementById('channelsDetailReadonly');
+      const fs = document.getElementById('channelsDetailFeishu');
+      if (ro) ro.style.display = 'none';
+      if (fs) fs.style.display = 'none';
+      if (id === 'feishu' && ch && ch.configurable) {
+        if (fs) fs.style.display = 'block';
+        if (title) title.textContent = '飞书 / Lark';
+        loadFeishuFormFromApi();
+      } else if (ch && ro) {
+        ro.style.display = 'block';
+        ro.innerHTML =
+          '<h3>' +
+          escapeHtmlChannels(ch.name) +
+          '</h3><p style="color:#666;font-size:14px;">' +
+          escapeHtmlChannels(ch.description) +
+          '</p><p><strong>ID:</strong> <code>' +
+          escapeHtmlChannels(ch.id) +
+          '</code></p><p><strong>分类:</strong> ' +
+          escapeHtmlChannels(ch.category) +
+          '</p><p><strong>已注册:</strong> ' +
+          (ch.registered ? '是' : '否') +
+          '</p><p><strong>健康:</strong> ' +
+          (ch.healthy ? '是' : '否') +
+          '</p><p><strong>状态:</strong> ' +
+          escapeHtmlChannels(ch.statusMessage) +
+          '</p><p style="font-size:13px;color:#888;margin-top:16px;">此渠道无 Web 端写入入口，配置请参考项目文档。</p>';
+      }
+    }
+
+    async function loadFeishuFormFromApi() {
+      const hint = document.getElementById('feishuCfgSaveHint');
+      if (hint) hint.textContent = '';
+      try {
+        const res = await fetch('http://localhost:50001/api/channels/feishu/config');
+        const cfg = await res.json();
+        if (cfg.error) throw new Error(cfg.error);
+        const appIdEl = document.getElementById('feishuCfgAppId');
+        const secEl = document.getElementById('feishuCfgAppSecret');
+        const ekEl = document.getElementById('feishuCfgEncryptKey');
+        const vtEl = document.getElementById('feishuCfgVerificationToken');
+        const modeEl = document.getElementById('feishuCfgConnectionMode');
+        const domEl = document.getElementById('feishuCfgFeishuDomain');
+        const ridEl = document.getElementById('feishuCfgDefaultReceiveId');
+        const rtypeEl = document.getElementById('feishuCfgDefaultReceiveIdType');
+        if (appIdEl) appIdEl.value = cfg.appId || '';
+        if (secEl) secEl.value = '';
+        if (ekEl) ekEl.value = '';
+        if (vtEl) vtEl.value = '';
+        if (modeEl) modeEl.value = cfg.connectionMode || 'websocket';
+        if (domEl) domEl.value = cfg.feishuDomain || 'feishu';
+        if (rtypeEl) rtypeEl.value = cfg.defaultReceiveIdType || 'chat_id';
+        if (ridEl) ridEl.value = '';
+        let parts = [];
+        if (cfg.hasAppSecret) parts.push('App Secret 已配置');
+        if (cfg.hasEncryptKey) parts.push('Encrypt Key 已配置');
+        if (cfg.defaultReceiveIdSet) parts.push('默认接收方已设置（脱敏不显示 ID，修改时请重新填写）');
+        if (hint) hint.textContent = parts.length ? parts.join('。') + '。' : '填写后保存。';
+      } catch (e) {
+        if (hint) hint.textContent = '加载失败: ' + e.message;
+      }
+    }
+
+    async function saveFeishuChannelForm() {
+      const hint = document.getElementById('feishuCfgSaveHint');
+      if (hint) hint.textContent = '保存中…';
+      const appIdEl = document.getElementById('feishuCfgAppId');
+      const modeEl = document.getElementById('feishuCfgConnectionMode');
+      const domEl = document.getElementById('feishuCfgFeishuDomain');
+      const rtypeEl = document.getElementById('feishuCfgDefaultReceiveIdType');
+      const ridEl = document.getElementById('feishuCfgDefaultReceiveId');
+      const secEl = document.getElementById('feishuCfgAppSecret');
+      const ekEl = document.getElementById('feishuCfgEncryptKey');
+      const vtEl = document.getElementById('feishuCfgVerificationToken');
+      const body = {
+        appId: appIdEl ? appIdEl.value.trim() : '',
+        connectionMode: modeEl ? modeEl.value : 'websocket',
+        feishuDomain: domEl ? domEl.value : 'feishu',
+        defaultReceiveIdType: rtypeEl ? rtypeEl.value : 'chat_id',
+      };
+      const did = ridEl ? ridEl.value.trim() : '';
+      if (did) body.defaultReceiveId = did;
+      const sec = secEl ? secEl.value.trim() : '';
+      if (sec) body.appSecret = sec;
+      const ek = ekEl ? ekEl.value.trim() : '';
+      if (ek) body.encryptKey = ek;
+      const vt = vtEl ? vtEl.value.trim() : '';
+      if (vt) body.verificationToken = vt;
+      try {
+        const res = await fetch('http://localhost:50001/api/channels/feishu/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          if (hint)
+            hint.textContent =
+              '保存失败: ' + (data.errors ? data.errors.join('; ') : data.error || res.statusText);
+          return;
+        }
+        if (hint) hint.textContent = '已保存。若修改了凭证或出站配置，请重启应用以加载 Feishu Channel。';
+        if (secEl) secEl.value = '';
+        if (ekEl) ekEl.value = '';
+        await loadFeishuFormFromApi();
+      } catch (e) {
+        if (hint) hint.textContent = '保存失败: ' + e.message;
+      }
+    }
+
     async function switchPage(page, options = {}) {
       const { createFreshThread = false } = options;
 
@@ -2591,6 +2875,10 @@
       // 如果切换到专家页面，渲染专家列表
       if (page === 'experts') {
         renderExpertsGrid();
+      }
+
+      if (page === 'channels') {
+        channelsShowList();
       }
     }
 

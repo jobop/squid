@@ -5,6 +5,8 @@ import { CronScheduler } from '../scheduler/cron-scheduler';
 import { MCPConnectionManager } from '../mcp/connection-manager';
 import { TaskAPI } from '../api/task-api';
 import {
+  channelRegistry,
+  getChannelsOverview,
   handleFeishuWebhookRequest,
   initializeBuiltinChannels,
   registerFeishuSquidBridge,
@@ -643,6 +645,19 @@ async function main() {
         }
       }
 
+      // Channel 管理 UI：列表与健康状态（侧栏「渠道」页调用）
+      if (url.pathname === '/api/channels' && req.method === 'GET') {
+        try {
+          const list = await getChannelsOverview(channelRegistry);
+          return new Response(JSON.stringify(list), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
       // Feishu event subscription webhook (POST, raw body for signature)
       if (url.pathname === '/api/feishu/webhook' && req.method === 'POST') {
         try {
@@ -655,7 +670,7 @@ async function main() {
         }
       }
 
-      // Feishu channel config (no full secrets in GET response)
+      // 飞书凭证：Channel 详情表单用 GET 加载（脱敏）、POST 保存；与 GET /api/channels 列表配合使用
       if (url.pathname === '/api/channels/feishu/config' && req.method === 'GET') {
         try {
           const c = await loadFeishuChannelConfig();
