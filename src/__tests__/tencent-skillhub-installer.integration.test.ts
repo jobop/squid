@@ -13,14 +13,14 @@ describe('Tencent SkillHub installer integration', () => {
   let skillsDir = '';
 
   beforeEach(async () => {
-    tempRoot = await mkdtemp(join(tmpdir(), 'jobopx-skillhub-'));
+    tempRoot = await mkdtemp(join(tmpdir(), 'squid-skillhub-'));
     skillsDir = join(tempRoot, 'skills');
-    process.env.JOBOPX_TENCENT_SKILLHUB_METADATA_DIR = join(tempRoot, 'metadata');
+    process.env.SQUID_TENCENT_SKILLHUB_METADATA_DIR = join(tempRoot, 'metadata');
     vi.restoreAllMocks();
   });
 
   afterEach(async () => {
-    delete process.env.JOBOPX_TENCENT_SKILLHUB_METADATA_DIR;
+    delete process.env.SQUID_TENCENT_SKILLHUB_METADATA_DIR;
     await rm(tempRoot, { recursive: true, force: true });
   });
 

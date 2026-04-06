@@ -5,6 +5,10 @@ export default {
     version: '0.1.0'
   },
   build: {
+    /** 与 BrowserWindow 加载的 `public/index.html` 及 lucide / websocket 等静态资源一致 */
+    copy: {
+      public: 'public'
+    },
     bun: {
       entrypoint: './src/bun/index.ts'
     },

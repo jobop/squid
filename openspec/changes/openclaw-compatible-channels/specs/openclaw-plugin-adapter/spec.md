@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: 系统应提供 OpenClaw 插件适配器
-系统 SHALL 提供适配器，让 OpenClaw 飞书插件能在 jobopx-desktop 上运行。
+系统 SHALL 提供适配器，让 OpenClaw 飞书插件能在 squid 上运行。
 
 #### Scenario: 加载 OpenClaw 插件
 - **WHEN** 加载 OpenClaw 飞书插件

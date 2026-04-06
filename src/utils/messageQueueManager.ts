@@ -1,131 +1,173 @@
 /**
- * 消息队列管理器
- * 用于管理定时任务和其他异步任务的执行队列
+ * 按 conversationId 分桶的命令队列（与 claude-code-main 的「忙则入队、空闲 drain」对齐）
  */
+
+import type { TaskMode } from '../tasks/types';
 
 export type QueuePriority = 'now' | 'next' | 'later';
 
+export type QueuedCommandSource = 'user' | 'cron' | 'channel' | string;
+
 export interface QueuedCommand {
+  /** 路由键：同一会话内 FIFO + 优先级，不阻塞其它会话 */
+  conversationId: string;
   value: string;
   priority?: QueuePriority;
   isMeta?: boolean;
-  source?: string;
+  source?: QueuedCommandSource;
   taskId?: string;
+  mode?: TaskMode;
+  workspace?: string;
+  expertId?: string;
+  skill?: string;
+  /** 若设置，队列执行完成后由 TaskAPI 回调飞书发回（见 setChannelQueuedCompleteHandler） */
+  feishuChatId?: string;
 }
 
-// 优先级顺序
 const PRIORITY_ORDER: Record<QueuePriority, number> = {
   now: 0,
   next: 1,
   later: 2,
 };
 
-// 模块级别的命令队列
-const commandQueue: QueuedCommand[] = [];
+/** conversationId -> queue */
+const queues = new Map<string, QueuedCommand[]>();
 
-// 订阅者列表
 type Subscriber = () => void;
-const subscribers: Set<Subscriber> = new Set();
+const subscribers = new Set<Subscriber>();
 
-/**
- * 通知所有订阅者队列已变化
- */
 function notifySubscribers(): void {
-  subscribers.forEach(callback => callback());
+  subscribers.forEach((cb) => cb());
 }
 
-/**
- * 订阅队列变化
- */
+function getBucket(conversationId: string): QueuedCommand[] {
+  let q = queues.get(conversationId);
+  if (!q) {
+    q = [];
+    queues.set(conversationId, q);
+  }
+  return q;
+}
+
+function findHighestPriorityIndex(bucket: QueuedCommand[]): number {
+  if (bucket.length === 0) return -1;
+  let bestIdx = 0;
+  let bestP = PRIORITY_ORDER[bucket[0]!.priority ?? 'next'];
+  for (let i = 1; i < bucket.length; i++) {
+    const p = PRIORITY_ORDER[bucket[i]!.priority ?? 'next'];
+    if (p < bestP) {
+      bestP = p;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
 export function subscribeToCommandQueue(callback: Subscriber): () => void {
   subscribers.add(callback);
   return () => subscribers.delete(callback);
 }
 
-/**
- * 获取队列快照
- */
-export function getCommandQueueSnapshot(): readonly QueuedCommand[] {
-  return [...commandQueue];
+/** 全量快照：各会话队列的浅拷贝（调试用 / 外部 store） */
+export function getCommandQueueSnapshot(): Readonly<Record<string, readonly QueuedCommand[]>> {
+  const out: Record<string, readonly QueuedCommand[]> = {};
+  for (const [id, bucket] of queues) {
+    if (bucket.length > 0) out[id] = [...bucket];
+  }
+  return out;
 }
 
-/**
- * 获取队列长度
- */
+export function getConversationQueueLength(conversationId: string): number {
+  return getBucket(conversationId).length;
+}
+
 export function getCommandQueueLength(): number {
-  return commandQueue.length;
+  let n = 0;
+  for (const bucket of queues.values()) n += bucket.length;
+  return n;
 }
 
-/**
- * 检查队列是否有命令
- */
-export function hasCommandsInQueue(): boolean {
-  return commandQueue.length > 0;
+export function hasCommandsInQueue(conversationId?: string): boolean {
+  if (conversationId !== undefined) {
+    return getBucket(conversationId).length > 0;
+  }
+  for (const bucket of queues.values()) {
+    if (bucket.length > 0) return true;
+  }
+  return false;
 }
 
-/**
- * 添加命令到队列
- */
 export function enqueue(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'next' });
+  const cid = command.conversationId.trim();
+  if (!cid) {
+    console.warn('[messageQueueManager] enqueue skipped: empty conversationId');
+    return;
+  }
+  const bucket = getBucket(cid);
+  bucket.push({ ...command, conversationId: cid, priority: command.priority ?? 'next' });
+  console.log(
+    `[messageQueueManager] enqueue conversationId=%s source=%s priority=%s depth=%d`,
+    cid,
+    command.source ?? '(none)',
+    command.priority ?? 'next',
+    bucket.length
+  );
   notifySubscribers();
 }
 
-/**
- * 添加待处理通知到队列（默认优先级为 later）
- * 用于定时任务等系统生成的消息
- */
 export function enqueuePendingNotification(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'later' });
-  notifySubscribers();
-}
-
-/**
- * 从队列中取出最高优先级的命令
- * 相同优先级按 FIFO 顺序
- */
-export function dequeue(): QueuedCommand | undefined {
-  if (commandQueue.length === 0) {
-    return undefined;
+  const cid = command.conversationId.trim();
+  if (!cid) {
+    console.warn('[messageQueueManager] enqueuePendingNotification skipped: empty conversationId');
+    return;
   }
+  const bucket = getBucket(cid);
+  bucket.push({ ...command, conversationId: cid, priority: command.priority ?? 'later' });
+  console.log(
+    `[messageQueueManager] enqueuePendingNotification conversationId=%s source=%s depth=%d`,
+    cid,
+    command.source ?? '(none)',
+    bucket.length
+  );
+  notifySubscribers();
+}
 
-  // 找到最高优先级的命令
-  let highestPriorityIndex = 0;
-  let highestPriority = PRIORITY_ORDER[commandQueue[0].priority ?? 'next'];
+export function peek(conversationId: string): QueuedCommand | undefined {
+  const bucket = getBucket(conversationId);
+  const idx = findHighestPriorityIndex(bucket);
+  if (idx < 0) return undefined;
+  return bucket[idx];
+}
 
-  for (let i = 1; i < commandQueue.length; i++) {
-    const priority = PRIORITY_ORDER[commandQueue[i].priority ?? 'next'];
-    if (priority < highestPriority) {
-      highestPriority = priority;
-      highestPriorityIndex = i;
-    }
+export function dequeue(conversationId: string): QueuedCommand | undefined {
+  const bucket = getBucket(conversationId);
+  const idx = findHighestPriorityIndex(bucket);
+  if (idx < 0) return undefined;
+  const [cmd] = bucket.splice(idx, 1);
+  console.log(
+    `[messageQueueManager] dequeue conversationId=%s source=%s remaining=%d`,
+    conversationId,
+    cmd?.source ?? '(none)',
+    bucket.length
+  );
+  notifySubscribers();
+  return cmd;
+}
+
+export function clearCommandQueue(conversationId?: string): void {
+  if (conversationId !== undefined) {
+    getBucket(conversationId).length = 0;
+    queues.delete(conversationId);
+  } else {
+    queues.clear();
   }
-
-  const command = commandQueue.splice(highestPriorityIndex, 1)[0];
-  notifySubscribers();
-  return command;
-}
-
-/**
- * 清空队列
- */
-export function clearCommandQueue(): void {
-  commandQueue.length = 0;
   notifySubscribers();
 }
 
-/**
- * 重置队列（清空并通知）
- */
 export function resetCommandQueue(): void {
   clearCommandQueue();
 }
 
-/**
- * 触发重新检查队列
- */
 export function recheckCommandQueue(): void {
-  if (commandQueue.length > 0) {
-    notifySubscribers();
-  }
+  if (hasCommandsInQueue()) notifySubscribers();
 }

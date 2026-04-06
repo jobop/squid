@@ -44,6 +44,20 @@ export interface ChannelInboundEvent {
  */
 export class EventBridge extends EventEmitter {
   /**
+   * 逐个调用监听器并吞掉单点异常，避免一个订阅者抛错阻断其它订阅者（与 Vitest 期望一致）
+   */
+  private emitSafe(eventName: string, payload: unknown): void {
+    const fns = this.listeners(eventName) as ((arg: unknown) => void)[];
+    for (const fn of fns) {
+      try {
+        fn(payload);
+      } catch (err) {
+        console.error(`[EventBridge] listener error (${eventName}):`, err);
+      }
+    }
+  }
+
+  /**
    * 通知任务完成
    * @param taskId 任务 ID
    * @param result 任务结果或错误信息
@@ -55,7 +69,7 @@ export class EventBridge extends EventEmitter {
       timestamp: Date.now(),
     };
 
-    this.emit('task:complete', event);
+    this.emitSafe('task:complete', event);
   }
 
   /**
@@ -80,7 +94,7 @@ export class EventBridge extends EventEmitter {
       timestamp: Date.now(),
     };
 
-    this.emit('command', event);
+    this.emitSafe('command', event);
   }
 
   /**
@@ -112,7 +126,7 @@ export class EventBridge extends EventEmitter {
       ...payload,
       timestamp: payload.timestamp ?? Date.now(),
     };
-    this.emit(CHANNEL_INBOUND_EVENT, event);
+    this.emitSafe(CHANNEL_INBOUND_EVENT, event);
   }
 
   onChannelInbound(callback: (event: ChannelInboundEvent) => void): void {
@@ -130,7 +144,7 @@ export class EventBridge extends EventEmitter {
  * 若此处仅用 `new EventBridge()`，会出现两套实例：扩展里 emit、主进程里 on，彼此永远收不到。
  * 故挂到 globalThis，保证全进程共用一个 EventBridge。
  */
-const EVENT_BRIDGE_GLOBAL_KEY = '__SQUID_JOBOPX_EVENT_BRIDGE__';
+const EVENT_BRIDGE_GLOBAL_KEY = '__SQUID_CHANNEL_EVENT_BRIDGE__';
 
 function getOrCreateProcessEventBridge(): EventBridge {
   const g = globalThis as Record<string, unknown>;

@@ -14,7 +14,9 @@ export class MemoryStorage {
   private memoryDir: string;
 
   constructor() {
-    this.memoryDir = join(homedir(), '.squid', 'memory');
+    // 单测隔离：避免并行 vitest 文件互相删除 ~/.squid/memory/*.json
+    const fromEnv = process.env.SQUID_TEST_MEMORY_DIR?.trim();
+    this.memoryDir = fromEnv ? fromEnv : join(homedir(), '.squid', 'memory');
   }
 
   async init(): Promise<void> {

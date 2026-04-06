@@ -2,22 +2,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ConversationManager } from '../conversation/manager';
 import { MemoryManager } from '../memory/manager';
-import { rm } from 'fs/promises';
+import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
-import { homedir } from 'os';
+import { tmpdir } from 'os';
 
 describe('E2E: Memory Extraction Flow', () => {
   let conversationManager: ConversationManager;
   let conversationId: string;
+  let isolatedMemoryDir: string;
 
   beforeAll(async () => {
-    // Clean up before test
-    try {
-      const configDir = join(homedir(), '.squid');
-      await rm(configDir, { recursive: true, force: true });
-    } catch (error) {
-      // Ignore
-    }
+    isolatedMemoryDir = await mkdtemp(join(tmpdir(), 'squid-mem-e2e-'));
+    process.env.SQUID_TEST_MEMORY_DIR = isolatedMemoryDir;
 
     conversationManager = new ConversationManager();
     await conversationManager.init();
@@ -30,13 +26,8 @@ describe('E2E: Memory Extraction Flow', () => {
   });
 
   afterAll(async () => {
-    // Clean up after test
-    try {
-      const configDir = join(homedir(), '.squid');
-      await rm(configDir, { recursive: true, force: true });
-    } catch (error) {
-      // Ignore
-    }
+    delete process.env.SQUID_TEST_MEMORY_DIR;
+    await rm(isolatedMemoryDir, { recursive: true, force: true }).catch(() => {});
   });
 
   it('should track conversation turns', async () => {

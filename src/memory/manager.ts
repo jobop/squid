@@ -212,6 +212,6 @@ export class MemoryManager {
     memory.metadata.updated = new Date().toISOString();
 
     await this.storage.writeMemory(memory.metadata.type, memory);
-    this.cache.set(id, memory);
+    this.invalidateCache();
   }
 }

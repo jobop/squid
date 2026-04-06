@@ -14,7 +14,7 @@ Jobopx Desktop 是一个 **AI 助手桌面应用**，可以帮你：
 ### 第 1 步：安装依赖
 
 ```bash
-cd jobopx-desktop
+cd squid
 npm install
 ```
 

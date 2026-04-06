@@ -1,6 +1,6 @@
 ## Context
 
-`jobopx-desktop` 已有本地技能读取、预览与安装基础接口（`TaskAPI.listSkills / previewSkill / installSkill`），但缺少“远程技能市场”能力。`openclaw-main` 在 `skills-clawhub.ts` 中已经形成较完整模式：远程搜索、安装、来源元数据（origin）、锁文件（lock）和更新路径。  
+`squid` 已有本地技能读取、预览与安装基础接口（`TaskAPI.listSkills / previewSkill / installSkill`），但缺少“远程技能市场”能力。`openclaw-main` 在 `skills-clawhub.ts` 中已经形成较完整模式：远程搜索、安装、来源元数据（origin）、锁文件（lock）和更新路径。  
 
 本次设计目标是在不破坏现有本地技能能力的前提下，引入“腾讯 SkillHub 浏览 + 一键安装”链路，并保留后续升级/更新能力的扩展空间。
 

@@ -133,7 +133,7 @@ export class BrowserChannelPlugin implements ChannelPlugin {
         body,
         icon: this.getTypeIcon(type),
         badge: '/icon.png',
-        tag: 'jobopx-notification',
+        tag: 'squid-notification',
         requireInteraction: false
       });
 

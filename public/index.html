@@ -3095,7 +3095,12 @@
 
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.content) {
+                if (parsed.queued) {
+                  const hint = parsed.message || '已加入执行队列';
+                  const pos = parsed.queuePosition != null ? `（序号 ${parsed.queuePosition}）` : '';
+                  renderMessageContent(assistantContent, '⏳ ' + hint + pos);
+                  fullText = ' ';
+                } else if (parsed.content) {
                   fullText += parsed.content;
                   renderMessageContent(assistantContent, fullText);
                   // 滚动到底部

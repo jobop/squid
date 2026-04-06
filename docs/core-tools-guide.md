@@ -1,6 +1,6 @@
 # 核心工具使用指南
 
-本文档介绍 jobopx-desktop 中新增的 10 个核心工具的用法和限制。
+本文档介绍 squid 中新增的 10 个核心工具的用法和限制。
 
 ## 1. FileEditTool (file_edit)
 

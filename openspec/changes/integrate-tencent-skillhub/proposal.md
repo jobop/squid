@@ -1,6 +1,6 @@
 ## Why
 
-当前 `jobopx-desktop` 的技能能力以本地管理为主，缺少类似 `openclaw-main` `skills-clawhub` 的“远程市场浏览 + 一键安装”闭环。接入腾讯 SkillHub 后，用户可以直接发现并安装技能，降低技能使用门槛并提升生态扩展速度。
+当前 `squid` 的技能能力以本地管理为主，缺少类似 `openclaw-main` `skills-clawhub` 的“远程市场浏览 + 一键安装”闭环。接入腾讯 SkillHub 后，用户可以直接发现并安装技能，降低技能使用门槛并提升生态扩展速度。
 
 ## What Changes
 

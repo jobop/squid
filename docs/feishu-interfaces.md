@@ -59,7 +59,7 @@
 
 ## 最小化实现策略
 
-对于 jobopx-desktop 的适配，我们只需要实现**核心消息收发功能**：
+对于 squid 的适配，我们只需要实现**核心消息收发功能**：
 
 ### 必须实现 (P0)
 1. **发送消息** - `sendMessageFeishu`
@@ -80,7 +80,7 @@
 ## 简化的接口映射
 
 ```typescript
-OpenClaw 接口                    →  jobopx-desktop 接口
+OpenClaw 接口                    →  squid 接口
 ─────────────────────────────────────────────────────────
 sendMessageFeishu()              →  FeishuChannelPlugin.outbound.sendText() + 开放平台 im/v1/messages
 监听 webhook                      →  POST /api/feishu/webhook → submitFeishuInboundToEventBridge()

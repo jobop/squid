@@ -1,12 +1,12 @@
 ## Context
 
 **当前状态：**
-- jobopx-desktop 已有基础的 channel 系统（`src/channels/`）
+- squid 已有基础的 channel 系统（`src/channels/`）
 - 定时任务和后台任务结果只输出到控制台
 - 聊天界面是独立的 UI 组件
 
 **核心需求：**
-1. OpenClaw 的飞书插件能直接在 jobopx-desktop 上运行
+1. OpenClaw 的飞书插件能直接在 squid 上运行
 2. 聊天框改造成插件，与引擎双向通信
 3. 用最简单的方式实现
 

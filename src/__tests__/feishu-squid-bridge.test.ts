@@ -13,6 +13,8 @@ describe('Feishu squid bridge', () => {
     executeTaskStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (c: string) => void) => {
       onChunk('reply-from-squid');
     }),
+    setChannelQueuedCompleteHandler: vi.fn(),
+    enqueueFromRequest: vi.fn().mockReturnValue(1),
   };
 
   beforeEach(() => {

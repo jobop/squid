@@ -1,5 +1,5 @@
 {
-  "name": "jobopx-desktop",
+  "name": "squid",
   "version": "0.1.0",
   "description": "AI-powered desktop workbench built with Electrobun",
   "main": "src/main.ts",

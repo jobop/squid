@@ -40,12 +40,12 @@
 
 合并两处（都存在则合并 `roots`；`enabled` 以 **~/.squid/channel-extensions.json 优先**）：
 
-1. `jobopx-desktop/config/channel-extensions.json`（可自建，参考 `config/channel-extensions.example.json`）
+1. `squid/config/channel-extensions.json`（可自建，参考 `config/channel-extensions.example.json`）
 2. `~/.squid/channel-extensions.json`
 
 字段：
 
-- **`roots`**：`string[]`，每个元素是包含**多个插件子目录**的父路径。可为绝对路径，或相对 **jobopx-desktop 仓库根目录** 的相对路径。
+- **`roots`**：`string[]`，每个元素是包含**多个插件子目录**的父路径。可为绝对路径，或相对 **squid 仓库根目录** 的相对路径。
 - **`enabled`**（可选）：若省略或 `null`，则所有通过校验的候选包都会尝试加载；若为 `[]`，则不加载任何扩展；若为非空数组，则**仅**加载列出的 `id`。
 
 ### 用户目录 `~/.squid/extensions`（无需写进 roots）

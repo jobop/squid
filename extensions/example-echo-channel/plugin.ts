@@ -4,7 +4,7 @@ import type { ChannelPlugin } from '../../src/channels/types';
 /**
  * 示例 Channel 扩展：注册后可在「渠道」页看到来源为「扩展」。
  * 启用方式：在 config/channel-extensions.json 或 ~/.squid/channel-extensions.json 中设置
- * "roots": ["extensions"]（相对 jobopx-desktop 根目录）并重启。
+ * "roots": ["extensions"]（相对 squid 仓库根目录）并重启。
  */
 export default async function createChannelPlugin(
   _ctx?: ChannelExtensionFactoryContext

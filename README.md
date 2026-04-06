@@ -19,7 +19,7 @@
 
 **squid** 是一款面向日常开发与办公的桌面端 AI 助手：在本地 WebView 中聊天、管理线程与工作目录，通过统一执行器调用工具与技能，并支持 Cron 调度与长期记忆。应用数据默认存放在用户主目录下的 **`~/.squid`**（配置、会话、技能、记忆等）。
 
-> 本仓库目录名为 `jobopx-desktop`，产品对外名称为 **squid**。
+> 本仓库目录名为 `squid`，产品对外名称为 **squid**。
 
 ## 功能
 
@@ -45,7 +45,7 @@
 ### 安装与启动
 
 ```bash
-cd jobopx-desktop
+cd squid
 npm install
 npm run dev
 ```

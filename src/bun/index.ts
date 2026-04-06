@@ -1,9 +1,12 @@
 // Electrobun backend entry point
+import { existsSync } from 'fs';
+import { dirname, join } from 'path';
+import { pathToFileURL } from 'url';
 import { BrowserWindow, ApplicationMenu } from 'electrobun/bun';
 import { ClawServer } from '../claw/server';
 import { CronScheduler } from '../scheduler/cron-scheduler';
 import { MCPConnectionManager } from '../mcp/connection-manager';
-import { TaskAPI } from '../api/task-api';
+import { TaskAPI, isTaskAPIConversationBusyError } from '../api/task-api';
 import {
   channelRegistry,
   discoverChannelExtensions,
@@ -23,6 +26,26 @@ import {
   toFeishuConfigPublicView,
 } from '../channels/feishu';
 import { cronManager } from '../tools/cron-manager';
+
+/**
+ * 开发态入口在 `src/bun`，打包后在 `Resources/app/bun` 且静态资源在 `Resources/app/public`。
+ * 固定 `../../public` 在打包后会指到 `Resources/public`（通常不存在）导致白屏。
+ */
+function resolvePublicIndexHtmlPath(): string {
+  let dir = import.meta.dir;
+  for (let i = 0; i < 14; i++) {
+    const candidate = join(dir, 'public', 'index.html');
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return join(import.meta.dir, '..', '..', 'public', 'index.html');
+}
 
 async function main() {
   console.log('squid - Backend starting...');
@@ -53,7 +76,8 @@ async function main() {
         try {
           const body = await req.json();
           const result = await taskAPI.executeTask(body);
-          return new Response(JSON.stringify(result), { headers });
+          const status = result.queued ? 202 : 200;
+          return new Response(JSON.stringify(result), { ...headers, status });
         } catch (error: any) {
           return new Response(JSON.stringify({
             success: false,
@@ -69,14 +93,30 @@ async function main() {
 
           const stream = new ReadableStream({
             async start(controller) {
+              const enc = new TextEncoder();
               try {
                 await taskAPI.executeTaskStream(body, (chunk: string) => {
-                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
                 });
-                controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+                controller.enqueue(enc.encode('data: [DONE]\n\n'));
                 controller.close();
-              } catch (error: any) {
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ error: error.message })}\n\n`));
+              } catch (error: unknown) {
+                if (isTaskAPIConversationBusyError(error)) {
+                  const pos = taskAPI.enqueueFromRequest(body, { source: 'user', priority: 'next' });
+                  const payload = JSON.stringify({
+                    queued: true,
+                    conversationId: error.conversationId,
+                    queuePosition: pos,
+                    message:
+                      '当前会话繁忙，已加入队列，将在上一任务结束后自动执行。',
+                  });
+                  controller.enqueue(enc.encode(`data: ${payload}\n\n`));
+                  controller.enqueue(enc.encode('data: [DONE]\n\n'));
+                  controller.close();
+                  return;
+                }
+                const msg = error instanceof Error ? error.message : String(error);
+                controller.enqueue(enc.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
                 controller.close();
               }
             }
@@ -769,14 +809,20 @@ async function main() {
 
   console.log(`API server started at http://localhost:${apiServer.port}`);
 
-  // Use absolute path
-  const htmlPath = '/Users/myidd007/My project/yaoc/jobopx-desktop/public/index.html';
+  const htmlPath = resolvePublicIndexHtmlPath();
+  if (!existsSync(htmlPath)) {
+    console.error(
+      '[squid] 未找到 UI：',
+      htmlPath,
+      '（请确认 electrobun.config.js 的 build.copy 已包含 public 目录）'
+    );
+  }
+  const htmlUrl = pathToFileURL(htmlPath).href;
   console.log('Loading HTML from:', htmlPath);
 
-  // Create main window with file URL
   const mainWindow = new BrowserWindow({
     title: 'squid',
-    url: `file://${htmlPath}`,
+    url: htmlUrl,
     width: 1200,
     height: 800
   } as any);
@@ -839,43 +885,23 @@ async function main() {
   await initializeBuiltinChannels();
   console.log('Channel system initialized (Feishu ↔ squid 入站桥接已注册)');
 
-  // 设置 cronManager 的通知回调，连接到 EventBridge
-  cronManager.setNotificationCallback((taskId: string, content: string) => {
-    console.log(`[CronManager] 任务 ${taskId} 执行完成`);
-    // 避免重复推送：执行器内部已经通过 TaskExecutor 上报 task:complete 事件。
-    // 这里保留日志即可，UI 侧只展示一次完成消息。
-  });
-
-  // 设置 cronManager 的任务执行器
-  cronManager.setTaskExecutor(async (prompt: string, taskId: string) => {
-    console.log(`[CronManager] 执行定时任务 ${taskId}: ${prompt}`);
-
-    try {
-      const workspaceConfig = await taskAPI.getWorkspaceConfig();
-      const workspace = workspaceConfig.workspace || process.cwd();
-
-      // 调用 TaskAPI 执行任务
-      const result = await taskAPI.executeTask({
-        mode: 'ask',
-        workspace,
-        instruction: prompt,
-        conversationId: undefined, // 定时任务使用独立的对话
+  taskAPI.setCronQueuedCompletionHandler((taskId, success, result) => {
+    console.log(
+      `[CronManager] 队列执行任务 ${taskId} 完成 success=${success} result=${result}`
+    );
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(success ? '定时任务完成' : '定时任务失败', {
+        body: result,
+        icon: '/icon.png',
       });
-
-      return {
-        success: result.success && !result.error,
-        result: result.output || result.error || '任务执行完成',
-      };
-    } catch (error) {
-      console.error(`[CronManager] 任务执行失败:`, error);
-      return {
-        success: false,
-        result: (error as Error).message,
-      };
     }
   });
 
-  console.log('CronManager notification callback and task executor set');
+  cronManager.setEnqueueDrainNotifier((conversationId) => {
+    taskAPI.kickConversationQueueDrain(conversationId);
+  });
+
+  console.log('CronManager enqueue drain notifier + TaskAPI cron completion handler set');
 
   console.log('Backend initialized successfully');
 }

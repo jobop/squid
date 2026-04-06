@@ -28,6 +28,31 @@ import type {
   TencentSkillHubCatalogResponse,
   TencentSkillHubInstallResult
 } from '../skills/tencent-skillhub-types';
+import {
+  enqueue,
+  enqueuePendingNotification,
+  getConversationQueueLength,
+  type QueuedCommand,
+  type QueuedCommandSource,
+  type QueuePriority,
+} from '../utils/messageQueueManager';
+
+/** 同会话已有执行中任务时抛出，由 HTTP / Channel 捕获并入队 */
+export class TaskAPIConversationBusyError extends Error {
+  readonly conversationId: string;
+
+  constructor(conversationId: string) {
+    super(`conversation busy: ${conversationId}`);
+    this.name = 'TaskAPIConversationBusyError';
+    this.conversationId = conversationId;
+  }
+}
+
+export function isTaskAPIConversationBusyError(
+  e: unknown
+): e is TaskAPIConversationBusyError {
+  return e instanceof TaskAPIConversationBusyError;
+}
 
 export interface TaskRequest {
   mode: TaskMode;
@@ -46,6 +71,10 @@ export interface TaskResponse {
   output?: string;
   error?: string;
   files?: string[];
+  /** 为 true 表示已排入该会话队列，未立即执行 */
+  queued?: boolean;
+  queuePosition?: number;
+  conversationId?: string;
 }
 
 export interface TaskListItem {
@@ -77,6 +106,10 @@ export class TaskAPI {
   private memoryManager: MemoryManager;
   private tasks: Map<string, TaskListItem> = new Map();
   private currentConversationId: string | null = null;
+  /** 与队列分桶键一致：同一会话同时仅一条 execute 路径 */
+  private readonly runningConversations = new Set<string>();
+  private onCronQueuedComplete?: (taskId: string, success: boolean, result: string) => void;
+  private onChannelQueuedComplete?: (cmd: QueuedCommand, assistantText: string) => void;
 
   constructor() {
     this.skillLoader = new SkillLoader();
@@ -155,6 +188,133 @@ export class TaskAPI {
     } else {
       await this.conversationManager.setConversationWorkspace(conversationId, workspace);
     }
+  }
+
+  /**
+   * 定时任务经队列执行完成后的回调（由 bun 注册，用于日志 / 系统通知）
+   */
+  setCronQueuedCompletionHandler(
+    handler: ((taskId: string, success: boolean, result: string) => void) | undefined
+  ): void {
+    this.onCronQueuedComplete = handler;
+  }
+
+  /** 队列中执行的流式任务完成后回调（用于飞书等渠道回贴） */
+  setChannelQueuedCompleteHandler(
+    handler: ((cmd: QueuedCommand, assistantText: string) => void) | undefined
+  ): void {
+    this.onChannelQueuedComplete = handler;
+  }
+
+  resolveConversationIdForQueue(request: TaskRequest): string {
+    const fromReq = request.conversationId?.trim();
+    if (fromReq) return fromReq;
+    if (this.currentConversationId) return this.currentConversationId;
+    return '__squid_default_conversation__';
+  }
+
+  isConversationBusy(conversationId: string): boolean {
+    return this.runningConversations.has(conversationId);
+  }
+
+  /**
+   * 将请求排入会话队列，返回入队后的队列深度（含本条）
+   */
+  enqueueFromRequest(
+    request: TaskRequest,
+    meta: {
+      source: QueuedCommandSource;
+      taskId?: string;
+      isMeta?: boolean;
+      priority?: QueuePriority;
+      feishuChatId?: string;
+    }
+  ): number {
+    const cid = this.resolveConversationIdForQueue(request);
+    const cmd: QueuedCommand = {
+      conversationId: cid,
+      value: request.instruction,
+      mode: request.mode,
+      workspace: request.workspace,
+      expertId: request.expertId,
+      skill: request.skill,
+      source: meta.source,
+      taskId: meta.taskId,
+      isMeta: meta.isMeta,
+      priority: meta.priority,
+      feishuChatId: meta.feishuChatId,
+    };
+    const useLater = meta.priority === 'later' || meta.source === 'cron';
+    if (useLater) {
+      enqueuePendingNotification(cmd);
+    } else {
+      enqueue(cmd);
+    }
+    const len = getConversationQueueLength(cid);
+    this.scheduleDrain(cid);
+    return len;
+  }
+
+  /** 非 enqueueFromRequest 路径入队后调用（如 cron 直接写 messageQueueManager） */
+  kickConversationQueueDrain(conversationId: string): void {
+    this.scheduleDrain(conversationId);
+  }
+
+  /** 队列处理器调用：从 QueuedCommand 走流式执行（内部仍会占会话锁） */
+  async runFromQueue(cmd: QueuedCommand): Promise<void> {
+    let w = cmd.workspace?.trim();
+    if (!w) {
+      try {
+        const ws = await this.getWorkspaceConfig();
+        w = ws.workspace?.trim() || process.cwd();
+      } catch {
+        w = process.cwd();
+      }
+    }
+    const workspace = w ?? process.cwd();
+    let streamedAssistant = '';
+    try {
+      if (cmd.source === 'cron') {
+        await this.prepareExternalConversation(cmd.conversationId, workspace);
+      }
+      await this.executeTaskStream(
+        {
+          mode: cmd.mode ?? 'ask',
+          workspace,
+          instruction: cmd.value,
+          conversationId: cmd.conversationId,
+          expertId: cmd.expertId,
+          skill: cmd.skill,
+        },
+        (chunk) => {
+          streamedAssistant += chunk;
+        }
+      );
+      if (cmd.feishuChatId?.trim() && this.onChannelQueuedComplete) {
+        try {
+          this.onChannelQueuedComplete(cmd, streamedAssistant);
+        } catch (cbErr) {
+          console.error('[TaskAPI] onChannelQueuedComplete failed', cbErr);
+        }
+      }
+      if (cmd.source === 'cron' && cmd.taskId && this.onCronQueuedComplete) {
+        this.onCronQueuedComplete(cmd.taskId, true, '任务执行完成');
+      }
+    } catch (e) {
+      if (cmd.source === 'cron' && cmd.taskId && this.onCronQueuedComplete) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.onCronQueuedComplete(cmd.taskId, false, msg);
+      }
+      throw e;
+    }
+  }
+
+  private scheduleDrain(conversationId: string): void {
+    void import('../utils/queueProcessor')
+      .then(({ processConversationQueueIfReady }) =>
+        processConversationQueueIfReady(this, conversationId)
+      )
+      .catch((err) => console.error('[TaskAPI] scheduleDrain failed', err));
   }
 
   async listTasks(): Promise<TaskListItem[]> {
@@ -525,165 +685,179 @@ user-invocable: true
   }
 
   async executeTask(request: TaskRequest): Promise<TaskResponse> {
-    try {
-      console.log('Executing task:', request);
-
-      // Generate task ID
-      const taskId = Date.now().toString();
-
-      // Store task
-      this.tasks.set(taskId, {
-        id: taskId,
-        instruction: request.instruction,
-        mode: request.mode,
-        status: 'running',
-        createdAt: new Date().toISOString(),
-        workspace: request.workspace,
-        expertId: request.expertId
-      });
-
-      // Validate workspace
-      const sandbox = new WorkspaceSandbox(request.workspace);
-      await sandbox.validatePath(request.workspace);
-
-      // Execute task
-      const result = await this.executor.execute({
-        mode: request.mode,
-        instruction: request.instruction,
-        workspace: request.workspace,
-      });
-
-      // Update task status
-      const task = this.tasks.get(taskId);
-      if (task) {
-        task.status = result.error ? 'failed' : 'completed';
-      }
-
-      if (result.error) {
-        return {
-          success: false,
-          error: result.error,
-          output: result.output,
-          files: result.files || []
-        };
-      }
-
+    const cid = this.resolveConversationIdForQueue(request);
+    if (this.runningConversations.has(cid)) {
+      const pos = this.enqueueFromRequest(request, { source: 'user', priority: 'next' });
       return {
         success: true,
-        output: result.output,
-        files: result.files || []
+        queued: true,
+        queuePosition: pos,
+        conversationId: cid,
       };
-    } catch (error: any) {
-      console.error('Task execution failed:', error);
+    }
+    this.runningConversations.add(cid);
+    try {
+      try {
+        console.log('Executing task:', request);
 
-      // Update task status
-      const taskId = Array.from(this.tasks.values()).find(t => t.status === 'running')?.id;
-      if (taskId) {
+        const taskId = Date.now().toString();
+
+        this.tasks.set(taskId, {
+          id: taskId,
+          instruction: request.instruction,
+          mode: request.mode,
+          status: 'running',
+          createdAt: new Date().toISOString(),
+          workspace: request.workspace,
+          expertId: request.expertId,
+        });
+
+        const sandbox = new WorkspaceSandbox(request.workspace);
+        await sandbox.validatePath(request.workspace);
+
+        const result = await this.executor.execute({
+          mode: request.mode,
+          instruction: request.instruction,
+          workspace: request.workspace,
+        });
+
         const task = this.tasks.get(taskId);
         if (task) {
-          task.status = 'failed';
+          task.status = result.error ? 'failed' : 'completed';
         }
-      }
 
-      return {
-        success: false,
-        error: error.message || 'Unknown error'
-      };
+        if (result.error) {
+          return {
+            success: false,
+            error: result.error,
+            output: result.output,
+            files: result.files || [],
+          };
+        }
+
+        return {
+          success: true,
+          output: result.output,
+          files: result.files || [],
+        };
+      } catch (error: any) {
+        console.error('Task execution failed:', error);
+
+        const taskId = Array.from(this.tasks.values()).find((t) => t.status === 'running')?.id;
+        if (taskId) {
+          const task = this.tasks.get(taskId);
+          if (task) {
+            task.status = 'failed';
+          }
+        }
+
+        return {
+          success: false,
+          error: error.message || 'Unknown error',
+        };
+      }
+    } finally {
+      this.runningConversations.delete(cid);
+      this.scheduleDrain(cid);
     }
   }
 
   async executeTaskStream(request: TaskRequest, onChunk: (chunk: string) => void): Promise<void> {
+    const cid = this.resolveConversationIdForQueue(request);
+    if (this.runningConversations.has(cid)) {
+      throw new TaskAPIConversationBusyError(cid);
+    }
+    this.runningConversations.add(cid);
+    const normalizedRequest =
+      request.conversationId === '__squid_default_conversation__'
+        ? { ...request, conversationId: undefined }
+        : request;
     try {
-      // 模型凭证只来自 ~/.squid/config.json（model 段），不由 Channel 传入
-      const modelConfig = await this.getModelConfig();
-      const apiKey = (modelConfig.apiKey || '').trim();
-      const baseURL = request.baseURL || modelConfig.apiEndpoint;
-      const modelName = request.modelName || modelConfig.modelName;
+      try {
+        const modelConfig = await this.getModelConfig();
+        const apiKey = (modelConfig.apiKey || '').trim();
+        const baseURL = normalizedRequest.baseURL || modelConfig.apiEndpoint;
+        const modelName = normalizedRequest.modelName || modelConfig.modelName;
 
-      console.log(
-        '[LLM] TaskAPI.executeTaskStream 开始 workspace=%s conversationId=%s model.provider=%s apiKey已配置=%s',
-        request.workspace,
-        request.conversationId || '(默认会话)',
-        modelConfig.provider || '(无)',
-        apiKey ? '是' : '否'
-      );
+        console.log(
+          '[LLM] TaskAPI.executeTaskStream 开始 workspace=%s conversationId=%s model.provider=%s apiKey已配置=%s',
+          normalizedRequest.workspace,
+          normalizedRequest.conversationId || '(默认会话)',
+          modelConfig.provider || '(无)',
+          apiKey ? '是' : '否'
+        );
 
-      if (apiKey) {
-        this.conversationManager.setApiKey(apiKey, baseURL, modelName);
-      }
-
-      // 创建或获取对话
-      let conversationId = request.conversationId || this.currentConversationId;
-      if (!conversationId) {
-        conversationId = await this.conversationManager.createConversation(request.workspace);
-        this.currentConversationId = conversationId;
-      } else if (request.workspace) {
-        await this.conversationManager.setConversationWorkspace(conversationId, request.workspace);
-      }
-
-      // 添加用户消息到对话历史
-      await this.conversationManager.addMessage(conversationId, 'user', request.instruction);
-
-      // 获取对话历史
-      const conversationHistory = this.conversationManager.getMessages(conversationId);
-
-      // Generate task ID
-      const taskId = Date.now().toString();
-
-      // Store task
-      this.tasks.set(taskId, {
-        id: taskId,
-        instruction: request.instruction,
-        mode: request.mode,
-        status: 'running',
-        createdAt: new Date().toISOString(),
-        workspace: request.workspace,
-        expertId: request.expertId
-      });
-
-      console.log('[LLM] TaskAPI 校验 workspace: %s', request.workspace);
-      const sandbox = new WorkspaceSandbox(request.workspace);
-      await sandbox.validatePath(request.workspace);
-
-      // 收集完整的响应
-      let fullResponse = '';
-
-      console.log('[LLM] TaskAPI → TaskExecutor.executeStream（模型凭证仅来自 ~/.squid/config.json）');
-
-      await this.executor.executeStream(
-        {
-          mode: request.mode,
-          instruction: request.instruction,
-          workspace: request.workspace,
-          conversationHistory,
-        },
-        (chunk: string) => {
-          fullResponse += chunk;
-          onChunk(chunk);
+        if (apiKey) {
+          this.conversationManager.setApiKey(apiKey, baseURL, modelName);
         }
-      );
 
-      // 添加助手响应到对话历史
-      await this.conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+        let conversationId = normalizedRequest.conversationId || this.currentConversationId;
+        if (!conversationId) {
+          conversationId = await this.conversationManager.createConversation(normalizedRequest.workspace);
+          this.currentConversationId = conversationId;
+        } else if (normalizedRequest.workspace) {
+          await this.conversationManager.setConversationWorkspace(conversationId, normalizedRequest.workspace);
+        }
 
-      // Update task status
-      const task = this.tasks.get(taskId);
-      if (task) {
-        task.status = 'completed';
-      }
-    } catch (error: any) {
-      console.error('Task execution failed:', error);
+        await this.conversationManager.addMessage(conversationId, 'user', normalizedRequest.instruction);
 
-      // Update task status
-      const taskId = Array.from(this.tasks.values()).find(t => t.status === 'running')?.id;
-      if (taskId) {
+        const conversationHistory = this.conversationManager.getMessages(conversationId);
+
+        const taskId = Date.now().toString();
+
+        this.tasks.set(taskId, {
+          id: taskId,
+          instruction: normalizedRequest.instruction,
+          mode: normalizedRequest.mode,
+          status: 'running',
+          createdAt: new Date().toISOString(),
+          workspace: normalizedRequest.workspace,
+          expertId: normalizedRequest.expertId,
+        });
+
+        console.log('[LLM] TaskAPI 校验 workspace: %s', normalizedRequest.workspace);
+        const sandbox = new WorkspaceSandbox(normalizedRequest.workspace);
+        await sandbox.validatePath(normalizedRequest.workspace);
+
+        let fullResponse = '';
+
+        console.log('[LLM] TaskAPI → TaskExecutor.executeStream（模型凭证仅来自 ~/.squid/config.json）');
+
+        await this.executor.executeStream(
+          {
+            mode: normalizedRequest.mode,
+            instruction: normalizedRequest.instruction,
+            workspace: normalizedRequest.workspace,
+            conversationHistory,
+          },
+          (chunk: string) => {
+            fullResponse += chunk;
+            onChunk(chunk);
+          }
+        );
+
+        await this.conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+
         const task = this.tasks.get(taskId);
         if (task) {
-          task.status = 'failed';
+          task.status = 'completed';
         }
-      }
+      } catch (error: any) {
+        console.error('Task execution failed:', error);
 
-      throw error;
+        const taskId = Array.from(this.tasks.values()).find((t) => t.status === 'running')?.id;
+        if (taskId) {
+          const task = this.tasks.get(taskId);
+          if (task) {
+            task.status = 'failed';
+          }
+        }
+
+        throw error;
+      }
+    } finally {
+      this.runningConversations.delete(cid);
+      this.scheduleDrain(cid);
     }
   }
 

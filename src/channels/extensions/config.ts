@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import type { ChannelExtensionsFileConfig, MergedChannelExtensionsRuntime } from './types';
 
 /**
- * 显式指定项目根（打包后 bundle 不在源码树内时，或安装路径无向上可解析的 config 时使用）。
- * 须指向含 `config/channel-extensions.json` 的目录。
+ * 显式指定 squid 项目根（打包后 bundle 不在源码树内时，或安装路径无向上可解析的 config 时使用）。
+ * 须指向含 `config/channel-extensions.json` 的目录。环境变量名：`SQUID_ROOT`。
  */
-export const JOBOPX_DESKTOP_ROOT_ENV = 'JOBOPX_DESKTOP_ROOT';
+export const SQUID_ROOT_ENV = 'SQUID_ROOT';
 
 function findRootByChannelExtensionsMarker(startDir: string): string | null {
   let dir = startDir;
@@ -24,12 +24,12 @@ function findRootByChannelExtensionsMarker(startDir: string): string | null {
 }
 
 /**
- * jobopx-desktop 项目根（含 `config/channel-extensions.json`，用于解析扩展 roots）。
+ * squid 仓库根（含 `config/channel-extensions.json`，用于解析扩展 roots）。
  * Electrobun 打包后 `import.meta.url` 在 `Resources/app/bun/` 下，不能再用固定 `../../..`；
  * 改为从当前模块路径向上查找配置文件（开发构建通常仍能落到仓库根）。
  */
-export function getJobopxDesktopRoot(): string {
-  const env = process.env[JOBOPX_DESKTOP_ROOT_ENV]?.trim();
+export function getSquidProjectRoot(): string {
+  const env = process.env[SQUID_ROOT_ENV]?.trim();
   if (env && existsSync(join(env, 'config', 'channel-extensions.json'))) {
     return env;
   }
@@ -67,7 +67,7 @@ function readIfExists(path: string): ChannelExtensionsFileConfig | null {
  * enabled：用户文件含 `enabled` 键时优先生效，否则用项目文件；两侧都未写 `enabled` 键则 enabledExplicit=false（不启用白名单，扫描到的均可加载）。
  */
 export function loadChannelExtensionsConfigMerged(): MergedChannelExtensionsRuntime {
-  const projectPath = join(getJobopxDesktopRoot(), 'config', 'channel-extensions.json');
+  const projectPath = join(getSquidProjectRoot(), 'config', 'channel-extensions.json');
   const userPath = join(homedir(), '.squid', 'channel-extensions.json');
 
   const project = readIfExists(projectPath);
@@ -120,9 +120,9 @@ export function saveUserChannelExtensionsEnabled(enabledIds: string[]): { ok: bo
   }
 }
 
-/** 将 roots 中的相对路径解析为相对于 jobopx 根目录的绝对路径 */
+/** 将 roots 中的相对路径解析为相对于 squid 仓库根的绝对路径 */
 export function resolveExtensionRoots(roots: string[]): string[] {
-  const base = getJobopxDesktopRoot();
+  const base = getSquidProjectRoot();
   return roots.map((r) => (r.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(r) ? r : resolve(base, r)));
 }
 

@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  getJobopxDesktopRoot,
+  getSquidProjectRoot,
   getSquidUserExtensionsRoot,
   mergeEffectiveExtensionRoots,
 } from '../channels/extensions/config';
@@ -54,9 +54,9 @@ describe('isPathInsideOrEqualChild', () => {
   });
 });
 
-describe('getJobopxDesktopRoot', () => {
+describe('getSquidProjectRoot', () => {
   it('向上解析到含 config/channel-extensions.json 的仓库根（打包后路径也能落到开发树）', () => {
-    const root = getJobopxDesktopRoot();
+    const root = getSquidProjectRoot();
     expect(existsSync(join(root, 'config', 'channel-extensions.json'))).toBe(true);
     expect(existsSync(join(root, 'extensions', 'feishu', 'channel-plugin.json'))).toBe(true);
   });

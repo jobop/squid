@@ -1,6 +1,6 @@
 ## Context
 
-当前 jobopx-desktop 有 5 个基础工具（ReadFile, WriteFile, Grep, Glob, SaveMemory），但缺少网络访问能力。用户在开发过程中经常需要查阅在线文档、API 参考等，目前只能手动复制粘贴。
+当前 squid 有 5 个基础工具（ReadFile, WriteFile, Grep, Glob, SaveMemory），但缺少网络访问能力。用户在开发过程中经常需要查阅在线文档、API 参考等，目前只能手动复制粘贴。
 
 claude-code-main 实现了成熟的 WebFetchTool，具备：
 - HTML 到 Markdown 转换

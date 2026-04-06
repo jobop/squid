@@ -15,7 +15,7 @@ import { eventBridge } from '../bridge/event-bridge';
 /**
  * OpenClaw 插件适配器
  *
- * 将 OpenClaw channel 插件适配为 jobopx-desktop 的 ChannelPlugin 接口
+ * 将 OpenClaw channel 插件适配为 squid 的 ChannelPlugin 接口
  */
 export class OpenClawChannelAdapter implements ChannelPlugin {
   id: string;

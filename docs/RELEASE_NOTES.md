@@ -72,7 +72,7 @@
 ```bash
 # 克隆仓库
 git clone <repository-url>
-cd jobopx-desktop
+cd squid
 
 # 安装依赖
 npm install

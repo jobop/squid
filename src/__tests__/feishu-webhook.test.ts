@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { eventBridge, CHANNEL_INBOUND_EVENT } from '../channels/bridge/event-bridge';
+import { eventBridge } from '../channels/bridge/event-bridge';
 import * as feishuConfigStore from '../../extensions/feishu/src/config-store';
 import { handleFeishuWebhookRequest } from '../channels/feishu';
 
@@ -38,7 +38,7 @@ describe('Feishu webhook', () => {
   });
 
   it('验签失败时不应 emit channel:inbound', async () => {
-    const emitSpy = vi.spyOn(eventBridge, 'emit');
+    const inboundSpy = vi.spyOn(eventBridge, 'emitChannelInbound');
     const rawBody = JSON.stringify({ type: 'url_verification', challenge: 'c1', token: 'verify_tok' });
     const badHeaders = signFeishuBody(rawBody, 'wrong_key');
 
@@ -50,11 +50,11 @@ describe('Feishu webhook', () => {
 
     const res = await handleFeishuWebhookRequest(req);
     expect(res.status).toBe(401);
-    expect(emitSpy).not.toHaveBeenCalledWith(CHANNEL_INBOUND_EVENT, expect.anything());
+    expect(inboundSpy).not.toHaveBeenCalled();
   });
 
   it('合法 im.message.receive_v1 经 Adapter 投递 channel:inbound', async () => {
-    const emitSpy = vi.spyOn(eventBridge, 'emit');
+    const inboundSpy = vi.spyOn(eventBridge, 'emitChannelInbound');
     const inner = {
       schema: '2.0',
       header: { event_type: 'im.message.receive_v1' },
@@ -78,8 +78,7 @@ describe('Feishu webhook', () => {
 
     const res = await handleFeishuWebhookRequest(req);
     expect(res.status).toBe(200);
-    expect(emitSpy).toHaveBeenCalledWith(
-      CHANNEL_INBOUND_EVENT,
+    expect(inboundSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         channelId: 'feishu',
         text: 'hello-feishu',

@@ -1,6 +1,6 @@
 ## Context
 
-当前 jobopx-desktop 只有 6 个基础工具（ReadFile, WriteFile, Glob, Grep, SaveMemory, WebFetch），功能相对有限。claude-code-main 拥有 40+ 个成熟工具，涵盖文件操作、命令执行、网络访问、任务管理等多个领域。
+当前 squid 只有 6 个基础工具（ReadFile, WriteFile, Glob, Grep, SaveMemory, WebFetch），功能相对有限。claude-code-main 拥有 40+ 个成熟工具，涵盖文件操作、命令执行、网络访问、任务管理等多个领域。
 
 本次设计目标是补齐 10 个核心工具，提升系统的实用性。这些工具都是独立的，不涉及架构变更，可以逐个实现和测试。
 

@@ -1,14 +1,14 @@
 // Memory extraction integration tests
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { MemoryExtractor } from '../memory/extractor';
 import { MemoryManager } from '../memory/manager';
 import { ExtractionMarker } from '../memory/extraction-marker';
 import { ConfigManager } from '../memory/config-manager';
 import { AutoMemoryManager } from '../memory/auto-manager';
 import type { Message } from '../conversation/manager';
-import { unlink, rm } from 'fs/promises';
+import { unlink, rm, mkdtemp } from 'fs/promises';
 import { join } from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 
 describe('Memory Extraction System', () => {
   let memoryManager: MemoryManager;
@@ -16,6 +16,17 @@ describe('Memory Extraction System', () => {
   let marker: ExtractionMarker;
   let configManager: ConfigManager;
   let autoManager: AutoMemoryManager;
+  let isolatedMemoryDir: string;
+
+  beforeAll(async () => {
+    isolatedMemoryDir = await mkdtemp(join(tmpdir(), 'squid-mem-ext-'));
+    process.env.SQUID_TEST_MEMORY_DIR = isolatedMemoryDir;
+  });
+
+  afterAll(async () => {
+    delete process.env.SQUID_TEST_MEMORY_DIR;
+    await rm(isolatedMemoryDir, { recursive: true, force: true }).catch(() => {});
+  });
 
   beforeEach(async () => {
     memoryManager = new MemoryManager();
@@ -33,20 +44,20 @@ describe('Memory Extraction System', () => {
   });
 
   afterEach(async () => {
-    // Clean up test data - delete memory files but keep directory structure
+    // Clean up test data — 与 MemoryStorage 实际目录一致（含 SQUID_TEST_MEMORY_DIR）
     try {
-      const memoryDir = join(homedir(), '.squid', 'memory');
+      const memoryDir =
+        process.env.SQUID_TEST_MEMORY_DIR?.trim() ||
+        join(homedir(), '.squid', 'memory');
       const types = ['user', 'feedback', 'project', 'reference'];
+      const { unlink: unlinkFile } = await import('fs/promises');
 
       for (const type of types) {
-        const typeDir = join(memoryDir, type);
         try {
-          const { readdir, unlink } = await import('fs/promises');
-          const files = await readdir(typeDir);
-          for (const file of files) {
-            await unlink(join(typeDir, file));
-          }
-        } catch {}
+          await unlinkFile(join(memoryDir, `${type}.json`));
+        } catch {
+          /* 文件可能不存在 */
+        }
       }
 
       // Clean up index file

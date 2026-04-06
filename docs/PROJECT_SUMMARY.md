@@ -145,7 +145,7 @@ Duration    658ms
 ## 项目结构
 
 ```
-jobopx-desktop/
+squid/
 ├── src/
 │   ├── tasks/           # 任务管理
 │   ├── models/          # AI 模型适配器
