@@ -1,0 +1,6 @@
+{
+  "botToken": "REPLACE_WITH_BOTFATHER_TOKEN",
+  "defaultChatId": "",
+  "allowedChatIds": ["123456789"],
+  "apiBase": "https://api.telegram.org"
+}

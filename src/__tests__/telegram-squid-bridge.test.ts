@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eventBridge } from '../channels/bridge/event-bridge';
-import * as configStore from '../../extensions/feishu/src/config-store';
-import * as larkClient from '../../extensions/feishu/src/lark-client';
-import { registerFeishuSquidBridge } from '../channels/feishu';
+import * as configStore from '../../extensions/telegram/src/config-store';
+import * as tgClient from '../../extensions/telegram/src/telegram-client';
+import { registerTelegramSquidBridge } from '../channels/telegram';
 
-describe('Feishu squid bridge', () => {
-  const sendSpy = vi.spyOn(larkClient, 'sendFeishuTextMessageTo');
+describe('Telegram squid bridge', () => {
+  const sendSpy = vi.spyOn(tgClient, 'telegramSendMessage');
 
   const taskAPI = {
     getWorkspaceConfig: vi.fn().mockResolvedValue({ workspace: '/tmp' }),
@@ -19,11 +19,9 @@ describe('Feishu squid bridge', () => {
   };
 
   beforeEach(() => {
-    vi.spyOn(configStore, 'loadFeishuChannelConfigSync').mockReturnValue({
-      appId: 'cli_x',
-      appSecret: 'sec',
-      defaultReceiveId: 'oc_default',
-      defaultReceiveIdType: 'chat_id',
+    vi.spyOn(configStore, 'loadTelegramChannelConfigSync').mockReturnValue({
+      botToken: '123:ABC',
+      apiBase: 'https://api.telegram.org',
     });
     sendSpy.mockResolvedValue({ success: true });
   });
@@ -33,12 +31,12 @@ describe('Feishu squid bridge', () => {
   });
 
   it('channel:inbound 应调用 executeTaskStream 并向同一 chat 发回复', async () => {
-    const off = registerFeishuSquidBridge(taskAPI as any);
+    const off = registerTelegramSquidBridge(taskAPI as any);
     try {
       eventBridge.emitChannelInbound({
-        channelId: 'feishu',
+        channelId: 'telegram',
         text: '你好',
-        chatId: 'oc_bridge_test',
+        chatId: '999001',
       });
 
       await vi.waitFor(
@@ -50,14 +48,14 @@ describe('Feishu squid bridge', () => {
       );
 
       expect(taskAPI.prepareExternalConversation).toHaveBeenCalledWith(
-        'feishubot_oc_bridge_test',
+        'telegrambot_999001',
         '/tmp'
       );
       expect(sendSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ appId: 'cli_x' }),
+        '123:ABC',
+        '999001',
         'reply-from-squid',
-        'oc_bridge_test',
-        'chat_id'
+        expect.objectContaining({ apiBase: 'https://api.telegram.org' })
       );
     } finally {
       off();

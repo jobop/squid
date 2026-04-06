@@ -1,3 +1,4 @@
+import type { TaskAPI } from '../../api/task-api';
 import type { EventBridge } from '../bridge/event-bridge';
 import type { ChannelCapabilities } from '../types';
 
@@ -5,8 +6,10 @@ import type { ChannelCapabilities } from '../types';
  * 动态 import 扩展时传入的宿主上下文（主进程 bundle 与扩展 bundle 非同一模块图时必须注入）。
  */
 export type ChannelExtensionFactoryContext = {
-  /** 与 registerFeishuSquidBridge 等共用的唯一 EventBridge；扩展内勿仅依赖对 event-bridge 的静态 import */
+  /** 与各渠道 squid-bridge 共用的唯一 EventBridge；扩展内勿仅依赖对 event-bridge 的静态 import */
   eventBridge: EventBridge;
+  /** 宿主 TaskAPI；需要入站→Task 的扩展在 `setup.initialize` 内自行 `registerXxxSquidBridge(taskAPI)`，宿主无需逐渠道 import */
+  taskAPI?: TaskAPI;
 };
 
 /** 根目录下子文件夹内的 channel-plugin.json */

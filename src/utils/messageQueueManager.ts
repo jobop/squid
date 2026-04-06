@@ -8,6 +8,16 @@ export type QueuePriority = 'now' | 'next' | 'later';
 
 export type QueuedCommandSource = 'user' | 'cron' | 'channel' | string;
 
+/**
+ * 队列任务跑完后，由已注册的渠道 handler 按 `channelId` 决定是否回贴。
+ * 核心只存结构与广播；新渠道在扩展内 `addChannelQueuedCompleteHandler` + 入队时带 `channelReply` 即可，勿再往 QueuedCommand 加字段。
+ */
+export interface ChannelQueueReply {
+  channelId: string;
+  /** 路由键（如 chat_id）；核心不解析，由各渠道桥接使用 */
+  chatId: string;
+}
+
 export interface QueuedCommand {
   /** 路由键：同一会话内 FIFO + 优先级，不阻塞其它会话 */
   conversationId: string;
@@ -20,8 +30,8 @@ export interface QueuedCommand {
   workspace?: string;
   expertId?: string;
   skill?: string;
-  /** 若设置，队列执行完成后由 TaskAPI 回调飞书发回（见 setChannelQueuedCompleteHandler） */
-  feishuChatId?: string;
+  /** 若设置，队列执行完成后由 TaskAPI 向已注册的 channel 完成回调广播（见 addChannelQueuedCompleteHandler） */
+  channelReply?: ChannelQueueReply;
 }
 
 const PRIORITY_ORDER: Record<QueuePriority, number> = {

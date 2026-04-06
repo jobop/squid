@@ -16,7 +16,6 @@ import {
   handleFeishuWebhookRequest,
   initializeBuiltinChannels,
   loadChannelExtensionsConfigMerged,
-  registerFeishuSquidBridge,
   reloadChannelExtensions,
   saveUserChannelExtensionsEnabled,
 } from '../channels/index';
@@ -880,10 +879,8 @@ async function main() {
   // Initialize scheduler
   const scheduler = new CronScheduler();
 
-  // 先入站桥接后启扩展，避免飞书 WS 在刚连上时早于监听器注册而丢事件
-  registerFeishuSquidBridge(taskAPI);
-  await initializeBuiltinChannels();
-  console.log('Channel system initialized (Feishu ↔ squid 入站桥接已注册)');
+  await initializeBuiltinChannels(taskAPI);
+  console.log('Channel system initialized（扩展在 setup 内自行注册 squid-bridge）');
 
   taskAPI.setCronQueuedCompletionHandler((taskId, success, result) => {
     console.log(

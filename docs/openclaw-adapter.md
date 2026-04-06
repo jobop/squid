@@ -51,7 +51,7 @@ squid 内置 **飞书开放平台直连**（`FeishuChannelPlugin`），不依赖
 
 **默认**由 `FeishuChannelPlugin` 启动 **WebSocket 长连接**（`feishu-ws-inbound.ts`）收事件，再经同一 Adapter 投递；仅在 `connectionMode: webhook` 时使用 HTTP 路由 `POST /api/feishu/webhook`，在校验签名（及可选解密）后**仅**调用上述函数。
 
-**squid 内置桥接**：`registerFeishuSquidBridge(taskAPI)`（在 `src/bun/index.ts` 启动时注册）订阅 `channel:inbound`，将用户文本交给 `TaskAPI.executeTaskStream`（`conversationId` 为 `feishubot_<chatId>`），并把模型回复用 `sendFeishuTextMessageTo` 发回**同一群/会话**。扩展行为可另订阅 `eventBridge.onChannelInbound`。
+**squid 飞书桥接**：`registerFeishuSquidBridge(taskAPI)` 由飞书扩展在 `setup.initialize` 内调用（`TaskAPI` 经 `initializeBuiltinChannels(taskAPI)` 注入扩展工厂），订阅 `channel:inbound`，将用户文本交给 `TaskAPI.executeTaskStream`（`conversationId` 为 `feishubot_<chatId>`），并把模型回复用 `sendFeishuTextMessageTo` 发回**同一群/会话**。扩展行为可另订阅 `eventBridge.onChannelInbound`。
 
 若将来采用 **OpenClaw 兼容 shim**，shim MUST 将插件侧入站转发到 `submitFeishuInboundToEventBridge`（或同等封装），以满足 `feishu-openclaw-compatibility` spec。
 

@@ -77,6 +77,15 @@
 2. 入口使用 TypeScript 时，确保由 **Bun** 加载（当前桌面后端为 Bun）。  
 3. 查看控制台 `[ChannelExtensions]` 日志与 UI 顶部橙色提示框。
 
+## 会话忙排队与回贴（无需再扩 QueuedCommand）
+
+与飞书 / Telegram 一致，新渠道若要 **入队完成后把助手正文发回同一对话**：
+
+1. 在扩展的 **`setup.initialize`** 里，若工厂上下文带有 **`ctx.taskAPI`**（宿主调用 `initializeBuiltinChannels(taskAPI)` 时会注入），则调用你的 **`registerXxxSquidBridge(ctx.taskAPI)`**（或等价逻辑），在桥内 **`taskAPI.addChannelQueuedCompleteHandler(...)`**，仅在 `cmd.channelReply?.channelId === '<你的 channel id>'` 时发消息；在 **`setup.cleanup`** 中调用桥返回的卸载函数。**宿主不必**再逐渠道 `import registerXxxSquidBridge`。
+2. 会话忙时 **`enqueueFromRequest(..., { channelReply: { channelId: '<同上>', chatId: '<路由键>' } })`**。`chatId` 为核心透传的字符串，语义由渠道自行解释。
+
+类型见 `src/utils/messageQueueManager.ts` 的 **`ChannelQueueReply`**。勿再向核心增加 `xxxChatId` 字段。
+
 ## 与内置贡献的关系
 
 - **内置**：仍可通过 PR 在 `src/channels` 中增加实现并在 `initializeBuiltinChannels` 注册。  

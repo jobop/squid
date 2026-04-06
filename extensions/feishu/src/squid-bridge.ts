@@ -2,8 +2,9 @@ import {
   type TaskAPI,
   isTaskAPIConversationBusyError,
 } from '../../../src/api/task-api';
-import { eventBridge, type ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
+import type { ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
 import { loadFeishuChannelConfigSync } from './config-store';
+import { getFeishuExtensionEventBridge } from './feishu-host-bridge';
 import { sendFeishuTextMessageTo } from './lark-client';
 
 const FEISHU_REPLY_MAX_CHARS = 18000;
@@ -14,12 +15,13 @@ function feishuConversationId(chatId: string): string {
 
 /**
  * 将飞书入站（channel:inbound）接到 TaskAPI：执行 ask 流式任务后把回复发回同一 chat。
- * 会话忙时入队（与 claude bridge enqueue 对齐），完成后由 setChannelQueuedCompleteHandler 回贴。
+ * 会话忙时入队（与 claude bridge enqueue 对齐），完成后由 TaskAPI 广播给已注册的 channel 队列回调。
  * @returns 取消订阅函数
  */
 export function registerFeishuSquidBridge(taskAPI: TaskAPI): () => void {
-  taskAPI.setChannelQueuedCompleteHandler((cmd, assistantText) => {
-    const chatId = cmd.feishuChatId?.trim();
+  const offQueued = taskAPI.addChannelQueuedCompleteHandler((cmd, assistantText) => {
+    if (cmd.channelReply?.channelId !== 'feishu') return;
+    const chatId = cmd.channelReply.chatId?.trim();
     if (!chatId) return;
     const cfg = loadFeishuChannelConfigSync();
     if (!cfg?.appId?.trim() || !cfg?.appSecret?.trim()) return;
@@ -48,10 +50,12 @@ export function registerFeishuSquidBridge(taskAPI: TaskAPI): () => void {
     });
   };
 
-  eventBridge.onChannelInbound(onInbound);
+  /** 与 submitFeishuInboundToEventBridge 使用同一实例（宿主 bind 的 ctx.eventBridge），避免动态 import 扩展时与静态 import 的 eventBridge 分裂 */
+  const bridge = getFeishuExtensionEventBridge();
+  bridge.onChannelInbound(onInbound);
   return () => {
-    taskAPI.setChannelQueuedCompleteHandler(undefined);
-    eventBridge.offChannelInbound(onInbound);
+    offQueued();
+    bridge.offChannelInbound(onInbound);
   };
 }
 
@@ -114,7 +118,7 @@ async function handleFeishuInbound(taskAPI: TaskAPI, event: ChannelInboundEvent)
     if (isTaskAPIConversationBusyError(err)) {
       const pos = taskAPI.enqueueFromRequest(
         { mode: 'ask', workspace, instruction: text, conversationId },
-        { source: 'channel', priority: 'next', feishuChatId: chatId }
+        { source: 'channel', priority: 'next', channelReply: { channelId: 'feishu', chatId } }
       );
       const r = await sendFeishuTextMessageTo(
         cfg,

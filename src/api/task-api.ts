@@ -32,6 +32,7 @@ import {
   enqueue,
   enqueuePendingNotification,
   getConversationQueueLength,
+  type ChannelQueueReply,
   type QueuedCommand,
   type QueuedCommandSource,
   type QueuePriority,
@@ -51,7 +52,18 @@ export class TaskAPIConversationBusyError extends Error {
 export function isTaskAPIConversationBusyError(
   e: unknown
 ): e is TaskAPIConversationBusyError {
-  return e instanceof TaskAPIConversationBusyError;
+  if (e instanceof TaskAPIConversationBusyError) return true;
+  // 动态 import 的扩展与宿主各有一份本模块时，instanceof 会失效；用 name + conversationId 识别
+  if (e !== null && typeof e === 'object') {
+    const o = e as { name?: unknown; conversationId?: unknown };
+    if (
+      o.name === 'TaskAPIConversationBusyError' &&
+      typeof o.conversationId === 'string'
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface TaskRequest {
@@ -109,7 +121,7 @@ export class TaskAPI {
   /** 与队列分桶键一致：同一会话同时仅一条 execute 路径 */
   private readonly runningConversations = new Set<string>();
   private onCronQueuedComplete?: (taskId: string, success: boolean, result: string) => void;
-  private onChannelQueuedComplete?: (cmd: QueuedCommand, assistantText: string) => void;
+  private channelQueuedCompleteHandlers: Array<(cmd: QueuedCommand, assistantText: string) => void> = [];
 
   constructor() {
     this.skillLoader = new SkillLoader();
@@ -199,11 +211,26 @@ export class TaskAPI {
     this.onCronQueuedComplete = handler;
   }
 
-  /** 队列中执行的流式任务完成后回调（用于飞书等渠道回贴） */
+  /**
+   * 队列任务流式完成后回调；可多次注册，各渠道在 handler 内判断 `cmd.channelReply?.channelId`。
+   * 新增渠道请勿再改 QueuedCommand，应使用 `channelReply` + 本方法注册。
+   * @returns 取消注册
+   */
+  addChannelQueuedCompleteHandler(
+    handler: (cmd: QueuedCommand, assistantText: string) => void
+  ): () => void {
+    this.channelQueuedCompleteHandlers.push(handler);
+    return () => {
+      const i = this.channelQueuedCompleteHandlers.indexOf(handler);
+      if (i >= 0) this.channelQueuedCompleteHandlers.splice(i, 1);
+    };
+  }
+
+  /** 清空并设为单个 handler（兼容测试/旧代码）；生产环境优先用 addChannelQueuedCompleteHandler */
   setChannelQueuedCompleteHandler(
     handler: ((cmd: QueuedCommand, assistantText: string) => void) | undefined
   ): void {
-    this.onChannelQueuedComplete = handler;
+    this.channelQueuedCompleteHandlers = handler ? [handler] : [];
   }
 
   resolveConversationIdForQueue(request: TaskRequest): string {
@@ -217,6 +244,22 @@ export class TaskAPI {
     return this.runningConversations.has(conversationId);
   }
 
+  private static resolveChannelReplyMeta(meta: {
+    channelReply?: ChannelQueueReply;
+    feishuChatId?: string;
+  }): ChannelQueueReply | undefined {
+    const id = meta.channelReply?.channelId?.trim();
+    const chat = meta.channelReply?.chatId?.trim();
+    if (id && chat) {
+      return { channelId: id, chatId: chat };
+    }
+    const legacy = meta.feishuChatId?.trim();
+    if (legacy) {
+      return { channelId: 'feishu', chatId: legacy };
+    }
+    return undefined;
+  }
+
   /**
    * 将请求排入会话队列，返回入队后的队列深度（含本条）
    */
@@ -227,10 +270,13 @@ export class TaskAPI {
       taskId?: string;
       isMeta?: boolean;
       priority?: QueuePriority;
+      channelReply?: ChannelQueueReply;
+      /** @deprecated 请改用 channelReply: { channelId: 'feishu', chatId } */
       feishuChatId?: string;
     }
   ): number {
     const cid = this.resolveConversationIdForQueue(request);
+    const channelReply = TaskAPI.resolveChannelReplyMeta(meta);
     const cmd: QueuedCommand = {
       conversationId: cid,
       value: request.instruction,
@@ -242,7 +288,7 @@ export class TaskAPI {
       taskId: meta.taskId,
       isMeta: meta.isMeta,
       priority: meta.priority,
-      feishuChatId: meta.feishuChatId,
+      channelReply,
     };
     const useLater = meta.priority === 'later' || meta.source === 'cron';
     if (useLater) {
@@ -290,11 +336,17 @@ export class TaskAPI {
           streamedAssistant += chunk;
         }
       );
-      if (cmd.feishuChatId?.trim() && this.onChannelQueuedComplete) {
-        try {
-          this.onChannelQueuedComplete(cmd, streamedAssistant);
-        } catch (cbErr) {
-          console.error('[TaskAPI] onChannelQueuedComplete failed', cbErr);
+      if (
+        cmd.channelReply?.channelId?.trim() &&
+        cmd.channelReply.chatId?.trim() &&
+        this.channelQueuedCompleteHandlers.length > 0
+      ) {
+        for (const h of this.channelQueuedCompleteHandlers) {
+          try {
+            h(cmd, streamedAssistant);
+          } catch (cbErr) {
+            console.error('[TaskAPI] channelQueuedCompleteHandler failed', cbErr);
+          }
         }
       }
       if (cmd.source === 'cron' && cmd.taskId && this.onCronQueuedComplete) {

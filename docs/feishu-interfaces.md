@@ -96,7 +96,7 @@ resolveFeishuAccount()           →  config.getAll() 脱敏视图 / ~/.squid/fe
 - **默认入站（WebSocket 长连接）**：`extensions/feishu/src/feishu-ws-inbound.ts`，使用 `@larksuiteoapi/node-sdk` 的 `WSClient` + `EventDispatcher`，本机主动连飞书，**无需公网 Webhook / 穿透**。`connectionMode` 默认为 `websocket`。
 - **可选 Webhook 入站**：`extensions/feishu/src/webhook-handler.ts`（`connectionMode: webhook` 时使用）；签名算法与 OpenClaw `monitor.transport.ts` 一致。机器人自身发送的消息（`sender_type === app`）不会再次入站。
 - **消息解析**：`extensions/feishu/src/message-inbound.ts`（`parseFeishuImReceiveForInbound`）供 WS 与 HTTP 共用。
-- **与 squid 对话**：`extensions/feishu/src/squid-bridge.ts`（`registerFeishuSquidBridge`）将用户消息接到 `TaskAPI.executeTaskStream`，回复 `sendFeishuTextMessageTo` 到原 `chat_id`。
+- **与 squid 对话**：`extensions/feishu/src/squid-bridge.ts`（`registerFeishuSquidBridge`，由 `FeishuChannelPlugin.setup.initialize` 在获得注入的 `taskAPI` 时注册）将用户消息接到 `TaskAPI.executeTaskStream`，回复 `sendFeishuTextMessageTo` 到原 `chat_id`。
 - **配置**：`~/.squid/feishu-channel.json`；`GET/POST /api/channels/feishu/config`（响应不含完整密钥）。**加载**：须在 `config/channel-extensions.json`（或 `~/.squid/channel-extensions.json`）中启用 `feishu` 扩展；出站配置不完整时扩展入口会失败，渠道列表仍显示合成飞书行。
 - **兼容性结论**：见 `docs/COMPATIBILITY.md`。
 

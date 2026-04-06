@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { TaskAPI } from '../../api/task-api';
 import { eventBridge } from '../bridge/event-bridge';
 import type { ChannelRegistry } from '../registry';
 import type { ChannelPlugin } from '../types';
@@ -86,10 +87,6 @@ export async function unloadChannelExtensions(registry: ChannelRegistry): Promis
 /**
  * 按当前配置重新扫描并加载扩展（内部先卸载已加载扩展；飞书凭证或 enabled 保存后可调用）。
  */
-export async function reloadChannelExtensions(registry: ChannelRegistry): Promise<void> {
-  await loadChannelExtensions(registry);
-}
-
 /**
  * 扫描 roots 下所有合法 manifest（不 import），用于渠道页展示「已发现 / 启用 / 已加载」。
  */
@@ -168,7 +165,10 @@ export function discoverChannelExtensions(): DiscoveredChannelExtension[] {
 /**
  * 在内置 Channel 注册完成之后调用：从配置的 roots 扫描子目录并动态 import。
  */
-export async function loadChannelExtensions(registry: ChannelRegistry): Promise<void> {
+export async function loadChannelExtensions(
+  registry: ChannelRegistry,
+  taskAPI?: TaskAPI
+): Promise<void> {
   await unloadChannelExtensions(registry);
 
   const cfg = loadChannelExtensionsConfigMerged();
@@ -303,7 +303,7 @@ export async function loadChannelExtensions(registry: ChannelRegistry): Promise<
           });
           continue;
         }
-        const maybe = factory({ eventBridge });
+        const maybe = factory({ eventBridge, taskAPI });
         const plugin: ChannelPlugin = maybe instanceof Promise ? await maybe : maybe;
         if (!plugin?.id || !plugin.meta || !plugin.status || !plugin.outbound || !plugin.config) {
           pushError({

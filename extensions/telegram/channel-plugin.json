@@ -1,0 +1,6 @@
+{
+  "id": "telegram",
+  "name": "Telegram",
+  "version": "1.0.0",
+  "main": "./extension-entry.ts"
+}

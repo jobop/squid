@@ -72,7 +72,7 @@ WebUI Channel 会在应用启动时自动初始化：
 ```typescript
 import { initializeBuiltinChannels } from './channels';
 
-await initializeBuiltinChannels();
+await initializeBuiltinChannels(taskAPI);
 ```
 
 ### 2. 接收任务通知

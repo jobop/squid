@@ -16,6 +16,12 @@
 
 - 触发时仅 `enqueuePendingNotification` 到 `conversationId = cron:<taskId>`，由 `cronManager.setEnqueueDrainNotifier` 调用 `taskAPI.kickConversationQueueDrain` 启动 drain；不再在 cron 内直接调用 `executeTask`。
 
+## 外部渠道（飞书 / Telegram / 后续扩展）
+
+- 会话忙时 `enqueueFromRequest` 的 meta 可带 **`channelReply: { channelId, chatId }`**（核心字段，勿再为单渠道扩 QueuedCommand）。
+- 队列执行完成后，TaskAPI 向所有 **`addChannelQueuedCompleteHandler`** 注册的回调广播；各渠道桥接内判断 `cmd.channelReply?.channelId === '<id>'` 再回贴。
+- **兼容**：meta 仍支持已废弃的 `feishuChatId`（等价于 `channelReply: { channelId: 'feishu', chatId }`）。
+
 ## 飞书
 
-- 会话忙时 `enqueueFromRequest`（`feishuChatId` 用于回贴），并提示用户已排队；执行完成后由 `setChannelQueuedCompleteHandler` 发回助手正文。
+- 桥接使用 `channelId: 'feishu'` 与上述通用机制一致。

@@ -12,5 +12,5 @@ export default async function createChannelPlugin(ctx?: ChannelExtensionFactoryC
   if (!cfg || !validateFeishuChannelConfig(cfg).ok) {
     throw new Error('飞书配置不完整，跳过注册（需 ~/.squid/feishu-channel.json 中 appId、appSecret）');
   }
-  return new FeishuChannelPlugin();
+  return new FeishuChannelPlugin(ctx?.taskAPI);
 }

@@ -1,3 +1,4 @@
+import type { TaskAPI } from '../../../src/api/task-api';
 import {
   ChannelPlugin,
   ChannelMeta,
@@ -11,6 +12,7 @@ import {
 } from '../../../src/channels/types';
 import type { TaskCompleteEvent } from '../../../src/channels/bridge/event-bridge';
 import { getFeishuExtensionEventBridge } from './feishu-host-bridge';
+import { registerFeishuSquidBridge } from './squid-bridge';
 import {
   loadFeishuChannelConfigSync,
   toFeishuConfigPublicView,
@@ -40,6 +42,9 @@ export class FeishuChannelPlugin implements ChannelPlugin {
 
   private taskCompleteHandler?: (event: TaskCompleteEvent) => void;
   private wsInbound?: FeishuWsInboundHandle;
+  private squidBridgeOff?: () => void;
+
+  constructor(private readonly taskAPI?: TaskAPI) {}
 
   config: ChannelConfigAdapter = {
     get: <T>(key: string): T | undefined => {
@@ -114,6 +119,10 @@ export class FeishuChannelPlugin implements ChannelPlugin {
 
   setup: ChannelSetupAdapter = {
     initialize: async () => {
+      if (this.taskAPI) {
+        this.squidBridgeOff = registerFeishuSquidBridge(this.taskAPI);
+      }
+
       const cfg = loadFeishuChannelConfigSync();
       const mode = cfg?.connectionMode ?? 'websocket';
       if (mode === 'websocket' && cfg?.appId?.trim() && cfg.appSecret?.trim()) {
@@ -137,6 +146,8 @@ export class FeishuChannelPlugin implements ChannelPlugin {
         getFeishuExtensionEventBridge().offTaskComplete(this.taskCompleteHandler);
         this.taskCompleteHandler = undefined;
       }
+      this.squidBridgeOff?.();
+      this.squidBridgeOff = undefined;
     },
   };
 }
