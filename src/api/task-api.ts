@@ -851,8 +851,7 @@ user-invocable: true
           await this.conversationManager.setConversationWorkspace(conversationId, normalizedRequest.workspace);
         }
 
-        await this.conversationManager.addMessage(conversationId, 'user', normalizedRequest.instruction);
-
+        // 仅传入「本轮之前」的持久化历史；本轮 user 由 executor 拼进请求。模型返回成功后再写入 user + assistant。
         const conversationHistory = this.conversationManager.getMessages(conversationId);
 
         const taskId = Date.now().toString();
@@ -888,6 +887,7 @@ user-invocable: true
           }
         );
 
+        await this.conversationManager.addMessage(conversationId, 'user', normalizedRequest.instruction);
         await this.conversationManager.addMessage(conversationId, 'assistant', fullResponse);
 
         const task = this.tasks.get(taskId);

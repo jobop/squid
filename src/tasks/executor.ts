@@ -181,10 +181,9 @@ export class TaskExecutor {
       }
     }
 
-    // 添加当前指令
     messages.push({
       role: 'user',
-      content: instruction
+      content: instruction,
     });
 
     return messages;
@@ -530,10 +529,9 @@ export class TaskExecutor {
       }
     }
 
-    // 添加当前指令
     messages.push({
       role: 'user',
-      content: instruction
+      content: instruction,
     });
 
     // 获取所有注册的 tools
