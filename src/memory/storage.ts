@@ -101,4 +101,12 @@ export class MemoryStorage {
       new Date(b.metadata.updated).getTime() - new Date(a.metadata.updated).getTime()
     ).slice(0, 200);
   }
+
+  /** 清空各类型记忆文件（写入空 memories 数组） */
+  async clearAllStoredTypes(): Promise<void> {
+    const types: MemoryType[] = ['user', 'feedback', 'project', 'reference'];
+    for (const t of types) {
+      await this.writeTypeFile(t, { memories: [] });
+    }
+  }
 }

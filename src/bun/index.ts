@@ -511,6 +511,36 @@ async function main() {
         }
       }
 
+      // 清空当前线程消息（聊天框 /reset）
+      if (url.pathname === '/api/threads/clear-messages' && req.method === 'POST') {
+        try {
+          const body = (await req.json()) as { threadId?: unknown };
+          const threadId = typeof body.threadId === 'string' ? body.threadId.trim() : undefined;
+          const result = await taskAPI.clearThreadMessages(threadId || undefined);
+          return new Response(JSON.stringify(result), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({ success: false, error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
+      // 清空会话 + 全部记忆（聊天框 /new）
+      if (url.pathname === '/api/sessions/new' && req.method === 'POST') {
+        try {
+          const body = (await req.json()) as { threadId?: unknown };
+          const threadId = typeof body.threadId === 'string' ? body.threadId.trim() : undefined;
+          const result = await taskAPI.newSessionClearAll(threadId || undefined);
+          return new Response(JSON.stringify(result), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({ success: false, error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
       // Get conversation history
       if (url.pathname === '/api/conversation/history' && req.method === 'GET') {
         try {

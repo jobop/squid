@@ -826,6 +826,36 @@ user-invocable: true
         : request;
     try {
       try {
+        const trimmedInstruction = (normalizedRequest.instruction || '').trim();
+
+        let conversationId = normalizedRequest.conversationId || this.currentConversationId;
+        if (!conversationId) {
+          conversationId = await this.conversationManager.createConversation(normalizedRequest.workspace);
+          this.currentConversationId = conversationId;
+        } else if (normalizedRequest.workspace) {
+          await this.conversationManager.setConversationWorkspace(conversationId, normalizedRequest.workspace);
+        }
+
+        // 与 Web `/reset`、`/new` 对齐：任意走 executeTaskStream 的渠道（飞书/Telegram/队列/HTTP）共用，不经 LLM
+        if (/^\/reset\b/i.test(trimmedInstruction)) {
+          const r = await this.clearThreadMessages(conversationId);
+          onChunk(
+            r.success
+              ? '✅ 已清空当前会话。'
+              : `❌ 清空会话失败：${r.error ?? '未知错误'}`
+          );
+          return;
+        }
+        if (/^\/new\b/i.test(trimmedInstruction)) {
+          const r = await this.newSessionClearAll(conversationId);
+          onChunk(
+            r.success
+              ? '✅ 已清空当前会话与全部长期记忆。'
+              : `❌ ${r.error ?? '操作失败'}`
+          );
+          return;
+        }
+
         const modelConfig = await this.getModelConfig();
         const apiKey = (modelConfig.apiKey || '').trim();
         const baseURL = normalizedRequest.baseURL || modelConfig.apiEndpoint;
@@ -841,14 +871,6 @@ user-invocable: true
 
         if (apiKey) {
           this.conversationManager.setApiKey(apiKey, baseURL, modelName);
-        }
-
-        let conversationId = normalizedRequest.conversationId || this.currentConversationId;
-        if (!conversationId) {
-          conversationId = await this.conversationManager.createConversation(normalizedRequest.workspace);
-          this.currentConversationId = conversationId;
-        } else if (normalizedRequest.workspace) {
-          await this.conversationManager.setConversationWorkspace(conversationId, normalizedRequest.workspace);
         }
 
         // 仅传入「本轮之前」的持久化历史；本轮 user 由 executor 拼进请求。模型返回成功后再写入 user + assistant。
@@ -1001,14 +1023,75 @@ user-invocable: true
     return { success: true };
   }
 
+  /**
+   * 清空指定线程（或当前线程）的持久化消息；无 threadId 且无当前会话时仅清空宿主 currentConversationId。
+   * 会先从磁盘 load 再清，避免仅内存无图时 clear 空操作。
+   */
+  async clearThreadMessages(threadId?: string): Promise<{
+    success: boolean;
+    threadId?: string | null;
+    error?: string;
+  }> {
+    const id = String(threadId || this.currentConversationId || '').trim();
+    if (!id) {
+      this.currentConversationId = null;
+      return { success: true, threadId: null };
+    }
+    try {
+      let conv = this.conversationManager.getConversation(id);
+      if (!conv) {
+        conv = await this.conversationManager.loadConversation(id);
+      }
+      if (!conv) {
+        if (this.currentConversationId === id) {
+          this.currentConversationId = null;
+        }
+        return { success: true, threadId: null };
+      }
+      await this.conversationManager.clearConversation(id);
+      this.currentConversationId = id;
+      return { success: true, threadId: id };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * 与聊天框 `/new` 对应：清空当前（或指定）线程消息，并清空全部长期记忆文件。
+   */
+  async newSessionClearAll(threadId?: string): Promise<{
+    success: boolean;
+    threadId?: string | null;
+    error?: string;
+  }> {
+    const convResult = await this.clearThreadMessages(threadId);
+    if (!convResult.success) {
+      return convResult;
+    }
+    try {
+      await this.memoryManager.clearAllMemories();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        success: false,
+        threadId: convResult.threadId,
+        error: `会话已清空，记忆清空失败: ${msg}`,
+      };
+    }
+    return { success: true, threadId: convResult.threadId };
+  }
+
   async listThreads(): Promise<{ success: boolean; threads: ThreadListItem[]; error?: string }> {
     try {
       const conversations = await this.conversationManager.listConversations();
       const threads = conversations
-        .filter((conversation) => conversation.messages.length > 0)
         .map((conversation) => {
           const firstUserMessage = conversation.messages.find((message) => message.role === 'user');
-          const preview = firstUserMessage?.content?.trim() || '新线程';
+          const preview =
+            conversation.messages.length === 0
+              ? '（空会话）'
+              : firstUserMessage?.content?.trim() || '新线程';
           const shortPreview = preview.length > 80 ? `${preview.slice(0, 80)}...` : preview;
           return {
             id: conversation.id,

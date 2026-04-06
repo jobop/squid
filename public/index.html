@@ -1216,7 +1216,7 @@
           <textarea
             id="instruction"
             class="input-main"
-            placeholder="Ask squid anything, @ to add files, / for commands, $ for skills"
+            placeholder="Ask squid anything, @ to add files, /reset 清空会话, /new 清空会话与记忆, $ for skills"
             rows="1"
           ></textarea>
 
@@ -2999,6 +2999,76 @@
       });
     });
 
+    async function performSlashReset() {
+      try {
+        const response = await fetch('http://localhost:50001/api/threads/clear-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            currentThreadId ? { threadId: currentThreadId } : {}
+          ),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!result.success) {
+          showNotification('清空失败: ' + (result.error || response.statusText), 'error');
+          return;
+        }
+        if (result.threadId) {
+          currentThreadId = result.threadId;
+        } else {
+          currentThreadId = null;
+        }
+        currentTaskId = null;
+        const chatContainer = document.getElementById('chatContainer');
+        chatContainer.innerHTML = `
+            <div class="empty-state">
+              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
+              <h2>开始构建</h2>
+              <p>在下方输入你的需求，开始创建任务</p>
+            </div>
+          `;
+        await refreshTaskList();
+        showNotification('已清空当前会话上下文', 'success');
+      } catch (e) {
+        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
+    async function performSlashNew() {
+      try {
+        const response = await fetch('http://localhost:50001/api/sessions/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            currentThreadId ? { threadId: currentThreadId } : {}
+          ),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!result.success) {
+          showNotification('失败: ' + (result.error || response.statusText), 'error');
+          return;
+        }
+        if (result.threadId) {
+          currentThreadId = result.threadId;
+        } else {
+          currentThreadId = null;
+        }
+        currentTaskId = null;
+        const chatContainer = document.getElementById('chatContainer');
+        chatContainer.innerHTML = `
+            <div class="empty-state">
+              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
+              <h2>开始构建</h2>
+              <p>在下方输入你的需求，开始创建任务</p>
+            </div>
+          `;
+        await refreshTaskList();
+        showNotification('已清空当前会话与全部长期记忆', 'success');
+      } catch (e) {
+        showNotification('失败: ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
     // 执行任务
     async function runTask() {
       const mode = document.getElementById('mode').value;
@@ -3009,6 +3079,18 @@
 
       if (!instruction.trim()) {
         alert('请输入任务指令');
+        return;
+      }
+
+      if (/^\/reset\b/i.test(instruction.trim())) {
+        document.getElementById('instruction').value = '';
+        await performSlashReset();
+        return;
+      }
+
+      if (/^\/new\b/i.test(instruction.trim())) {
+        document.getElementById('instruction').value = '';
+        await performSlashNew();
         return;
       }
 

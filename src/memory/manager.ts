@@ -214,4 +214,10 @@ export class MemoryManager {
     await this.storage.writeMemory(memory.metadata.type, memory);
     this.invalidateCache();
   }
+
+  /** 清空 ~/.squid/memory 下各类型 JSON 中的全部记忆 */
+  async clearAllMemories(): Promise<void> {
+    await this.storage.clearAllStoredTypes();
+    this.invalidateCache();
+  }
 }
