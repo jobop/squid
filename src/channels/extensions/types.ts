@@ -12,6 +12,28 @@ export type ChannelExtensionFactoryContext = {
   taskAPI?: TaskAPI;
 };
 
+/** 渠道页「声明式」配置表单字段（由宿主按描述渲染，数据写入 ~/.squid/{userConfigFile}） */
+export type ChannelWebConfigFieldType = 'text' | 'password' | 'textarea' | 'select' | 'json';
+
+export interface ChannelWebConfigField {
+  key: string;
+  label: string;
+  type: ChannelWebConfigFieldType;
+  /** 为 true 时 GET 仅返回 hasXxx，POST 空字符串表示不修改原值 */
+  optional?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  /** type 为 select 时必填 */
+  options?: { value: string; label: string }[];
+}
+
+export interface ChannelWebConfigForm {
+  /** 仅允许安全文件名，实际路径 ~/.squid/<userConfigFile> */
+  userConfigFile: string;
+  intro?: string;
+  fields: ChannelWebConfigField[];
+}
+
 /** 根目录下子文件夹内的 channel-plugin.json */
 export interface ChannelExtensionManifest {
   id: string;
@@ -23,6 +45,8 @@ export interface ChannelExtensionManifest {
   capabilities?: Partial<ChannelCapabilities>;
   /** 可选：预留权限声明（P0 不强制消费） */
   permissions?: string[];
+  /** 可选：声明 Web 配置表单，宿主提供通用 GET/POST /api/channels/extension-config */
+  configForm?: ChannelWebConfigForm;
 }
 
 export interface ChannelExtensionsFileConfig {

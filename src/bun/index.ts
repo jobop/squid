@@ -20,10 +20,11 @@ import {
   saveUserChannelExtensionsEnabled,
 } from '../channels/index';
 import {
-  loadFeishuChannelConfig,
-  saveFeishuChannelConfig,
-  toFeishuConfigPublicView,
-} from '../channels/feishu';
+  buildPublicValuesForForm,
+  findExtensionWebConfigForm,
+  readUserConfigJson,
+  saveExtensionWebConfig,
+} from '../channels/extension-web-config';
 import { cronManager } from '../tools/cron-manager';
 
 /**
@@ -761,11 +762,26 @@ async function main() {
         }
       }
 
-      // 飞书凭证：Channel 详情表单用 GET 加载（脱敏）、POST 保存；与 GET /api/channels 列表配合使用
-      if (url.pathname === '/api/channels/feishu/config' && req.method === 'GET') {
+      // 扩展在 channel-plugin.json 中声明 configForm 后的通用读写（飞书、Telegram 等）
+      if (url.pathname === '/api/channels/extension-config' && req.method === 'GET') {
         try {
-          const c = await loadFeishuChannelConfig();
-          return new Response(JSON.stringify(toFeishuConfigPublicView(c)), { headers });
+          const channelId = url.searchParams.get('channelId')?.trim() ?? '';
+          if (!channelId) {
+            return new Response(JSON.stringify({ error: '缺少 channelId' }), {
+              status: 400,
+              headers,
+            });
+          }
+          const form = findExtensionWebConfigForm(channelId);
+          if (!form) {
+            return new Response(JSON.stringify({ error: '该渠道无扩展 Web 配置' }), {
+              status: 404,
+              headers,
+            });
+          }
+          const raw = await readUserConfigJson(form.userConfigFile);
+          const values = buildPublicValuesForForm(form, raw);
+          return new Response(JSON.stringify({ form, values }), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify({ error: error.message }), {
             status: 500,
@@ -774,26 +790,47 @@ async function main() {
         }
       }
 
-      if (url.pathname === '/api/channels/feishu/config' && req.method === 'POST') {
+      if (url.pathname === '/api/channels/extension-config' && req.method === 'POST') {
         try {
-          const body = await req.json();
-          const result = await saveFeishuChannelConfig(body);
+          const body = (await req.json()) as { channelId?: unknown; values?: unknown };
+          const channelId = typeof body.channelId === 'string' ? body.channelId.trim() : '';
+          if (!channelId) {
+            return new Response(JSON.stringify({ success: false, error: '缺少 channelId' }), {
+              status: 400,
+              headers,
+            });
+          }
+          const form = findExtensionWebConfigForm(channelId);
+          if (!form) {
+            return new Response(JSON.stringify({ success: false, error: '该渠道无扩展 Web 配置' }), {
+              status: 404,
+              headers,
+            });
+          }
+          const valuesRaw = body.values;
+          if (valuesRaw === null || typeof valuesRaw !== 'object' || Array.isArray(valuesRaw)) {
+            return new Response(JSON.stringify({ success: false, error: 'values 须为对象' }), {
+              status: 400,
+              headers,
+            });
+          }
+          const stringMap: Record<string, string> = {};
+          for (const [k, v] of Object.entries(valuesRaw as Record<string, unknown>)) {
+            stringMap[k] = v != null ? String(v) : '';
+          }
+          const result = await saveExtensionWebConfig(channelId, form, stringMap);
           if (!result.ok) {
             return new Response(JSON.stringify({ success: false, errors: result.errors }), {
               status: 400,
               headers,
             });
           }
-          const c = await loadFeishuChannelConfig();
           try {
             await reloadChannelExtensions(channelRegistry);
           } catch (reloadErr: unknown) {
-            console.error('[Channels] 飞书配置保存后重载扩展失败:', reloadErr);
+            console.error('[Channels] 扩展 Web 配置保存后重载失败:', reloadErr);
           }
-          return new Response(
-            JSON.stringify({ success: true, config: toFeishuConfigPublicView(c) }),
-            { headers }
-          );
+          return new Response(JSON.stringify({ success: true }), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify({ success: false, error: error.message }), {
             status: 500,

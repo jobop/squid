@@ -5,6 +5,7 @@ import {
   validateFeishuChannelConfig,
   validateFeishuOutboundConfig,
 } from './feishu';
+import { getExtensionWebConfigurableChannelIds } from './extension-web-config';
 
 const DEFAULT_CHECK_TIMEOUT_MS = 10_000;
 
@@ -50,7 +51,8 @@ function pluginToOverview(
   plugin: ChannelPlugin,
   healthy: boolean,
   statusMessage: string,
-  source: 'builtin' | 'extension'
+  source: 'builtin' | 'extension',
+  extensionWebConfigurableIds: ReadonlySet<string>
 ): ChannelOverviewDTO {
   return {
     id: plugin.id,
@@ -59,7 +61,7 @@ function pluginToOverview(
     healthy,
     statusMessage,
     category: plugin.meta.category,
-    configurable: plugin.id === 'feishu',
+    configurable: extensionWebConfigurableIds.has(plugin.id),
     registered: true,
     source,
   };
@@ -131,12 +133,13 @@ export async function getChannelsOverview(
   registry: ChannelRegistry,
   extensionPluginIds: ReadonlySet<string> = new Set()
 ): Promise<ChannelOverviewDTO[]> {
+  const extensionWebConfigurableIds = getExtensionWebConfigurableChannelIds();
   const plugins = registry.list();
   const rows = await Promise.all(
     plugins.map(async (plugin) => {
       const { healthy, message } = await checkChannelStatus(plugin);
       const source = extensionPluginIds.has(plugin.id) ? 'extension' : 'builtin';
-      return pluginToOverview(plugin, healthy, message, source);
+      return pluginToOverview(plugin, healthy, message, source, extensionWebConfigurableIds);
     })
   );
   const out = [...rows];

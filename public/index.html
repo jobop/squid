@@ -1467,56 +1467,12 @@
           </div>
           <div id="channelsDetailView" style="display: none;">
             <div id="channelsDetailReadonly" class="card" style="display: none;"></div>
-            <div id="channelsDetailFeishu" class="card" style="display: none;">
-              <h3>飞书 / Lark 配置</h3>
-              <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
-                保存至 ~/.squid/feishu-channel.json。App Secret、Encrypt Key 留空则不修改已有值；修改出站接收方请填写 defaultReceiveId。
-              </p>
-              <div class="form-group">
-                <label>App ID</label>
-                <input type="text" id="feishuCfgAppId" placeholder="cli_xxx" autocomplete="off">
-              </div>
-              <div class="form-group">
-                <label>App Secret</label>
-                <input type="password" id="feishuCfgAppSecret" placeholder="留空则不修改" autocomplete="off">
-              </div>
-              <div class="form-group">
-                <label>Encrypt Key（事件订阅）</label>
-                <input type="password" id="feishuCfgEncryptKey" placeholder="留空则不修改" autocomplete="off">
-              </div>
-              <div class="form-group">
-                <label>Verification Token</label>
-                <input type="text" id="feishuCfgVerificationToken" placeholder="可选；留空可清空已保存值" autocomplete="off">
-              </div>
-              <div class="form-group">
-                <label>连接模式</label>
-                <select id="feishuCfgConnectionMode">
-                  <option value="websocket">websocket（长连接）</option>
-                  <option value="webhook">webhook</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>域名</label>
-                <select id="feishuCfgFeishuDomain">
-                  <option value="feishu">feishu（国内）</option>
-                  <option value="lark">lark（国际）</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>默认接收方 ID（出站）</label>
-                <input type="text" id="feishuCfgDefaultReceiveId" placeholder="群 chat_id 等" autocomplete="off">
-              </div>
-              <div class="form-group">
-                <label>接收方 ID 类型</label>
-                <select id="feishuCfgDefaultReceiveIdType">
-                  <option value="chat_id">chat_id</option>
-                  <option value="open_id">open_id</option>
-                  <option value="user_id">user_id</option>
-                  <option value="union_id">union_id</option>
-                </select>
-              </div>
-              <button type="button" class="btn" id="feishuCfgSaveBtn">保存</button>
-              <p id="feishuCfgSaveHint" style="margin-top: 12px; font-size: 13px; color: #666;"></p>
+            <div id="channelsDetailExtCfg" class="card" style="display: none;">
+              <h3 id="extCfgHeading">扩展配置</h3>
+              <p id="extCfgIntro" style="font-size: 13px; color: #666; margin-bottom: 16px;"></p>
+              <div id="extCfgFields"></div>
+              <button type="button" class="btn" id="extCfgSaveBtn">保存</button>
+              <p id="extCfgHint" style="margin-top: 12px; font-size: 13px; color: #666;"></p>
             </div>
           </div>
         </div>
@@ -2198,8 +2154,8 @@
       const channelsExtensionSaveBtn = document.getElementById('channelsExtensionSaveBtn');
       if (channelsExtensionSaveBtn)
         channelsExtensionSaveBtn.addEventListener('click', () => saveChannelsExtensionEnabled());
-      const feishuCfgSaveBtn = document.getElementById('feishuCfgSaveBtn');
-      if (feishuCfgSaveBtn) feishuCfgSaveBtn.addEventListener('click', () => saveFeishuChannelForm());
+      const extCfgSaveBtn = document.getElementById('extCfgSaveBtn');
+      if (extCfgSaveBtn) extCfgSaveBtn.addEventListener('click', () => saveExtensionWebConfigForm());
 
       // 确保所有输入框支持粘贴
       document.querySelectorAll('input, textarea').forEach(element => {
@@ -2847,13 +2803,13 @@
       if (title) title.textContent = '渠道详情';
       const ch = channelsListCache.find((c) => c.id === id);
       const ro = document.getElementById('channelsDetailReadonly');
-      const fs = document.getElementById('channelsDetailFeishu');
+      const extCard = document.getElementById('channelsDetailExtCfg');
       if (ro) ro.style.display = 'none';
-      if (fs) fs.style.display = 'none';
-      if (id === 'feishu' && ch && ch.configurable) {
-        if (fs) fs.style.display = 'block';
-        if (title) title.textContent = '飞书 / Lark';
-        loadFeishuFormFromApi();
+      if (extCard) extCard.style.display = 'none';
+      if (ch && ch.configurable) {
+        if (extCard) extCard.style.display = 'block';
+        if (title) title.textContent = ch.name || '渠道配置';
+        loadExtensionWebConfigForm(id);
       } else if (ch && ro) {
         ro.style.display = 'block';
         const srcLine =
@@ -2881,69 +2837,97 @@
       }
     }
 
-    async function loadFeishuFormFromApi() {
-      const hint = document.getElementById('feishuCfgSaveHint');
+    async function loadExtensionWebConfigForm(channelId) {
+      const hint = document.getElementById('extCfgHint');
+      const mount = document.getElementById('extCfgFields');
+      const introEl = document.getElementById('extCfgIntro');
+      const h3 = document.getElementById('extCfgHeading');
       if (hint) hint.textContent = '';
+      if (mount) mount.innerHTML = '';
+      window.__extCfgChannelId = channelId;
       try {
-        const res = await fetch('http://localhost:50001/api/channels/feishu/config');
-        const cfg = await res.json();
-        if (cfg.error) throw new Error(cfg.error);
-        const appIdEl = document.getElementById('feishuCfgAppId');
-        const secEl = document.getElementById('feishuCfgAppSecret');
-        const ekEl = document.getElementById('feishuCfgEncryptKey');
-        const vtEl = document.getElementById('feishuCfgVerificationToken');
-        const modeEl = document.getElementById('feishuCfgConnectionMode');
-        const domEl = document.getElementById('feishuCfgFeishuDomain');
-        const ridEl = document.getElementById('feishuCfgDefaultReceiveId');
-        const rtypeEl = document.getElementById('feishuCfgDefaultReceiveIdType');
-        if (appIdEl) appIdEl.value = cfg.appId || '';
-        if (secEl) secEl.value = '';
-        if (ekEl) ekEl.value = '';
-        if (vtEl) vtEl.value = '';
-        if (modeEl) modeEl.value = cfg.connectionMode || 'websocket';
-        if (domEl) domEl.value = cfg.feishuDomain || 'feishu';
-        if (rtypeEl) rtypeEl.value = cfg.defaultReceiveIdType || 'chat_id';
-        if (ridEl) ridEl.value = '';
-        let parts = [];
-        if (cfg.hasAppSecret) parts.push('App Secret 已配置');
-        if (cfg.hasEncryptKey) parts.push('Encrypt Key 已配置');
-        if (cfg.defaultReceiveIdSet) parts.push('默认接收方已设置（脱敏不显示 ID，修改时请重新填写）');
-        if (hint) hint.textContent = parts.length ? parts.join('。') + '。' : '填写后保存。';
+        const res = await fetch(
+          'http://localhost:50001/api/channels/extension-config?channelId=' + encodeURIComponent(channelId)
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const form = data.form;
+        const values = data.values || {};
+        if (introEl)
+          introEl.textContent = form.intro || '保存至 ~/.squid/' + form.userConfigFile;
+        if (h3) h3.textContent = '配置（' + channelId + '）';
+        if (!mount || !form.fields) return;
+        for (const f of form.fields) {
+          const wrap = document.createElement('div');
+          wrap.className = 'form-group';
+          const lab = document.createElement('label');
+          lab.textContent = f.label + (f.optional ? '（可选）' : '');
+          wrap.appendChild(lab);
+          let el;
+          if (f.type === 'select' && f.options && f.options.length) {
+            el = document.createElement('select');
+            el.dataset.extCfgKey = f.key;
+            for (const o of f.options) {
+              const opt = document.createElement('option');
+              opt.value = o.value;
+              opt.textContent = o.label;
+              el.appendChild(opt);
+            }
+            const cur = values[f.key] != null ? String(values[f.key]) : '';
+            el.value = f.options.some((o) => o.value === cur) ? cur : f.options[0].value;
+          } else if (f.type === 'textarea' || f.type === 'json') {
+            el = document.createElement('textarea');
+            el.dataset.extCfgKey = f.key;
+            el.rows = f.type === 'json' ? 5 : 4;
+            el.style.width = '100%';
+            el.style.boxSizing = 'border-box';
+            const vk = values[f.key];
+            el.value = vk != null ? String(vk) : '';
+          } else {
+            el = document.createElement('input');
+            el.type = f.type === 'password' ? 'password' : 'text';
+            el.dataset.extCfgKey = f.key;
+            el.autocomplete = 'off';
+            if (f.placeholder) el.placeholder = f.placeholder;
+            const vk = values[f.key];
+            el.value = vk != null ? String(vk) : '';
+          }
+          wrap.appendChild(el);
+          if (f.secret) {
+            const pk = 'has' + f.key.charAt(0).toUpperCase() + f.key.slice(1);
+            if (values[pk]) {
+              const sm = document.createElement('p');
+              sm.style.fontSize = '12px';
+              sm.style.color = '#888';
+              sm.style.marginTop = '6px';
+              sm.textContent = '已配置敏感字段，留空表示不修改。';
+              wrap.appendChild(sm);
+            }
+          }
+          mount.appendChild(wrap);
+        }
       } catch (e) {
-        if (hint) hint.textContent = '加载失败: ' + e.message;
+        if (hint) hint.textContent = '加载失败: ' + (e && e.message ? e.message : e);
       }
     }
 
-    async function saveFeishuChannelForm() {
-      const hint = document.getElementById('feishuCfgSaveHint');
+    async function saveExtensionWebConfigForm() {
+      const hint = document.getElementById('extCfgHint');
+      const channelId = window.__extCfgChannelId;
+      if (!channelId) return;
       if (hint) hint.textContent = '保存中…';
-      const appIdEl = document.getElementById('feishuCfgAppId');
-      const modeEl = document.getElementById('feishuCfgConnectionMode');
-      const domEl = document.getElementById('feishuCfgFeishuDomain');
-      const rtypeEl = document.getElementById('feishuCfgDefaultReceiveIdType');
-      const ridEl = document.getElementById('feishuCfgDefaultReceiveId');
-      const secEl = document.getElementById('feishuCfgAppSecret');
-      const ekEl = document.getElementById('feishuCfgEncryptKey');
-      const vtEl = document.getElementById('feishuCfgVerificationToken');
-      const body = {
-        appId: appIdEl ? appIdEl.value.trim() : '',
-        connectionMode: modeEl ? modeEl.value : 'websocket',
-        feishuDomain: domEl ? domEl.value : 'feishu',
-        defaultReceiveIdType: rtypeEl ? rtypeEl.value : 'chat_id',
-      };
-      const did = ridEl ? ridEl.value.trim() : '';
-      if (did) body.defaultReceiveId = did;
-      const sec = secEl ? secEl.value.trim() : '';
-      if (sec) body.appSecret = sec;
-      const ek = ekEl ? ekEl.value.trim() : '';
-      if (ek) body.encryptKey = ek;
-      const vt = vtEl ? vtEl.value.trim() : '';
-      if (vt) body.verificationToken = vt;
+      const mount = document.getElementById('extCfgFields');
+      const values = {};
+      if (mount) {
+        mount.querySelectorAll('[data-ext-cfg-key]').forEach((el) => {
+          values[el.dataset.extCfgKey] = el.value != null ? el.value : '';
+        });
+      }
       try {
-        const res = await fetch('http://localhost:50001/api/channels/feishu/config', {
+        const res = await fetch('http://localhost:50001/api/channels/extension-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ channelId, values }),
         });
         const data = await res.json();
         if (!data.success) {
@@ -2952,13 +2936,11 @@
               '保存失败: ' + (data.errors ? data.errors.join('; ') : data.error || res.statusText);
           return;
         }
-        if (hint) hint.textContent = '已保存；扩展已自动重新加载，返回渠道列表可查看最新状态。';
-        if (secEl) secEl.value = '';
-        if (ekEl) ekEl.value = '';
-        await loadFeishuFormFromApi();
+        if (hint) hint.textContent = '已保存；扩展已重新加载。';
+        await loadExtensionWebConfigForm(channelId);
         loadChannelsList();
       } catch (e) {
-        if (hint) hint.textContent = '保存失败: ' + e.message;
+        if (hint) hint.textContent = '保存失败: ' + (e && e.message ? e.message : e);
       }
     }
 

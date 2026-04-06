@@ -1,4 +1,12 @@
-import type { ChannelExtensionManifest } from './types';
+import { basename } from 'node:path';
+import type {
+  ChannelExtensionManifest,
+  ChannelWebConfigField,
+  ChannelWebConfigForm,
+} from './types';
+
+const SAFE_CONFIG_FILENAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/;
+const FIELD_TYPES = new Set(['text', 'password', 'textarea', 'select', 'json']);
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
@@ -41,5 +49,100 @@ export function validateChannelExtensionManifest(raw: unknown): { ok: true; data
   if (o.permissions !== undefined && Array.isArray(o.permissions)) {
     data.permissions = o.permissions.filter((x) => typeof x === 'string') as string[];
   }
+
+  if (o.configForm !== undefined) {
+    const parsed = parseConfigForm(o.configForm, errors);
+    if (parsed) {
+      data.configForm = parsed;
+    }
+  }
+
+  if (errors.length) return { ok: false, errors };
   return { ok: true, data };
+}
+
+function parseConfigForm(
+  raw: unknown,
+  errors: string[]
+): ChannelWebConfigForm | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    errors.push('configForm 须为对象');
+    return undefined;
+  }
+  const c = raw as Record<string, unknown>;
+  const fn = typeof c.userConfigFile === 'string' ? c.userConfigFile.trim() : '';
+  if (!fn || !SAFE_CONFIG_FILENAME.test(fn) || basename(fn) !== fn) {
+    errors.push('configForm.userConfigFile 须为安全的 .json 文件名（无路径）');
+  }
+  if (!Array.isArray(c.fields) || c.fields.length === 0) {
+    errors.push('configForm.fields 须为非空数组');
+    return undefined;
+  }
+
+  const fields: ChannelWebConfigField[] = [];
+  let i = 0;
+  for (const item of c.fields) {
+    i++;
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      errors.push(`configForm.fields[${i}] 须为对象`);
+      continue;
+    }
+    const f = item as Record<string, unknown>;
+    if (!isNonEmptyString(f.key) || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(String(f.key).trim())) {
+      errors.push(`configForm.fields[${i}].key 须为合法标识符`);
+      continue;
+    }
+    if (!isNonEmptyString(f.label)) {
+      errors.push(`configForm.fields[${i}].label 须为非空字符串`);
+      continue;
+    }
+    const t = typeof f.type === 'string' ? f.type.trim() : '';
+    if (!FIELD_TYPES.has(t)) {
+      errors.push(`configForm.fields[${i}].type 非法`);
+      continue;
+    }
+    const field: ChannelWebConfigField = {
+      key: String(f.key).trim(),
+      label: String(f.label).trim(),
+      type: t as ChannelWebConfigField['type'],
+    };
+    if (f.optional === true) field.optional = true;
+    if (f.secret === true) field.secret = true;
+    if (typeof f.placeholder === 'string' && f.placeholder.trim()) {
+      field.placeholder = f.placeholder.trim();
+    }
+    if (t === 'select') {
+      if (!Array.isArray(f.options) || f.options.length === 0) {
+        errors.push(`configForm.fields[${i}] select 须含 options`);
+        continue;
+      }
+      const opts: { value: string; label: string }[] = [];
+      for (const op of f.options) {
+        if (op === null || typeof op !== 'object') continue;
+        const o = op as Record<string, unknown>;
+        if (typeof o.value === 'string' && typeof o.label === 'string') {
+          opts.push({ value: o.value, label: o.label });
+        }
+      }
+      if (!opts.length) {
+        errors.push(`configForm.fields[${i}] options 无效`);
+        continue;
+      }
+      field.options = opts;
+    }
+    fields.push(field);
+  }
+
+  if (errors.length) return undefined;
+  if (fields.length !== (c.fields as unknown[]).length) {
+    errors.push('configForm.fields 存在未解析项');
+    return undefined;
+  }
+
+  const intro = typeof c.intro === 'string' && c.intro.trim() ? c.intro.trim() : undefined;
+  return {
+    userConfigFile: fn,
+    intro,
+    fields,
+  };
 }

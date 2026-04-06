@@ -2,5 +2,77 @@
   "id": "feishu",
   "name": "Feishu / Lark",
   "version": "1.0.0",
-  "main": "./extension-entry.ts"
+  "main": "./extension-entry.ts",
+  "configForm": {
+    "userConfigFile": "feishu-channel.json",
+    "intro": "保存至 ~/.squid/feishu-channel.json。敏感字段不会在界面中回显，留空表示不修改。保存后会重新加载扩展。",
+    "fields": [
+      {
+        "key": "appId",
+        "label": "App ID",
+        "type": "text",
+        "placeholder": "cli_xxx"
+      },
+      {
+        "key": "appSecret",
+        "label": "App Secret",
+        "type": "password",
+        "secret": true,
+        "placeholder": "留空则不修改"
+      },
+      {
+        "key": "encryptKey",
+        "label": "Encrypt Key（事件订阅）",
+        "type": "password",
+        "secret": true,
+        "optional": true,
+        "placeholder": "留空则不修改"
+      },
+      {
+        "key": "verificationToken",
+        "label": "Verification Token",
+        "type": "password",
+        "secret": true,
+        "optional": true,
+        "placeholder": "可选；留空则不修改"
+      },
+      {
+        "key": "connectionMode",
+        "label": "连接模式",
+        "type": "select",
+        "options": [
+          { "value": "websocket", "label": "websocket（长连接）" },
+          { "value": "webhook", "label": "webhook" }
+        ]
+      },
+      {
+        "key": "feishuDomain",
+        "label": "域名",
+        "type": "select",
+        "options": [
+          { "value": "feishu", "label": "feishu（国内）" },
+          { "value": "lark", "label": "lark（国际）" }
+        ]
+      },
+      {
+        "key": "defaultReceiveId",
+        "label": "默认接收方 ID（出站）",
+        "type": "text",
+        "secret": true,
+        "optional": true,
+        "placeholder": "群 chat_id 等；已配置时不显示，修改请重新填写"
+      },
+      {
+        "key": "defaultReceiveIdType",
+        "label": "接收方 ID 类型",
+        "type": "select",
+        "options": [
+          { "value": "chat_id", "label": "chat_id" },
+          { "value": "open_id", "label": "open_id" },
+          { "value": "user_id", "label": "user_id" },
+          { "value": "union_id", "label": "union_id" }
+        ]
+      }
+    ]
+  }
 }

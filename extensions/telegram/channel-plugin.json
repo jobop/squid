@@ -2,5 +2,39 @@
   "id": "telegram",
   "name": "Telegram",
   "version": "1.0.0",
-  "main": "./extension-entry.ts"
+  "main": "./extension-entry.ts",
+  "configForm": {
+    "userConfigFile": "telegram-channel.json",
+    "intro": "配置将保存到 ~/.squid/telegram-channel.json，保存后会重新加载扩展。",
+    "fields": [
+      {
+        "key": "botToken",
+        "label": "Bot Token",
+        "type": "password",
+        "secret": true,
+        "placeholder": "从 @BotFather 获取"
+      },
+      {
+        "key": "defaultChatId",
+        "label": "默认 Chat ID",
+        "type": "text",
+        "optional": true,
+        "placeholder": "出站未指定会话时使用"
+      },
+      {
+        "key": "allowedChatIds",
+        "label": "允许的 Chat ID 列表（JSON 数组）",
+        "type": "json",
+        "optional": true,
+        "placeholder": "[\"123456\", \"-1001234567890\"]"
+      },
+      {
+        "key": "apiBase",
+        "label": "API Base URL",
+        "type": "text",
+        "optional": true,
+        "placeholder": "默认 https://api.telegram.org"
+      }
+    ]
+  }
 }
