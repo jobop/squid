@@ -1,4 +1,5 @@
 import type { FeishuChannelFileConfig, FeishuReceiveIdType } from './types';
+import { getFeishuLastInboundReceiveTarget } from './last-inbound-chat';
 
 const TOKEN_URL = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
 const MESSAGES_URL = 'https://open.feishu.cn/open-apis/im/v1/messages';
@@ -128,10 +129,18 @@ export async function sendFeishuTextMessage(
   text: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const receiveId = cfg.defaultReceiveId?.trim();
-  const receiveIdType = cfg.defaultReceiveIdType ?? 'chat_id';
+  const fromCfg = cfg.defaultReceiveId?.trim();
+  const last = getFeishuLastInboundReceiveTarget();
+  const receiveId = fromCfg || last?.receiveId;
+  const receiveIdType = fromCfg
+    ? (cfg.defaultReceiveIdType ?? 'chat_id')
+    : (last?.receiveIdType ?? cfg.defaultReceiveIdType ?? 'chat_id');
   if (!receiveId) {
-    return { success: false, error: '未配置 defaultReceiveId' };
+    return {
+      success: false,
+      error:
+        '未配置 defaultReceiveId，且尚无入站 chat_id（请先在目标群内发一条消息给机器人，或在配置中填写默认接收方）',
+    };
   }
   return sendFeishuTextMessageTo(cfg, text, receiveId, receiveIdType, fetchImpl);
 }

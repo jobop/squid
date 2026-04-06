@@ -91,6 +91,15 @@ describe('getChannelsOverview', () => {
     expect(row!.healthy).toBe(true);
     expect(row!.registered).toBe(true);
     expect(row!.configurable).toBe(false);
+    expect(row!.source).toBe('builtin');
+  });
+
+  it('extensionPluginIds 中的 id 标记为 extension 来源', async () => {
+    registry.register(
+      stubPlugin('alpha', async () => ({ healthy: true, message: 'fine' }))
+    );
+    const list = await getChannelsOverview(registry, new Set(['alpha']));
+    expect(list.find((c) => c.id === 'alpha')!.source).toBe('extension');
   });
 
   it('未注册 feishu 时追加合成行', async () => {
@@ -102,5 +111,6 @@ describe('getChannelsOverview', () => {
     const feishu = list.find((c) => c.id === 'feishu');
     expect(feishu!.registered).toBe(false);
     expect(feishu!.configurable).toBe(true);
+    expect(feishu!.source).toBe('builtin');
   });
 });

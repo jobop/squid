@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFeishuImReceiveForInbound } from '../channels/feishu/message-inbound';
+import { parseFeishuImReceiveForInbound } from '../channels/feishu';
 
 describe('parseFeishuImReceiveForInbound', () => {
   it('解析 2.0 整包', () => {
@@ -46,5 +46,40 @@ describe('parseFeishuImReceiveForInbound', () => {
       sender: { sender_type: 'app', sender_id: {} },
     });
     expect(r).toBeNull();
+  });
+
+  it('摊平载荷根上存在无关 type 字段时仍解析（不误判事件类型）', () => {
+    const r = parseFeishuImReceiveForInbound({
+      schema: '2.0',
+      event_type: 'im.message.receive_v1',
+      type: 'message',
+      message: {
+        chat_id: 'oc_flat',
+        message_id: 'mflat',
+        message_type: 'text',
+        content: JSON.stringify({ text: 'from-ws-flat' }),
+      },
+      sender: { sender_type: 'user', sender_id: { open_id: 'ou_f' } },
+    });
+    expect(r?.text).toBe('from-ws-flat');
+    expect(r?.chatId).toBe('oc_flat');
+  });
+
+  it('post 类型消息抽取正文', () => {
+    const postContent = JSON.stringify({
+      title: '标题',
+      content: [[{ tag: 'text', text: '正文行' }]],
+    });
+    const r = parseFeishuImReceiveForInbound({
+      message: {
+        chat_id: 'oc_p',
+        message_id: 'mp',
+        message_type: 'post',
+        content: postContent,
+      },
+      sender: { sender_type: 'user', sender_id: { open_id: 'ou_p' } },
+    });
+    expect(r?.text).toContain('标题');
+    expect(r?.text).toContain('正文行');
   });
 });

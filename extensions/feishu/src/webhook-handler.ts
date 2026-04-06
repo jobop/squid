@@ -1,4 +1,5 @@
 import { loadFeishuChannelConfig } from './config-store';
+import { feishuInboundDescribeRawPayload } from './inbound-debug';
 import { submitFeishuInboundToEventBridge } from './inbound-adapter';
 import type { FeishuChannelFileConfig } from './types';
 import { parseFeishuImReceiveForInbound } from './message-inbound';
@@ -104,6 +105,7 @@ export async function handleFeishuWebhookRequest(req: Request): Promise<Response
 
   const inbound = parseFeishuImReceiveForInbound(inner);
   if (inbound) {
+    console.log('[FeishuInbound][HTTP] webhook 解析成功，将投递总线');
     submitFeishuInboundToEventBridge({
       text: inbound.text,
       chatId: inbound.chatId,
@@ -111,6 +113,15 @@ export async function handleFeishuWebhookRequest(req: Request): Promise<Response
       senderOpenId: inbound.senderOpenId,
       raw: inbound.raw,
     });
+  } else {
+    const h = inner.header as Record<string, unknown> | undefined;
+    const et = h?.event_type ?? inner.event_type;
+    if (et === 'im.message.receive_v1') {
+      console.warn(
+        '[FeishuInbound][HTTP] im.message.receive_v1 但解析未通过，',
+        feishuInboundDescribeRawPayload(inner)
+      );
+    }
   }
 
   return new Response('{}', { status: 200, headers: jsonHeaders });

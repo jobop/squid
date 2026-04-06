@@ -4,7 +4,7 @@ import {
   loadFeishuChannelConfigSync,
   validateFeishuChannelConfig,
   validateFeishuOutboundConfig,
-} from './feishu/config-store';
+} from './feishu';
 
 const DEFAULT_CHECK_TIMEOUT_MS = 10_000;
 
@@ -18,6 +18,8 @@ export interface ChannelOverviewDTO {
   configurable: boolean;
   /** 是否在 channelRegistry 中已注册并初始化 */
   registered: boolean;
+  /** 内置或动态加载的扩展 */
+  source: 'builtin' | 'extension';
 }
 
 /**
@@ -47,7 +49,8 @@ export async function checkChannelStatus(
 function pluginToOverview(
   plugin: ChannelPlugin,
   healthy: boolean,
-  statusMessage: string
+  statusMessage: string,
+  source: 'builtin' | 'extension'
 ): ChannelOverviewDTO {
   return {
     id: plugin.id,
@@ -58,6 +61,7 @@ function pluginToOverview(
     category: plugin.meta.category,
     configurable: plugin.id === 'feishu',
     registered: true,
+    source,
   };
 }
 
@@ -73,6 +77,7 @@ function syntheticFeishuOverview(): ChannelOverviewDTO {
       category: 'builtin',
       configurable: true,
       registered: false,
+      source: 'builtin',
     };
   }
   const base = validateFeishuChannelConfig(cfg);
@@ -86,6 +91,7 @@ function syntheticFeishuOverview(): ChannelOverviewDTO {
       category: 'builtin',
       configurable: true,
       registered: false,
+      source: 'builtin',
     };
   }
   const out = validateFeishuOutboundConfig(cfg);
@@ -95,10 +101,12 @@ function syntheticFeishuOverview(): ChannelOverviewDTO {
       name: 'Feishu / Lark',
       description: '飞书机器人（默认 WebSocket 长连接入站 + tenant 发消息）',
       healthy: false,
-      statusMessage: '入站凭证已有，出站未完整: ' + out.errors.join('; '),
+      statusMessage:
+        '入站凭证已有；未填默认接收方时，主动消息会回退为「最近入站会话」的 chat_id（冷启动无入站前可能无法推送）。扩展未加载时请检查 channel-extensions 与重启。',
       category: 'builtin',
       configurable: true,
       registered: false,
+      source: 'builtin',
     };
   }
   return {
@@ -110,18 +118,24 @@ function syntheticFeishuOverview(): ChannelOverviewDTO {
     category: 'builtin',
     configurable: true,
     registered: false,
+    source: 'builtin',
   };
 }
 
 /**
  * Channel 管理 UI 使用的聚合列表：已注册插件走 status.check；未注册飞书则提供占位行（仍可打开配置页）。
+ * @param extensionPluginIds 动态扩展注册的 id 集合（其余视为内置）
  */
-export async function getChannelsOverview(registry: ChannelRegistry): Promise<ChannelOverviewDTO[]> {
+export async function getChannelsOverview(
+  registry: ChannelRegistry,
+  extensionPluginIds: ReadonlySet<string> = new Set()
+): Promise<ChannelOverviewDTO[]> {
   const plugins = registry.list();
   const rows = await Promise.all(
     plugins.map(async (plugin) => {
       const { healthy, message } = await checkChannelStatus(plugin);
-      return pluginToOverview(plugin, healthy, message);
+      const source = extensionPluginIds.has(plugin.id) ? 'extension' : 'builtin';
+      return pluginToOverview(plugin, healthy, message, source);
     })
   );
   const out = [...rows];

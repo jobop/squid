@@ -1,5 +1,5 @@
-import type { TaskAPI } from '../../api/task-api';
-import { eventBridge, type ChannelInboundEvent } from '../bridge/event-bridge';
+import type { TaskAPI } from '../../../src/api/task-api';
+import { eventBridge, type ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
 import { loadFeishuChannelConfigSync } from './config-store';
 import { sendFeishuTextMessageTo } from './lark-client';
 
@@ -18,7 +18,14 @@ export function registerFeishuSquidBridge(taskAPI: TaskAPI): () => void {
 
   const onInbound = (event: ChannelInboundEvent) => {
     if (event.channelId !== 'feishu') return;
-    void handleFeishuInbound(taskAPI, event, busyChats);
+    console.log(
+      '[FeishuBridge] 收到 channel:inbound chatId=%s textLen=%d',
+      event.chatId?.trim() || '(无)',
+      event.text?.length ?? 0
+    );
+    void handleFeishuInbound(taskAPI, event, busyChats).catch((err: unknown) => {
+      console.error('[FeishuBridge] handleFeishuInbound 异常（此前可能未回飞书）:', err);
+    });
   };
 
   eventBridge.onChannelInbound(onInbound);
@@ -31,7 +38,10 @@ async function handleFeishuInbound(
   busyChats: Set<string>
 ): Promise<void> {
   const text = event.text?.trim();
-  if (!text) return;
+  if (!text) {
+    console.warn('[FeishuBridge] 文本为空，跳过');
+    return;
+  }
 
   const chatId = event.chatId?.trim();
   if (!chatId) {
@@ -67,28 +77,22 @@ async function handleFeishuInbound(
     }
 
     const conversationId = feishuConversationId(chatId);
-    await taskAPI.prepareExternalConversation(conversationId, workspace);
+    console.log('[FeishuBridge] 开始处理 conversationId=%s workspace=%s', conversationId, workspace);
 
-    let modelConfigOk = true;
     try {
-      const mc = await taskAPI.getModelConfig();
-      if (!mc?.apiKey?.trim()) modelConfigOk = false;
-    } catch {
-      modelConfigOk = false;
-    }
-    if (!modelConfigOk) {
-      const r = await sendFeishuTextMessageTo(
-        cfg,
-        '⚠️ 请先在 squid 设置中配置模型 API Key，再向我发消息。',
-        chatId,
-        'chat_id'
-      );
-      if (!r.success) console.error('[FeishuBridge] 发送提示失败:', r.error);
+      await taskAPI.prepareExternalConversation(conversationId, workspace);
+    } catch (prepErr: unknown) {
+      const msg = prepErr instanceof Error ? prepErr.message : String(prepErr);
+      console.error('[FeishuBridge] prepareExternalConversation 失败:', prepErr);
+      const r = await sendFeishuTextMessageTo(cfg, `❌ 会话准备失败：${msg}`, chatId, 'chat_id');
+      if (!r.success) console.error('[FeishuBridge] 发送错误说明失败:', r.error);
       return;
     }
 
+    // 模型 API Key 等仅由 TaskAPI/TaskExecutor 从 ~/.squid/config.json 读取，渠道层不判断、不注入
     let full = '';
     try {
+      console.log('[FeishuBridge] 调用 TaskAPI.executeTaskStream（LLM 配置与 Channel 无关）…');
       await taskAPI.executeTaskStream(
         {
           mode: 'ask',
@@ -100,8 +104,10 @@ async function handleFeishuInbound(
           full += chunk;
         }
       );
-    } catch (err: any) {
-      const msg = err?.message || String(err);
+      console.log('[FeishuBridge] executeTaskStream 结束，聚合长度=%d', full.length);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[FeishuBridge] executeTaskStream 失败:', err);
       full = `❌ 执行失败：${msg}`;
     }
 
@@ -110,9 +116,26 @@ async function handleFeishuInbound(
       body = `${body.slice(0, FEISHU_REPLY_MAX_CHARS)}\n…(已截断)`;
     }
 
+    console.log('[FeishuBridge] 正在发回飞书，正文长度=%d', body.length);
     const sent = await sendFeishuTextMessageTo(cfg, body, chatId, 'chat_id');
     if (!sent.success) {
       console.error('[FeishuBridge] 回复发送失败:', sent.error);
+    } else {
+      console.log('[FeishuBridge] 回复已发送到飞书 chatId=%s', chatId);
+    }
+  } catch (outer: unknown) {
+    console.error('[FeishuBridge] 未预期错误:', outer);
+    try {
+      const msg = outer instanceof Error ? outer.message : String(outer);
+      const r = await sendFeishuTextMessageTo(
+        cfg,
+        `❌ 内部错误：${msg}`,
+        chatId,
+        'chat_id'
+      );
+      if (!r.success) console.error('[FeishuBridge] 发送内部错误说明失败:', r.error);
+    } catch {
+      /* ignore */
     }
   } finally {
     busyChats.delete(chatId);

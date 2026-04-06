@@ -125,6 +125,22 @@ export class EventBridge extends EventEmitter {
 }
 
 /**
- * 全局事件总线单例
+ * 进程内唯一事件总线。
+ * Electrobun 等场景下「主进程 bundle」与「动态 import 的 channel 扩展」会各自执行一份模块图，
+ * 若此处仅用 `new EventBridge()`，会出现两套实例：扩展里 emit、主进程里 on，彼此永远收不到。
+ * 故挂到 globalThis，保证全进程共用一个 EventBridge。
  */
-export const eventBridge = new EventBridge();
+const EVENT_BRIDGE_GLOBAL_KEY = '__SQUID_JOBOPX_EVENT_BRIDGE__';
+
+function getOrCreateProcessEventBridge(): EventBridge {
+  const g = globalThis as Record<string, unknown>;
+  const existing = g[EVENT_BRIDGE_GLOBAL_KEY];
+  if (existing instanceof EventBridge) {
+    return existing;
+  }
+  const bridge = new EventBridge();
+  g[EVENT_BRIDGE_GLOBAL_KEY] = bridge;
+  return bridge;
+}
+
+export const eventBridge = getOrCreateProcessEventBridge();

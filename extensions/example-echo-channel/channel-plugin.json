@@ -1,0 +1,6 @@
+{
+  "id": "echo-demo",
+  "name": "Echo Demo（示例扩展）",
+  "version": "1.0.0",
+  "main": "./plugin.ts"
+}

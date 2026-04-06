@@ -43,7 +43,7 @@ squid 内置 **飞书开放平台直连**（`FeishuChannelPlugin`），不依赖
 
 | 项 | 说明 |
 |----|------|
-| 模块 | `src/channels/feishu/inbound-adapter.ts` |
+| 模块 | `extensions/feishu/src/inbound-adapter.ts` |
 | 函数 | `submitFeishuInboundToEventBridge(payload: FeishuInboundAdapterPayload)` |
 | 载荷 | `text`（必填）、`chatId`、`messageId`、`senderOpenId`、`accountId`、`raw`（可选原始 JSON） |
 | 事件名 | `channel:inbound`（常量 `CHANNEL_INBOUND_EVENT`） |

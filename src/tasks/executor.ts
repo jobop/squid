@@ -8,11 +8,11 @@ import { MemoryManager } from '../memory/manager';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { eventBridge } from '../channels/bridge/event-bridge';
 
+/** 执行请求：模型 API Key 等凭证仅由 TaskExecutor 从 ~/.squid/config.json 读取，不由 Channel 传入 */
 export interface ExecuteRequest {
   mode: TaskMode;
   instruction: string;
   workspace: string;
-  apiKey: string;
   conversationHistory?: Message[];
 }
 
@@ -722,12 +722,20 @@ export class TaskExecutor {
 
   async executeStream(request: ExecuteRequest, onChunk: (chunk: string) => void): Promise<void> {
     try {
-      // 加载模型配置
-      const config = await this.loadModelConfig();
-
-      if (!config || !config.apiKey) {
-        throw new Error('请先在设置页面配置 API Key');
+      const fileConfig = await this.loadModelConfig();
+      if (!fileConfig?.apiKey?.trim()) {
+        throw new Error('请先在设置页面配置模型（~/.squid/config.json 中 model.apiKey）');
       }
+      if (!fileConfig.provider?.trim()) {
+        throw new Error('请先在设置页面配置模型提供商（~/.squid/config.json 中 model.provider）');
+      }
+      const config: ModelConfig = fileConfig as ModelConfig;
+
+      console.log(
+        '[LLM] TaskExecutor.executeStream → 调用模型 provider=%s model=%s',
+        config.provider,
+        config.modelName || '(默认)'
+      );
 
       // 根据提供商和协议类型调用相应的 API
       if (config.provider === 'openai') {

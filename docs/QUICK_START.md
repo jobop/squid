@@ -51,7 +51,7 @@ npm run dev
 2. 在 "API 密钥" 部分输入你的密钥
 3. 点击 **"保存设置"**
 
-飞书等渠道：可在侧栏 **「渠道」** 中查看各 Channel 健康状态，并在飞书详情页编辑配置（凭证经 API 脱敏返回）。
+飞书等渠道：可在侧栏 **「渠道」** 中查看各 Channel 健康状态，并在飞书详情页编辑配置（凭证经 API 脱敏返回）。飞书实现位于 **`extensions/feishu/`**，由 `config/channel-extensions.json` 默认 `enabled: ["feishu"]` 加载；若删除该配置且未在 `~/.squid/channel-extensions.json` 中启用飞书，**飞书 Channel 不会注册**。个人插件可放在 **`~/.squid/extensions/<插件目录>/`**（存在该目录即自动参与扫描，无需写进 `roots`；`enabled` 白名单仍生效）。详见 [channel-extensions.md](./channel-extensions.md)。
 
 ### 第 5 步：创建第一个任务
 

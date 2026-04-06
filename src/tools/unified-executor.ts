@@ -90,7 +90,6 @@ export async function executeWithUnifiedStack(params: {
       mode: params.mode,
       instruction: params.instruction,
       workspace: params.workspace,
-      apiKey: '',
     });
 
     const result = await Promise.race([executionPromise, timeoutPromise]);

@@ -6,7 +6,9 @@ import { MCPConnectionManager } from '../mcp/connection-manager';
 import { TaskAPI } from '../api/task-api';
 import {
   channelRegistry,
+  getChannelExtensionLoadErrors,
   getChannelsOverview,
+  getExtensionChannelPluginIds,
   handleFeishuWebhookRequest,
   initializeBuiltinChannels,
   registerFeishuSquidBridge,
@@ -15,7 +17,7 @@ import {
   loadFeishuChannelConfig,
   saveFeishuChannelConfig,
   toFeishuConfigPublicView,
-} from '../channels/feishu/config-store';
+} from '../channels/feishu';
 import { cronManager } from '../tools/cron-manager';
 
 async function main() {
@@ -648,8 +650,10 @@ async function main() {
       // Channel 管理 UI：列表与健康状态（侧栏「渠道」页调用）
       if (url.pathname === '/api/channels' && req.method === 'GET') {
         try {
-          const list = await getChannelsOverview(channelRegistry);
-          return new Response(JSON.stringify(list), { headers });
+          const extIds = getExtensionChannelPluginIds();
+          const channels = await getChannelsOverview(channelRegistry, extIds);
+          const errors = getChannelExtensionLoadErrors();
+          return new Response(JSON.stringify({ channels, errors }), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify({ error: error.message }), {
             status: 500,
@@ -777,9 +781,9 @@ async function main() {
   // Initialize scheduler
   const scheduler = new CronScheduler();
 
-  // Initialize channel system
-  await initializeBuiltinChannels();
+  // 先入站桥接后启扩展，避免飞书 WS 在刚连上时早于监听器注册而丢事件
   registerFeishuSquidBridge(taskAPI);
+  await initializeBuiltinChannels();
   console.log('Channel system initialized (Feishu ↔ squid 入站桥接已注册)');
 
   // 设置 cronManager 的通知回调，连接到 EventBridge

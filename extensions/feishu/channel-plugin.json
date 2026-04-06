@@ -1,0 +1,6 @@
+{
+  "id": "feishu",
+  "name": "Feishu / Lark",
+  "version": "1.0.0",
+  "main": "./extension-entry.ts"
+}

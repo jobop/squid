@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eventBridge } from '../channels/bridge/event-bridge';
-import * as configStore from '../channels/feishu/config-store';
-import * as larkClient from '../channels/feishu/lark-client';
-import { registerFeishuSquidBridge } from '../channels/feishu/squid-bridge';
+import * as configStore from '../../extensions/feishu/src/config-store';
+import * as larkClient from '../../extensions/feishu/src/lark-client';
+import { registerFeishuSquidBridge } from '../channels/feishu';
 
 describe('Feishu squid bridge', () => {
   const sendSpy = vi.spyOn(larkClient, 'sendFeishuTextMessageTo');
 
   const taskAPI = {
     getWorkspaceConfig: vi.fn().mockResolvedValue({ workspace: '/tmp' }),
-    getModelConfig: vi.fn().mockResolvedValue({ apiKey: 'test-key' }),
     prepareExternalConversation: vi.fn().mockResolvedValue(undefined),
     executeTaskStream: vi.fn().mockImplementation(async (_req: unknown, onChunk: (c: string) => void) => {
       onChunk('reply-from-squid');

@@ -8,11 +8,13 @@ import {
   ChannelStatusAdapter,
   ChannelSetupAdapter,
   NotificationMessage,
-} from '../types';
-import { eventBridge, TaskCompleteEvent } from '../bridge/event-bridge';
+} from '../../../src/channels/types';
+import type { TaskCompleteEvent } from '../../../src/channels/bridge/event-bridge';
+import { getFeishuExtensionEventBridge } from './feishu-host-bridge';
 import {
   loadFeishuChannelConfigSync,
   toFeishuConfigPublicView,
+  validateFeishuChannelConfig,
   validateFeishuOutboundConfig,
 } from './config-store';
 import { getTenantAccessToken, sendFeishuTextMessage } from './lark-client';
@@ -48,7 +50,7 @@ export class FeishuChannelPlugin implements ChannelPlugin {
       /* 凭证经 ~/.squid/feishu-channel.json 与 REST API 更新 */
     },
     getAll: () => toFeishuConfigPublicView(loadFeishuChannelConfigSync()) as Record<string, unknown>,
-    validate: () => validateFeishuOutboundConfig(loadFeishuChannelConfigSync() ?? {}).ok,
+    validate: () => validateFeishuChannelConfig(loadFeishuChannelConfigSync() ?? {}).ok,
   };
 
   outbound: ChannelOutboundAdapter = {
@@ -90,13 +92,21 @@ export class FeishuChannelPlugin implements ChannelPlugin {
       if (!c) {
         return { healthy: false, message: '未配置 feishu-channel.json' };
       }
-      const v = validateFeishuOutboundConfig(c);
-      if (!v.ok) {
-        return { healthy: false, message: v.errors.join('; ') };
+      const base = validateFeishuChannelConfig(c);
+      if (!base.ok) {
+        return { healthy: false, message: base.errors.join('; ') };
       }
       const t = await getTenantAccessToken(c);
       if (!t.ok) {
         return { healthy: false, message: t.error };
+      }
+      const out = validateFeishuOutboundConfig(c);
+      if (!out.ok) {
+        return {
+          healthy: true,
+          message:
+            'tenant token 可用；未填默认接收方时将使用最近入站会话的 chat_id 发主动消息（冷启动无入站前可能无法推送）',
+        };
       }
       return { healthy: true, message: 'tenant token 可用' };
     },
@@ -118,13 +128,13 @@ export class FeishuChannelPlugin implements ChannelPlugin {
           console.error('[Feishu] 发送任务完成通知失败:', err);
         });
       };
-      eventBridge.onTaskComplete(this.taskCompleteHandler);
+      getFeishuExtensionEventBridge().onTaskComplete(this.taskCompleteHandler);
     },
     cleanup: async () => {
       this.wsInbound?.stop();
       this.wsInbound = undefined;
       if (this.taskCompleteHandler) {
-        eventBridge.offTaskComplete(this.taskCompleteHandler);
+        getFeishuExtensionEventBridge().offTaskComplete(this.taskCompleteHandler);
         this.taskCompleteHandler = undefined;
       }
     },

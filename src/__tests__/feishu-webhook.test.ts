@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eventBridge, CHANNEL_INBOUND_EVENT } from '../channels/bridge/event-bridge';
-import * as feishuConfig from '../channels/feishu/config-store';
-import { handleFeishuWebhookRequest } from '../channels/feishu/webhook-handler';
+import * as feishuConfigStore from '../../extensions/feishu/src/config-store';
+import { handleFeishuWebhookRequest } from '../channels/feishu';
 
 function signFeishuBody(rawBody: string, encryptKey: string) {
   const timestamp = '1711111111';
@@ -30,7 +30,7 @@ const baseCfg = {
 
 describe('Feishu webhook', () => {
   beforeEach(() => {
-    vi.spyOn(feishuConfig, 'loadFeishuChannelConfig').mockResolvedValue({ ...baseCfg });
+    vi.spyOn(feishuConfigStore, 'loadFeishuChannelConfig').mockResolvedValue({ ...baseCfg });
   });
 
   afterEach(() => {

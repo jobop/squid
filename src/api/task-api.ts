@@ -551,7 +551,6 @@ user-invocable: true
         mode: request.mode,
         instruction: request.instruction,
         workspace: request.workspace,
-        apiKey: request.apiKey || process.env.ANTHROPIC_API_KEY || ''
       });
 
       // Update task status
@@ -595,15 +594,20 @@ user-invocable: true
 
   async executeTaskStream(request: TaskRequest, onChunk: (chunk: string) => void): Promise<void> {
     try {
-      console.log('Executing task with streaming:', request);
-
-      // 加载模型配置
+      // 模型凭证只来自 ~/.squid/config.json（model 段），不由 Channel 传入
       const modelConfig = await this.getModelConfig();
-      const apiKey = request.apiKey || modelConfig.apiKey || process.env.ANTHROPIC_API_KEY || '';
+      const apiKey = (modelConfig.apiKey || '').trim();
       const baseURL = request.baseURL || modelConfig.apiEndpoint;
       const modelName = request.modelName || modelConfig.modelName;
 
-      // 设置 API 配置到 ConversationManager（用于自动提取记忆）
+      console.log(
+        '[LLM] TaskAPI.executeTaskStream 开始 workspace=%s conversationId=%s model.provider=%s apiKey已配置=%s',
+        request.workspace,
+        request.conversationId || '(默认会话)',
+        modelConfig.provider || '(无)',
+        apiKey ? '是' : '否'
+      );
+
       if (apiKey) {
         this.conversationManager.setApiKey(apiKey, baseURL, modelName);
       }
@@ -637,24 +641,27 @@ user-invocable: true
         expertId: request.expertId
       });
 
-      // Validate workspace
+      console.log('[LLM] TaskAPI 校验 workspace: %s', request.workspace);
       const sandbox = new WorkspaceSandbox(request.workspace);
       await sandbox.validatePath(request.workspace);
 
       // 收集完整的响应
       let fullResponse = '';
 
-      // Execute task with streaming
-      await this.executor.executeStream({
-        mode: request.mode,
-        instruction: request.instruction,
-        workspace: request.workspace,
-        apiKey: apiKey,
-        conversationHistory
-      }, (chunk: string) => {
-        fullResponse += chunk;
-        onChunk(chunk);
-      });
+      console.log('[LLM] TaskAPI → TaskExecutor.executeStream（模型凭证仅来自 ~/.squid/config.json）');
+
+      await this.executor.executeStream(
+        {
+          mode: request.mode,
+          instruction: request.instruction,
+          workspace: request.workspace,
+          conversationHistory,
+        },
+        (chunk: string) => {
+          fullResponse += chunk;
+          onChunk(chunk);
+        }
+      );
 
       // 添加助手响应到对话历史
       await this.conversationManager.addMessage(conversationId, 'assistant', fullResponse);

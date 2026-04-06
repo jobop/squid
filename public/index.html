@@ -1451,6 +1451,7 @@
       <div class="main-content" style="flex: 1; overflow-y: auto;">
         <div class="page-content">
           <p id="channelsLoadError" style="display: none; color: #c00; margin-bottom: 12px;"></p>
+          <div id="channelsExtensionErrors" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: #fff7ed; border: 1px solid #fdba74; border-radius: 6px; font-size: 13px; color: #9a3412;"></div>
           <div id="channelsListView">
             <div id="channelsTableWrap"></div>
           </div>
@@ -2647,13 +2648,31 @@
 
     async function loadChannelsList() {
       const errEl = document.getElementById('channelsLoadError');
+      const extErrEl = document.getElementById('channelsExtensionErrors');
       const wrap = document.getElementById('channelsTableWrap');
       if (errEl) errEl.style.display = 'none';
+      if (extErrEl) {
+        extErrEl.style.display = 'none';
+        extErrEl.textContent = '';
+      }
       if (wrap) wrap.innerHTML = '<p style="color:#666">加载中…</p>';
       try {
         const response = await fetch('http://localhost:50001/api/channels');
         if (!response.ok) throw new Error(response.statusText || String(response.status));
-        channelsListCache = await response.json();
+        const data = await response.json();
+        const items = Array.isArray(data) ? data : data.channels || [];
+        const extErrors = !Array.isArray(data) && Array.isArray(data.errors) ? data.errors : [];
+        channelsListCache = items;
+        if (extErrEl && extErrors.length) {
+          const lines = extErrors.map((er) => {
+            const id = er.pluginId ? '[' + er.pluginId + '] ' : '';
+            const p = er.path ? er.path + ': ' : '';
+            return id + p + (er.message || '');
+          });
+          extErrEl.textContent = '扩展加载提示（不含密钥）：\n' + lines.join('\n');
+          extErrEl.style.whiteSpace = 'pre-wrap';
+          extErrEl.style.display = 'block';
+        }
         renderChannelsTable(channelsListCache);
       } catch (e) {
         if (errEl) {
@@ -2672,7 +2691,7 @@
         return;
       }
       let html =
-        '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="text-align:left;border-bottom:1px solid #e5e5e5;"><th style="padding:8px;">渠道</th><th style="padding:8px;">ID</th><th style="padding:8px;">状态</th><th style="padding:8px;">说明</th><th style="padding:8px;"></th></tr></thead><tbody>';
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="text-align:left;border-bottom:1px solid #e5e5e5;"><th style="padding:8px;">渠道</th><th style="padding:8px;">来源</th><th style="padding:8px;">ID</th><th style="padding:8px;">状态</th><th style="padding:8px;">说明</th><th style="padding:8px;"></th></tr></thead><tbody>';
       for (const c of items) {
         const ok = c.healthy;
         const badge = ok
@@ -2681,10 +2700,16 @@
         const reg = c.registered
           ? ''
           : ' <span style="color:#666;font-size:12px;">(未注册)</span>';
+        const src =
+          c.source === 'extension'
+            ? '<span style="font-size:12px;color:#7c3aed;">扩展</span>'
+            : '<span style="font-size:12px;color:#64748b;">内置</span>';
         html +=
           '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;">' +
           escapeHtmlChannels(c.name) +
           reg +
+          '</td><td style="padding:8px;">' +
+          src +
           '</td><td style="padding:8px;"><code>' +
           escapeHtmlChannels(c.id) +
           '</code></td><td style="padding:8px;">' +
@@ -2738,12 +2763,18 @@
         loadFeishuFormFromApi();
       } else if (ch && ro) {
         ro.style.display = 'block';
+        const srcLine =
+          ch.source === 'extension'
+            ? '<p><strong>来源:</strong> 扩展（从配置的受信目录动态加载，与主进程同进程；请仅安装受信扩展）</p>'
+            : '<p><strong>来源:</strong> 内置</p>';
         ro.innerHTML =
           '<h3>' +
           escapeHtmlChannels(ch.name) +
           '</h3><p style="color:#666;font-size:14px;">' +
           escapeHtmlChannels(ch.description) +
-          '</p><p><strong>ID:</strong> <code>' +
+          '</p>' +
+          srcLine +
+          '<p><strong>ID:</strong> <code>' +
           escapeHtmlChannels(ch.id) +
           '</code></p><p><strong>分类:</strong> ' +
           escapeHtmlChannels(ch.category) +
