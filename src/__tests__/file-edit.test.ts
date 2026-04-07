@@ -125,8 +125,15 @@ describe('FileEditTool', () => {
     expect(result.content).toContain('"success": true');
   });
 
-  it('应该正确标记为非并发安全和破坏性操作', () => {
+  it('应该正确标记并发安全（依路径）与破坏性操作', () => {
     expect(FileEditTool.isConcurrencySafe()).toBe(false);
+    expect(
+      FileEditTool.isConcurrencySafe({
+        file_path: 'x.ts',
+        old_string: 'a',
+        new_string: 'b',
+      })
+    ).toBe(true);
     expect(FileEditTool.isReadOnly()).toBe(false);
     expect(FileEditTool.isDestructive?.()).toBe(true);
   });

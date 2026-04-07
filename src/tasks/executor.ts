@@ -1,4 +1,5 @@
 // Task executor
+import { randomUUID } from 'node:crypto';
 import { TaskMode } from './types';
 import { SkillLoader } from '../skills/loader';
 import { ToolRegistry } from '../tools/registry';
@@ -10,9 +11,28 @@ import { eventBridge } from '../channels/bridge/event-bridge';
 import { appendAgentLog, truncateText } from '../utils/agent-execution-log';
 import {
   checkPlanModeToolInvocation,
+  getParallelToolBatchSystemSection,
   getPlanModeSystemAppendix,
   getToolsForTaskMode,
 } from './plan-mode-policy';
+import {
+  executePartitionedBatches,
+  partitionToolCalls,
+  refineBatchesForDisjointWritePaths,
+  type ToolCallPartitionItem,
+  type ToolExecutionBatch,
+} from './tool-call-partition';
+
+/** 从工具 raw JSON 参数中提取 file_path，便于并发场景下对照日志与 tool_call 顺序 */
+function filePathFromRawToolArgs(raw: string): string | undefined {
+  try {
+    const j = JSON.parse(raw && raw.trim() ? raw : '{}') as Record<string, unknown>;
+    const fp = j.file_path;
+    return typeof fp === 'string' ? fp : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** 执行请求：模型 API Key 等凭证仅由 TaskExecutor 从 ~/.squid/config.json 读取，不由 Channel 传入 */
 export interface ExecuteRequest {
@@ -56,6 +76,16 @@ export class TaskExecutor {
     this.memorySelector.init().catch(err => {
       console.error('Failed to initialize memory selector:', err);
     });
+  }
+
+  /** 按各工具 isConcurrencySafe + 写路径批内规则得到执行批次 */
+  private buildToolExecutionBatches(
+    metas: ToolCallPartitionItem[],
+    workspace: string
+  ): ToolExecutionBatch[] {
+    const batches = partitionToolCalls(this.toolRegistry, metas);
+    refineBatchesForDisjointWritePaths(batches, workspace);
+    return batches;
   }
 
   private async loadModelConfig(): Promise<ModelConfig | null> {
@@ -116,13 +146,20 @@ export class TaskExecutor {
     try {
       const result = await tool.call(args, {
         workDir: params.workspace || process.cwd(),
-        taskId: Date.now().toString(),
+        taskId: randomUUID(),
         mode: params.mode,
       });
 
+      if (result.error) {
+        return {
+          content: result.error,
+          isError: true,
+        };
+      }
+
       const { processToolResultBlock } = await import('../tools/tool-result-storage');
-      const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const sessionId = Date.now().toString();
+      const toolUseId = `tool_${randomUUID()}`;
+      const sessionId = randomUUID();
       const processedResult = await processToolResultBlock(
         tool,
         result.data,
@@ -134,8 +171,8 @@ export class TaskExecutor {
         : JSON.stringify(processedResult.content);
 
       return {
-        content: content || (result.error || ''),
-        isError: Boolean(result.error),
+        content: content || '',
+        isError: false,
       };
     } catch (error: any) {
       return {
@@ -156,7 +193,11 @@ export class TaskExecutor {
     let systemContent = '你是一个专业的 AI 助手，帮助用户完成各种任务。你能记住之前的对话内容。';
     systemContent += `\n\n# Workspace\n当前工作目录（必须遵守）: ${workspace}\n` +
       '所有需要文件系统/命令行的操作，都必须以该目录作为工作目录。\n' +
+      'read_file / write_file / file_edit 的 file_path 须为相对该目录的路径（例如 hello.all、src/a.ts）；禁止把绝对路径里的 / 换成点号写成 .Users.xxx.xxx 等形式。\n' +
+      '同轮多个 agent 时：若各子任务都会写入同一文件，不要并发多个 agent（会覆盖），应分轮或让主会话汇总后一次 write_file。\n' +
       '当执行 git clone 且用户没有指定目标目录时，必须显式指定目标路径到该工作目录下（例如：git clone <repo> "<工作目录>/<仓库名>"）。';
+
+    systemContent += getParallelToolBatchSystemSection();
 
     try {
       const memoryResult = await this.memorySelector.select(instruction);
@@ -295,22 +336,37 @@ export class TaskExecutor {
         return finalText || '';
       }
 
-      for (const toolCall of rawToolCalls) {
-        const toolName = toolCall?.function?.name || '';
-        const rawArguments = toolCall?.function?.arguments || '';
-        const toolCallId = toolCall?.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const toolMetas = rawToolCalls.map((toolCall: Record<string, unknown>) => ({
+        toolName: (toolCall?.function as { name?: string } | undefined)?.name || '',
+        rawArguments: (toolCall?.function as { arguments?: string } | undefined)?.arguments || '',
+        toolCallId:
+          (toolCall?.id as string | undefined) ||
+          `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      }));
+
+      const batches = this.buildToolExecutionBatches(toolMetas, workspace);
+
+      const runOne = async (m: (typeof toolMetas)[0]) => {
         const toolResult = await this.executeToolAndFormatResult({
-          toolName,
-          rawArguments,
+          toolName: m.toolName,
+          rawArguments: m.rawArguments,
           workspace,
           mode,
           conversationId,
         });
+        return {
+          tool_call_id: m.toolCallId!,
+          content: toolResult.content,
+        };
+      };
 
+      const toolOut = await executePartitionedBatches(batches, runOne);
+
+      for (const row of toolOut) {
         messages.push({
           role: 'tool',
-          tool_call_id: toolCallId,
-          content: toolResult.content
+          tool_call_id: row.tool_call_id,
+          content: row.content,
         });
       }
     }
@@ -484,109 +540,59 @@ export class TaskExecutor {
         }))
       });
 
-      for (const toolCall of resolvedToolCalls) {
-        const toolName = toolCall.function?.name || '';
-        const toolUseId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const tool = this.toolRegistry.get(toolName);
+      const streamMetas = resolvedToolCalls.map((toolCall) => ({
+        toolName: toolCall.function?.name || '',
+        rawArguments: toolCall.function?.arguments || '',
+        toolCallId: toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      }));
 
-        if (!tool) {
-          const notFound = `工具 ${toolName} 未找到`;
-          appendAgentLog('executor', 'warn', notFound);
-          onChunk(`\n❌ ${notFound}\n`);
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolUseId,
-            content: notFound
+      const streamBatches = this.buildToolExecutionBatches(streamMetas, workspace);
+
+      const runStreamOne = async (m: (typeof streamMetas)[0]) => {
+        console.log('Tool call arguments:', m.rawArguments);
+        const filePath = filePathFromRawToolArgs(m.rawArguments);
+        appendAgentLog('executor', 'info', `工具调用: ${m.toolName}`, {
+          argsPreview: truncateText(m.rawArguments, 500),
+          ...(filePath ? { file_path: filePath } : {}),
+        });
+        onChunk(`\n🔧 调用工具: ${m.toolName}\n`);
+
+        const toolResult = await this.executeToolAndFormatResult({
+          toolName: m.toolName,
+          rawArguments: m.rawArguments,
+          workspace,
+          mode,
+          conversationId,
+        });
+
+        if (toolResult.isError) {
+          appendAgentLog('executor', 'warn', `工具结果: ${m.toolName}`, {
+            resultPreview: truncateText(toolResult.content, 400),
+            ...(filePath ? { file_path: filePath } : {}),
           });
-          continue;
+          onChunk(`\n❌ ${toolResult.content}\n`);
+        } else {
+          appendAgentLog('executor', 'debug', `工具结果: ${m.toolName}`, {
+            resultPreview: truncateText(toolResult.content, 400),
+            ...(filePath ? { file_path: filePath } : {}),
+          });
+          onChunk(`\n✅ 工具执行成功: ${toolResult.content}\n`);
         }
 
-        try {
-          console.log('Tool call arguments:', toolCall.function.arguments);
-          let args: any = {};
-          try {
-            args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
-          } catch (parseError: any) {
-            const parseMessage = `工具参数解析失败: ${parseError.message}`;
-            onChunk(`\n❌ ${parseMessage}\n`);
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolUseId,
-              content: parseMessage
-            });
-            continue;
-          }
+        return {
+          tool_call_id: m.toolCallId!,
+          content: toolResult.content,
+        };
+      };
 
-          console.log('Parsed args:', args);
-          appendAgentLog('executor', 'info', `工具调用: ${toolName}`, {
-            argsPreview: truncateText(JSON.stringify(args), 500),
-          });
-          onChunk(`\n🔧 调用工具: ${toolName}\n`);
+      const streamOut = await executePartitionedBatches(streamBatches, runStreamOne);
 
-          if (mode === 'plan') {
-            const planCheck = checkPlanModeToolInvocation(toolName, args, workspace, conversationId);
-            if (!planCheck.ok) {
-              appendAgentLog('executor', 'warn', `Plan 模式拒绝工具: ${toolName}`);
-              onChunk(`\n❌ ${planCheck.message}\n`);
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolUseId,
-                content: planCheck.message,
-              });
-              continue;
-            }
-          }
-
-          const result = await tool.call(args, {
-            workDir: workspace || process.cwd(),
-            taskId: Date.now().toString(),
-            mode,
-          });
-
-          const { processToolResultBlock } = await import('../tools/tool-result-storage');
-          const sessionId = Date.now().toString();
-          const processedResult = await processToolResultBlock(
-            tool,
-            result.data,
-            toolUseId,
-            sessionId
-          );
-
-          const resultContent = typeof processedResult.content === 'string'
-            ? processedResult.content
-            : JSON.stringify(processedResult.content);
-
-          appendAgentLog(
-            'executor',
-            result.error ? 'warn' : 'debug',
-            `工具结果: ${toolName}`,
-            {
-              hasError: Boolean(result.error),
-              resultPreview: truncateText(resultContent, 400),
-            }
-          );
-
-          if (result.error) {
-            onChunk(`\n❌ 工具执行失败: ${result.error}\n`);
-          } else {
-            onChunk(`\n✅ 工具执行成功: ${resultContent}\n`);
-          }
-
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolUseId,
-            content: resultContent || (result.error || '')
-          });
-        } catch (error: any) {
-          console.error('Tool execution error:', error);
-          const errorMessage = `工具执行错误: ${error.message}`;
-          onChunk(`\n❌ ${errorMessage}\n参数: ${toolCall.function.arguments}\n`);
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolUseId,
-            content: errorMessage
-          });
-        }
+      for (const row of streamOut) {
+        messages.push({
+          role: 'tool',
+          tool_call_id: row.tool_call_id,
+          content: row.content,
+        });
       }
 
       console.log(`[Executor] 第 ${round + 1} 轮工具调用执行完成，继续向模型请求后续输出`);
@@ -640,6 +646,8 @@ export class TaskExecutor {
     let anthropicSystem = `你是一个专业的 AI 助手，帮助用户完成各种任务。你能记住之前的对话内容。
 当前工作目录（必须遵守）: ${workspace || process.cwd()}
 所有需要文件系统/命令行的操作，都必须在该工作目录下执行。
+read_file / write_file / file_edit 的 file_path 须为相对该目录的路径（例如 hello.all）；禁止把绝对路径里的 / 换成点号写成 .Users.xxx.xxx 等形式。
+同轮多个 agent 若都会写同一 file_path，不要并发（会覆盖），应分轮或由主会话一次合并写入。
 当执行 git clone 且用户没有指定目标目录时，必须显式指定目标路径到该工作目录下（例如：git clone <repo> "<工作目录>/<仓库名>"）。`;
     if (mode === 'plan') {
       anthropicSystem += getPlanModeSystemAppendix(workspace || process.cwd(), conversationId);
@@ -689,25 +697,32 @@ export class TaskExecutor {
         return finalText || '';
       }
 
-      const toolResults: any[] = [];
-      for (const toolUse of toolUses) {
-        const toolName = toolUse.name || '';
-        const rawArguments = JSON.stringify(toolUse.input || {});
+      const anthropicMetas = toolUses.map((toolUse: { id: string; name?: string; input?: unknown }) => ({
+        toolName: toolUse.name || '',
+        rawArguments: JSON.stringify(toolUse.input || {}),
+        toolUseId: toolUse.id,
+      }));
+
+      const ws = workspace || process.cwd();
+      const anthropicBatches = this.buildToolExecutionBatches(anthropicMetas, ws);
+
+      const runAnthropicOne = async (m: (typeof anthropicMetas)[0]) => {
         const toolResult = await this.executeToolAndFormatResult({
-          toolName,
-          rawArguments,
-          workspace: workspace || process.cwd(),
+          toolName: m.toolName,
+          rawArguments: m.rawArguments,
+          workspace: ws,
           mode,
           conversationId,
         });
-
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
+        return {
+          type: 'tool_result' as const,
+          tool_use_id: m.toolUseId,
           content: toolResult.content,
-          is_error: toolResult.isError
-        });
-      }
+          is_error: toolResult.isError,
+        };
+      };
+
+      const toolResults = await executePartitionedBatches(anthropicBatches, runAnthropicOne);
 
       messages.push({
         role: 'user',

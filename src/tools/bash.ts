@@ -184,7 +184,7 @@ export const BashTool: Tool<typeof BashInputSchema, BashOutput> = {
     };
   },
 
-  isConcurrencySafe: () => true, // 命令执行可以并发
+  isConcurrencySafe: () => false,
   isReadOnly: () => false, // 命令可能修改系统状态
   isDestructive: () => true // 命令执行是破坏性操作
 };

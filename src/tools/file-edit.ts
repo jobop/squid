@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
 import type { Tool, ToolResult, ToolContext } from './base';
+import { resolveSafeWorkspacePath } from './workspace-path';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { z } from 'zod';
 
@@ -8,7 +8,7 @@ const FileEditInputSchema = z.object({
   file_path: z
     .string()
     .describe(
-      '要编辑的文件路径（相对工作区）。Plan 模式下通常仅允许编辑 .squid/plan*.md（以系统提示为准）。'
+      '要编辑的文件路径（相对工作区）。勿使用 .Users.xxx 这类点号链代替绝对路径。Plan 模式下通常仅允许编辑 .squid/plan*.md（以系统提示为准）。'
     ),
   old_string: z.string().describe('要替换的旧字符串'),
   new_string: z.string().describe('替换后的新字符串'),
@@ -35,7 +35,19 @@ export const FileEditTool: Tool<typeof FileEditInputSchema, FileEditOutput> = {
     context: ToolContext
   ): Promise<ToolResult<FileEditOutput>> {
     try {
-      const filePath = join(context.workDir, input.file_path);
+      const resolved = await resolveSafeWorkspacePath(context.workDir, input.file_path);
+      if (!resolved.ok) {
+        return {
+          data: {
+            success: false,
+            message: resolved.error,
+            replacements: 0,
+            filePath: input.file_path,
+          },
+          error: resolved.error,
+        };
+      }
+      const filePath = resolved.abs;
 
       // 读取文件内容
       const content = await readFile(filePath, 'utf-8');
@@ -106,7 +118,9 @@ export const FileEditTool: Tool<typeof FileEditInputSchema, FileEditOutput> = {
     };
   },
 
-  isConcurrencySafe: () => false, // 文件写入不是并发安全的
+  /** 与分区器批内路径不相交校验配合 */
+  isConcurrencySafe: (input) =>
+    typeof input?.file_path === 'string' && input.file_path.trim().length > 0,
   isReadOnly: () => false,
   isDestructive: () => true // 修改文件是破坏性操作
 };

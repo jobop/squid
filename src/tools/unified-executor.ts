@@ -3,6 +3,10 @@ import type { TaskMode } from '../tasks/types';
 import { SkillLoader } from '../skills/loader';
 import { ToolRegistry } from './registry';
 import { saveMemoryTool } from './save-memory';
+import { ReadFileTool } from './read-file';
+import { WriteFileTool } from './write-file';
+import { GlobTool } from './glob';
+import { GrepTool } from './grep';
 import { WebFetchTool } from './web-fetch';
 import { FileEditTool } from './file-edit';
 import { BashTool } from './bash';
@@ -12,6 +16,7 @@ import { CronCreateTool } from './cron-create';
 import { CronDeleteTool } from './cron-delete';
 import { CronListTool } from './cron-list';
 import { BriefTool } from './brief';
+import { SkillTool } from './skill';
 
 export type UnifiedExecutionErrorType = 'timeout' | 'config' | 'execution';
 
@@ -33,17 +38,26 @@ export interface UnifiedExecutionResult {
 
 const DEFAULT_TIMEOUT_MS = 300000;
 
+/**
+ * 子代理（agent / skill 内嵌执行）使用的工具集。
+ * 与 TaskAPI 主会话对齐核心能力（含 skill）；不含嵌套 `agent` 以免深度与成本失控（需要时可再开放）。
+ */
 function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(saveMemoryTool);
+  registry.register(ReadFileTool);
+  registry.register(GlobTool);
+  registry.register(GrepTool);
   registry.register(WebFetchTool);
   registry.register(FileEditTool);
+  registry.register(WriteFileTool);
   registry.register(BashTool);
   registry.register(PowerShellTool);
   registry.register(WebSearchTool);
   registry.register(CronCreateTool);
   registry.register(CronDeleteTool);
   registry.register(CronListTool);
+  registry.register(SkillTool);
   registry.register(BriefTool);
   return registry;
 }

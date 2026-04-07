@@ -17,11 +17,28 @@ export const PLAN_MODE_READONLY_TOOL_NAMES = new Set<string>([
 /** 仅允许指向 canonical 计划文件路径时执行 */
 export const PLAN_MODE_PLAN_WRITE_TOOL_NAMES = new Set<string>(['file_edit', 'write_file']);
 
+/** 规划期可调用子代理（子执行继承 plan，仍受白名单约束） */
+export const PLAN_MODE_SUBAGENT_TOOL_NAMES = new Set<string>(['agent']);
+
 /** 下发给模型的 Plan 工具并集 */
 export const PLAN_MODE_ALLOWED_TOOL_NAMES = new Set<string>([
   ...PLAN_MODE_READONLY_TOOL_NAMES,
   ...PLAN_MODE_PLAN_WRITE_TOOL_NAMES,
+  ...PLAN_MODE_SUBAGENT_TOOL_NAMES,
 ]);
+
+/** 各 mode 共用的 system 段落：主模型自行判断是否同轮发起多工具；宿主按各工具 isConcurrencySafe 与批内写路径规则分批并发。 */
+export function getParallelToolBatchSystemSection(): string {
+  return `
+
+# 同轮工具并行（由你判断）
+
+- **是否并行由你根据任务决定**：若多步**相互独立**（无先后依赖、不写同一文件、不争抢同一关键资源），可在**同一条助手回复**里发起**多个**工具调用。
+- **宿主如何执行**：对同轮调用按顺序扫描，**连续**且各工具在**当前参数**下声明为可并发的段会 \`Promise.all\`；遇到不可并发工具则该段顺序执行。多个 \`write_file\`/\`file_edit\` 仅在**目标路径解析后互不相同且均在工作区内**时才会同批并发；\`bash\` 等同轮默认顺序执行。
+- **多个 \`agent\` 特别注意**：若各子任务的 \`instruction\` 都会 **写入同一 \`file_path\`**（例如都往 \`hello.all\` 里写），**不要同轮并发多个 \`agent\`**——子代理会并行执行，后写入覆盖先写入。应 **分轮** 逐个 \`agent\`，或 **只发一个 \`agent\`** / 由你在主会话里 **read 合并后一次 \`write_file\`**。
+- **应分轮或合并为单次**：存在依赖、会改同一路径、或必须严格次序时，请分轮顺序调用或改用单次 \`agent\` 统筹。
+- **示例**：多个互不相关的只读查询可同轮发起；多个不同路径的写入在路径不冲突时可同轮并发。`;
+}
 
 export function sanitizeConversationIdForFilename(id: string): string {
   const s = id.trim().replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 64);
@@ -76,22 +93,28 @@ export function getPlanModeSystemAppendix(workspace: string, conversationId?: st
 
 # Plan 模式（当前任务）
 
-你处于 **规划阶段**。请严格按以下顺序行动：
+你处于 **规划阶段**（对齐「先探索、再成文」）。建议流程：
 
-1. **（如需）** 使用只读工具（read_file、grep、glob、web_fetch、web_search 等）理解需求与代码库。
-2. **必须** 在本轮中通过 \`write_file\`（新建）或 \`file_edit\`（文件已存在时）把**本轮方案**写入计划文件。
-3. **禁止**在尚未把本轮方案写入计划文件之前，对**其它任意路径**调用 \`write_file\` 或 \`file_edit\`（例如业务源码、hello.py 等）。
+## 探索阶段
 
-**唯一允许的写入目标** — 工具参数 \`file_path\` 必须使用与工作区一致的**相对路径**（勿仅凭绝对路径心理模型，调用时仍填相对路径）:
+- 上文 system 已说明 **「同轮工具并行」** 的自行判断准则；若适合，可在**同一条回复**中发起多只读或多 \`agent\`（各 \`instruction\` 聚焦不同目录或问题）。子 \`agent\` 仍继承 **Plan** 约束，**不能**改业务文件或跑 Shell。
+- 并发调用全部返回后，在下一轮**汇总**子结果，避免重复劳动。
+
+## 成文阶段
+
+- **必须**通过 \`write_file\`（新建）或 \`file_edit\`（已有内容时）把**本轮结论与可执行计划**写入下方**唯一**计划文件。
+- **禁止**在尚未把本轮方案写入计划文件之前，对**其它任意路径**调用 \`write_file\` 或 \`file_edit\`。
+
+**唯一允许的写入目标** — 工具参数 \`file_path\` 须为相对工作区的路径:
 \`${planRel}\`
 
 **同一文件的绝对路径（便于对照）:** \`${planPath}\`
 
-计划正文请用 Markdown，建议包含：步骤、拟创建或修改的文件路径、风险、验证方式。不要编辑工作区内其它文件。
+计划正文请用 Markdown：步骤、拟创建/修改路径、风险、验证方式、（若曾并行探索）各子任务的要点摘要。
 
-**禁止** Shell/PowerShell、创建/删除定时任务、子 Agent / 技能、长期记忆写入等非只读操作。
+**禁止** Shell/PowerShell、定时任务创建/删除、\`skill\`、长期记忆写入等。
 
-需要实际创建业务文件或执行命令时，请让用户将模式切换为 **Ask** 或 **Craft**。`;
+需要实际改业务代码或执行命令时，请让用户切换 **Ask** 或 **Craft**。`;
 }
 
 export function getToolsForTaskMode(mode: TaskMode, registry: ToolRegistry): Tool[] {
@@ -122,6 +145,10 @@ export function checkPlanModeToolInvocation(
   }
 
   if (PLAN_MODE_READONLY_TOOL_NAMES.has(toolName)) {
+    return { ok: true };
+  }
+
+  if (PLAN_MODE_SUBAGENT_TOOL_NAMES.has(toolName)) {
     return { ok: true };
   }
 

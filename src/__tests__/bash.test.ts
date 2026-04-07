@@ -110,7 +110,7 @@ describe('BashTool', () => {
   });
 
   it('应该正确标记为破坏性操作', () => {
-    expect(BashTool.isConcurrencySafe()).toBe(true);
+    expect(BashTool.isConcurrencySafe()).toBe(false);
     expect(BashTool.isReadOnly()).toBe(false);
     expect(BashTool.isDestructive?.()).toBe(true);
   });

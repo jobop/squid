@@ -69,6 +69,10 @@ export const GrepTool: Tool = {
 };
 ```
 
+### isConcurrencySafe 与同轮编排
+
+TaskExecutor 对同一条助手消息内的多个 `tool_call` 会按顺序做 **分区**：相邻且在 **当前参数** 下 `isConcurrencySafe` 均为真的调用合并为一段并 `Promise.all`；否则分段顺序执行。`write_file` / `file_edit` 等写类工具若声明为可并发，仍须考虑 **批内副作用**（例如目标路径是否冲突）；宿主会对写路径做批内校验，实现时请在 `isConcurrencySafe` 中如实反映「在此 input 下与其它调用并行是否安全」。
+
 ## 实现 mapToolResultToToolResultBlockParam
 
 这是最重要的新增方法，负责将工具的输出转换为 API 标准格式。

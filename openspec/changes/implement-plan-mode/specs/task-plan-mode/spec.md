@@ -7,7 +7,7 @@
 #### Scenario: Plan 下列表不含写仓库类工具
 
 - **WHEN** 任务以 `plan` 模式发起流式或非流式执行
-- **THEN** 下发给模型的 `tools` 列表不包含 `bash`、`powershell`、`file_edit`、`write_file`（M1；M2 起 `write_file`/`file_edit` 仅在满足计划路径规则时可见且可执行）、`agent`、`skill`、`cron_create`、`cron_delete`、`save_memory` 等（以 `openspec/changes/implement-plan-mode/design.md` 白名单为准）
+- **THEN** 下发给模型的 `tools` 列表不包含 `bash`、`powershell`、`skill`、`cron_create`、`cron_delete`、`save_memory` 等；`file_edit`/`write_file` 仅在满足 M2 计划路径规则时可执行；**允许** `agent` 用于规划期只读/探索向子任务（子执行继承 `plan` 约束）；以 `design.md` 白名单为准
 
 #### Scenario: 模型仍输出禁用工具调用
 
@@ -58,21 +58,21 @@
 
 ---
 
-### Requirement: 计划内并行任务解析与编排（M3，可选）
+### Requirement: 全模式同轮安全并行 + 提示词引导
 
-若启用 M3，系统 SHALL 能从计划正文解析出结构化并行子任务，并 SHALL 支持在实现阶段按策略触发多路子任务执行与结果汇总（并发上限可配置）。
+系统消息（各 `TaskMode`）SHALL 包含「同轮工具并行由主模型自行判断」的说明（见 `getParallelToolBatchSystemSection`）；宿主对 **ask / craft / plan** SHALL 按 `partitionToolCalls` + 各工具 `isConcurrencySafe(解析后 input)` 将同轮 `tool_calls` 切成连续段：**连续且均安全**的段可 `Promise.all` 并发；否则顺序执行。对含 `write_file`/`file_edit` 的并发段 SHALL 校验解析后路径在工作区内、写路径两两不同、且不与同段 `read_file` 目标相同，否则该段降级为顺序执行。`bash` 等声明为不可并发的工具与同段其它调用不得并发。
 
-#### Scenario: 解析并行块
+#### Scenario: 同轮多工具并发（任意 mode）
 
-- **WHEN** 计划文件包含符合约定格式的并行任务块
-- **THEN** 解析器产出有序子任务列表（含至少 `id` 与 `prompt` 或等价字段）
+- **WHEN** `mode` 为 `ask`、`craft` 或 `plan`，且连续若干 `tool_calls` 在解析参数后均被对应工具声明为可并发
+- **THEN** 宿主对该连续段并发执行，再将各 `tool_result` 按与原始 `tool_calls` 一致的顺序写回上下文
 
-#### Scenario: 并发上限
+#### Scenario: 不可并发段顺序执行
 
-- **WHEN** 子任务数量大于配置的上限
-- **THEN** 系统通过队列或批处理限制同时执行数，且不静默丢任务
+- **WHEN** 某工具解析失败、`isConcurrencySafe` 为假，或与同段写路径规则冲突而降级
+- **THEN** 宿主对该段顺序执行，且 SHALL NOT 静默丢弃工具结果
 
-#### Scenario: 单路子任务失败
+#### Scenario: Plan 探索与成文
 
-- **WHEN** 某一子任务执行失败
-- **THEN** 行为符合 `design.md` 中失败策略（记录错误、可选取消余下任务或继续），且对用户或日志可观测
+- **WHEN** `mode === 'plan'`
+- **THEN** 除上述并行规则外，附录仍约束唯一计划文件写入与探索阶段汇总流程

@@ -18,7 +18,7 @@
 
 ## M3 — 多 Agent 并行（可选）
 
-- [ ] 3.1 在 OpenSpec `specs/task-plan-mode/spec.md` 或独立 spec 中冻结 **并行块** 文本格式（示例见 design Open Questions）。
-- [ ] 3.2 实现 `parseParallelTracks(planMarkdown): { id, prompt, scope? }[]` 单元测试覆盖。
-- [ ] 3.3 在 Craft（或专用 API）中实现编排：`Promise.all` + 并发上限；子任务通过现有 `agent` 工具或 task-api 子执行路径触发；汇总结果写入日志或回注主会话。
-- [ ] 3.4 文档化：并行与共享 workspace 的文件边界约定、失败策略（单路失败是否整批取消）。
+- [ ] 3.1 ~~JSON 并行块 + 专用 API~~ **已回滚**；改为 Plan 内 **提示词引导 + 同轮多工具/`agent` 并发探索**（见 `specs/task-plan-mode/spec.md` 更新条）。
+- [ ] 3.2 ~~parseParallelTracks~~ 删除；以 executor 并行执行与 plan-mode-policy 单测为准。
+- [ ] 3.3 ~~Craft 专用 parallel-plan-run~~ 删除；并行探索发生在 **Plan 模式对话内**。
+- [ ] 3.4 文档：共享 workspace、子 `agent` 继承 plan 约束；汇总由主模型在下一轮完成。

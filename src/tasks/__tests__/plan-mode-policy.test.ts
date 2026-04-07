@@ -6,6 +6,7 @@ import { BashTool } from '../../tools/bash';
 import { WebFetchTool } from '../../tools/web-fetch';
 import { FileEditTool } from '../../tools/file-edit';
 import { WriteFileTool } from '../../tools/write-file';
+import { AgentTool } from '../../tools/agent';
 import {
   PLAN_MODE_ALLOWED_TOOL_NAMES,
   checkPlanModeToolInvocation,
@@ -14,17 +15,19 @@ import {
   getPlanModeSystemAppendix,
   getToolsForTaskMode,
   isToolInvocationAllowedInPlanMode,
+  getParallelToolBatchSystemSection,
   planModeToolRejectionMessage,
 } from '../plan-mode-policy';
 
 const WS = path.resolve('/tmp/squid-plan-ws');
 
 describe('plan-mode-policy', () => {
-  it('PLAN_MODE_ALLOWED_TOOL_NAMES 含只读与计划写入工具', () => {
+  it('PLAN_MODE_ALLOWED_TOOL_NAMES 含只读、计划写入与 agent', () => {
     expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('read_file')).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('web_fetch')).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('write_file')).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('file_edit')).toBe(true);
+    expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('agent')).toBe(true);
     expect(PLAN_MODE_ALLOWED_TOOL_NAMES.has('bash')).toBe(false);
   });
 
@@ -35,15 +38,17 @@ describe('plan-mode-policy', () => {
     reg.register(WebFetchTool);
     reg.register(FileEditTool);
     reg.register(WriteFileTool);
+    reg.register(AgentTool);
     const planTools = getToolsForTaskMode('plan', reg);
     expect(planTools.map((t) => t.name).sort()).toEqual([
+      'agent',
       'file_edit',
       'read_file',
       'web_fetch',
       'write_file',
     ]);
-    expect(getToolsForTaskMode('craft', reg)).toHaveLength(5);
-    expect(getToolsForTaskMode('ask', reg)).toHaveLength(5);
+    expect(getToolsForTaskMode('craft', reg)).toHaveLength(6);
+    expect(getToolsForTaskMode('ask', reg)).toHaveLength(6);
   });
 
   it('getCanonicalPlanFilePath 无会话时为 .squid/plan.md', () => {
@@ -62,12 +67,29 @@ describe('plan-mode-policy', () => {
     expect(getCanonicalPlanFileRelativePath(WS, 't')).toContain('plan-');
   });
 
-  it('getPlanModeSystemAppendix 含相对路径与强约束用语', () => {
+  it('getPlanModeSystemAppendix 含相对路径与探索/成文说明', () => {
     const appendix = getPlanModeSystemAppendix(WS, 'sess-1');
     expect(appendix).toContain('唯一允许的写入目标');
-    expect(appendix).toContain('在尚未把本轮方案写入计划文件之前');
+    expect(appendix).toContain('探索阶段');
+    expect(appendix).toContain('同轮工具并行');
     expect(appendix).toContain(getCanonicalPlanFileRelativePath(WS, 'sess-1'));
     expect(appendix).toContain(getCanonicalPlanFilePath(WS, 'sess-1'));
+  });
+
+  it('getParallelToolBatchSystemSection 含自行判断与 isConcurrencySafe 编排说明', () => {
+    const s = getParallelToolBatchSystemSection();
+    expect(s).toContain('由你判断');
+    expect(s).toContain('write_file');
+    expect(s).toContain('bash');
+  });
+
+  it('plan 下允许 agent 调用', () => {
+    const r = checkPlanModeToolInvocation(
+      'agent',
+      { instruction: '只读搜索 src 目录结构' },
+      WS
+    );
+    expect(r.ok).toBe(true);
   });
 
   it('checkPlanModeToolInvocation 允许只读工具', () => {
