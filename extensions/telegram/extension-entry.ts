@@ -1,8 +1,9 @@
 import type { ChannelExtensionFactoryContext } from '../../src/channels/extensions/types';
-import { eventBridge } from '../../src/channels/bridge/event-bridge';
 import { TelegramChannelPlugin } from './src/plugin';
 
 export default async function createChannelPlugin(ctx?: ChannelExtensionFactoryContext) {
-  const bridge = ctx?.eventBridge ?? eventBridge;
-  return new TelegramChannelPlugin(bridge, ctx?.taskAPI);
+  if (!ctx?.eventBridge) {
+    throw new Error('渠道扩展须由宿主注入 eventBridge（打包后无法从 ../../src 解析 event-bridge）');
+  }
+  return new TelegramChannelPlugin(ctx.eventBridge, ctx.taskAPI);
 }

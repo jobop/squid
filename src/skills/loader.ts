@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'fs/promises';
 import { basename, dirname, extname, join } from 'path';
 import { homedir } from 'os';
+import { getSquidProjectRoot } from '../channels/extensions/config';
 import type { SkillDefinition, SkillYAML } from './schema';
 import { SkillYAMLSchema } from './schema';
 
@@ -8,18 +10,49 @@ export interface SkillSummary {
   name: string;
   description: string;
   userInvocable: boolean;
+  /** 相对 rootDir 的路径 */
   filePath: string;
+  /** 技能文件所在根目录（包内 skills 或 ~/.squid/skills） */
+  rootDir: string;
+}
+
+function resolveBundledSkillsDir(): string | null {
+  try {
+    const p = join(getSquidProjectRoot(), 'skills');
+    return existsSync(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+interface MergedSkillEntry {
+  rootDir: string;
+  filePath: string;
+  name: string;
+  description: string;
+  userInvocable: boolean;
 }
 
 export class SkillLoader {
-  private skillsDir: string;
+  private readonly userSkillsDir: string;
+  private readonly bundledSkillsDir: string | null;
 
+  /**
+   * @param skillsDir 若传入，仅扫描该目录（测试用）；否则合并「包内 skills」与 `~/.squid/skills`，同名以用户为准。
+   */
   constructor(skillsDir?: string) {
-    this.skillsDir = skillsDir || join(homedir(), '.squid', 'skills');
+    if (skillsDir !== undefined) {
+      this.userSkillsDir = skillsDir;
+      this.bundledSkillsDir = null;
+    } else {
+      this.userSkillsDir = join(homedir(), '.squid', 'skills');
+      this.bundledSkillsDir = resolveBundledSkillsDir();
+    }
   }
 
-  async loadSkill(filename: string): Promise<SkillDefinition> {
-    const filePath = join(this.skillsDir, filename);
+  async loadSkill(filename: string, rootDir?: string): Promise<SkillDefinition> {
+    const base = rootDir ?? this.userSkillsDir;
+    const filePath = join(base, filename);
     const content = await readFile(filePath, 'utf-8');
     const { metadata, systemPrompt } = this.parseSkillContent(content, filename);
 
@@ -38,7 +71,7 @@ export class SkillLoader {
     if (!matched) {
       return null;
     }
-    return this.loadSkill(matched.filePath);
+    return this.loadSkill(matched.filePath, matched.rootDir);
   }
 
   private parseInlineArray(value: string): string[] {
@@ -228,48 +261,74 @@ export class SkillLoader {
 
   async loadAll(): Promise<Map<string, SkillDefinition>> {
     const skills = new Map<string, SkillDefinition>();
+    const entries = await this.collectMergedSkillEntries();
 
-    try {
-      const files = await this.collectSkillFiles(this.skillsDir);
-
-      for (const relativeFile of files) {
-        try {
-          const skill = await this.loadSkill(relativeFile);
-          skills.set(skill.metadata.name, skill);
-        } catch (error) {
-          // Skip malformed skill files instead of breaking the whole loading process.
-          console.warn(`[SkillLoader] Skip invalid skill file: ${relativeFile}`, (error as Error).message);
-        }
+    for (const entry of entries) {
+      try {
+        const skill = await this.loadSkill(entry.filePath, entry.rootDir);
+        skills.set(skill.metadata.name, skill);
+      } catch (error) {
+        console.warn(
+          `[SkillLoader] Skip invalid skill file: ${entry.filePath}`,
+          (error as Error).message
+        );
       }
-    } catch {
-      // Skills directory doesn't exist yet
     }
 
     return skills;
   }
 
   async listSkillSummaries(): Promise<SkillSummary[]> {
-    const result: SkillSummary[] = [];
-    try {
-      const files = await this.collectSkillFiles(this.skillsDir);
+    const entries = await this.collectMergedSkillEntries();
+    return entries.map((e) => ({
+      name: e.name,
+      description: e.description,
+      userInvocable: e.userInvocable,
+      filePath: e.filePath,
+      rootDir: e.rootDir,
+    }));
+  }
+
+  /**
+   * 先收录包内 skills，再收录用户目录；按规范化技能名去重，后者覆盖前者。
+   */
+  private async collectMergedSkillEntries(): Promise<MergedSkillEntry[]> {
+    const byNorm = new Map<string, MergedSkillEntry>();
+
+    const scanRoot = async (root: string) => {
+      let files: string[];
+      try {
+        files = await this.collectSkillFiles(root);
+      } catch {
+        return;
+      }
       for (const relativeFile of files) {
         try {
-          const content = await readFile(join(this.skillsDir, relativeFile), 'utf-8');
+          const content = await readFile(join(root, relativeFile), 'utf-8');
           const { metadata } = this.parseSkillContent(content, relativeFile);
-          result.push({
+          const key = this.normalizeSkillName(metadata.name);
+          byNorm.set(key, {
+            rootDir: root,
+            filePath: relativeFile,
             name: metadata.name,
             description: metadata.description,
             userInvocable: metadata['user-invocable'],
-            filePath: relativeFile,
           });
         } catch (error) {
-          console.warn(`[SkillLoader] Skip invalid skill file: ${relativeFile}`, (error as Error).message);
+          console.warn(
+            `[SkillLoader] Skip invalid skill file: ${relativeFile}`,
+            (error as Error).message
+          );
         }
       }
-    } catch {
-      // Skills directory doesn't exist yet
+    };
+
+    if (this.bundledSkillsDir) {
+      await scanRoot(this.bundledSkillsDir);
     }
-    return result;
+    await scanRoot(this.userSkillsDir);
+
+    return Array.from(byNorm.values());
   }
 
   private normalizeSkillName(name: string): string {

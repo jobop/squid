@@ -1,245 +1,112 @@
-# Jobopx Desktop 快速使用指南
+# squid 快速使用指南
 
-## 🎯 这是什么？
+本文面向最终用户：在本地安装并运行 squid，完成模型配置后即可开始对话与任务。架构与扩展说明见 [developer-guide.md](./developer-guide.md)。
 
-Jobopx Desktop 是一个 **AI 助手桌面应用**，可以帮你：
-- 📝 自动生成文档、代码、报告
-- 🔍 分析数据、审查代码
-- 📁 整理文件、生成测试
-- ⏰ 定时执行任务（比如每天早上生成 AI 新闻摘要）
-- 🌐 远程控制（通过 API 调用）
+## 产品定位
 
-## 🚀 5 分钟上手
+squid 是一款 **本地运行的 AI 桌面工作台**，适用于：
 
-### 第 1 步：安装依赖
+- 在指定工作目录下做代码阅读、审查与轻量改写（受任务模式与沙箱约束）
+- 结合技能与专家配置，完成文档整理、检索、结构化输出等任务
+- 使用定时任务在本地按 Cron 触发模型执行
+- 按需启用飞书、Telegram、微信等 **渠道扩展**（需单独配置，见 [channel-extensions.md](./channel-extensions.md)）
+
+## 环境与启动
+
+**自源码运行（推荐开发者）**
+
+- Node.js 建议 22 LTS，npm；桌面壳依赖 Electrobun（`npm run dev` 时会按平台准备 CLI）。
+- 项目根目录须存在 **`electrobun.config.ts`**（Electrobun 仅解析此文件名）。
 
 ```bash
 cd squid
 npm install
-```
-
-### 第 2 步：配置 API 密钥
-
-你需要至少一个 AI 模型的 API 密钥：
-
-**选项 1: Anthropic Claude（推荐）**
-- 访问 https://console.anthropic.com/
-- 创建 API Key
-- 复制密钥
-
-**选项 2: OpenAI GPT**
-- 访问 https://platform.openai.com/
-- 创建 API Key
-- 复制密钥
-
-**选项 3: DeepSeek**
-- 访问 https://platform.deepseek.com/
-- 创建 API Key
-- 复制密钥
-
-### 第 3 步：启动应用
-
-```bash
 npm run dev
 ```
 
-应用会打开一个桌面窗口。
+**发行包**
 
-### 第 4 步：首次配置
+若从 GitHub Release 等渠道获取已构建安装包，按对应平台说明安装。macOS 未签名/未公证版本可能需在首次打开时使用右键「打开」或按系统提示放行；详见仓库根目录 [README.md](../README.md)。
 
-1. 点击左侧边栏的 **"设置"**
-2. 在 "API 密钥" 部分输入你的密钥
-3. 点击 **"保存设置"**
+## 配置 API 密钥
 
-飞书等渠道：可在侧栏 **「渠道」** 中查看各 Channel 健康状态，并在飞书详情页编辑配置（凭证经 API 脱敏返回）。飞书实现位于 **`extensions/feishu/`**，由 `config/channel-extensions.json` 默认 `enabled: ["feishu"]` 加载；若删除该配置且未在 `~/.squid/channel-extensions.json` 中启用飞书，**飞书 Channel 不会注册**。个人插件可放在 **`~/.squid/extensions/<插件目录>/`**（存在该目录即自动参与扫描，无需写进 `roots`；`enabled` 白名单仍生效）。详见 [channel-extensions.md](./channel-extensions.md)。
+至少配置一种模型提供方（在应用内 **设置** 中填写并保存，密钥写入本机 `~/.squid/config.json`）：
 
-### 第 5 步：创建第一个任务
+| 提供方 | 说明 |
+|--------|------|
+| Anthropic | [Anthropic Console](https://console.anthropic.com/) 创建 API Key |
+| OpenAI | [OpenAI Platform](https://platform.openai.com/) 创建 API Key |
+| 兼容端点 | 在设置中填写自定义 Base URL 与模型名（需兼容当前应用所使用的协议） |
 
-1. 点击 **"新建任务"** 按钮
-2. 选择模式：
-   - **Ask 模式**：只查询，不修改文件（安全）
-   - **Craft 模式**：AI 自动执行（快速）
-   - **Plan 模式**：先看计划，确认后执行（谨慎）
-3. 选择 AI 模型（比如 Claude Sonnet 4）
-4. 指定工作目录（比如 `/Users/你的用户名/Documents/test`）
-5. 输入任务，比如：
-   ```
-   帮我分析这个目录下的所有 JavaScript 文件，
-   找出可能的性能问题
-   ```
-6. 点击 **"创建任务"**
+## 首次使用流程
 
-AI 就会开始工作了！
+1. 启动应用后打开侧栏 **「设置」**，保存模型与相关选项。
+2. 在聊天或任务界面 **选择工作目录**（勿将不可信路径作为工作区根）。
+3. **新建会话或任务**，选择模式：
+   - **Ask**：偏只读与分析，默认不主动改写文件（具体以当前版本行为为准）。
+   - **Craft**：允许工具链自动执行，可能修改工作区内文件。
+   - **Plan**：偏规划与分步说明，适合复杂需求。
+4. 按需选择 **技能** 或 **专家**。
 
-## 💡 常见使用场景
+## 渠道与飞书（可选）
 
-### 场景 1：代码审查
+- 侧栏 **「渠道」** 可查看内置 WebUI 与各扩展渠道状态。
+- 飞书实现位于仓库 `extensions/feishu/`；默认是否在 `config/channel-extensions.json` 中启用以仓库为准。用户侧启用列表可写在 `~/.squid/channel-extensions.json`。
+- 个人或第三方扩展可置于 `~/.squid/extensions/<目录>/`，细节见 [channel-extensions.md](./channel-extensions.md)。
 
-```
-任务模式：Ask
-工作目录：你的项目目录
-指令：审查 src/ 目录下的代码，找出潜在的 bug 和改进建议
-```
+飞书机器人创建、长连接与 Webhook、以及 `~/.squid/feishu-channel.json` 字段说明，仍以应用内文案与 [user-guide.md](./user-guide.md) 为准。
 
-### 场景 2：自动生成文档
+## 常见任务示例
 
-```
-任务模式：Craft
-工作目录：你的项目目录
-指令：为 src/api/ 目录下的所有函数生成 API 文档
+**代码审查（Ask）**
+
+```text
+模式：Ask
+工作目录：<你的项目路径>
+指令：梳理 src 下主要模块职责，并列出可读性与明显缺陷方面的建议。
 ```
 
-### 场景 3：数据分析
+**批量文档（Craft）**
 
-```
-任务模式：Ask
-工作目录：包含数据文件的目录
-技能：选择 "数据分析"
-指令：分析 data.csv 文件，生成统计报告
-```
-
-### 场景 4：定时任务
-
-1. 点击左侧 **"定时任务"**
-2. 点击 **"新建定时任务"**
-3. 选择预设模板，比如 **"每日 AI 新闻摘要"**
-4. 设置执行时间（比如每天早上 9 点）
-5. 启用任务
-
-每天早上 9 点，AI 会自动搜索并总结最新的 AI 新闻！
-
-## 🎭 使用技能和专家
-
-### 使用技能
-
-技能是预设的任务模板，让 AI 更专业：
-
-1. 创建任务时，点击 **"选择技能"**
-2. 选择合适的技能：
-   - 📊 数据分析
-   - 📝 文档生成
-   - 🔍 代码审查
-   - 📁 文件整理
-   - 等等...
-3. AI 会使用该技能的专业提示词
-
-### 使用专家
-
-专家是不同的角色视角：
-
-1. 创建任务时，点击 **"选择专家"**
-2. 选择合适的专家：
-   - 👨‍💻 软件工程师
-   - 📊 数据分析师
-   - 🎨 UI 设计师
-   - 📱 产品经理
-   - 等等...
-3. AI 会以该专家的视角回答
-
-## 🌐 远程控制（高级）
-
-你可以通过 HTTP API 远程控制 Jobopx：
-
-### 1. 生成 Token
-
-在设置页面，点击 **"生成新 Token"**，复制 Token。
-
-### 2. 启动 Claw 服务器
-
-```bash
-# 在代码中启动（默认端口 3000）
+```text
+模式：Craft
+工作目录：<项目路径>
+指令：为指定目录中的公开 API 生成 Markdown 说明草稿。
 ```
 
-### 3. 远程创建任务
+**定时任务**
 
-```bash
-curl -X POST http://localhost:3000/task \
-  -H "Authorization: Bearer 你的TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "分析项目代码质量",
-    "workDir": "/path/to/project"
-  }'
-```
+在 **定时任务** 页面新建条目，填写 Cron 与触发后交给模型的内容；应用未运行时调度不会执行。
 
-### 4. 查询任务状态
+## 技能与专家
 
-```bash
-curl http://localhost:3000/task/任务ID \
-  -H "Authorization: Bearer 你的TOKEN"
-```
+- **技能**：在界面中选择已安装技能；技能文件位于 `~/.squid/skills/`（含 SkillHub 等来源的安装结果）。
+- **专家**：用于调整系统角色与边界；内置与自定义项在 **专家** 相关页面管理。
 
-## 🔌 连接外部服务（MCP）
+## 常见问题
 
-Jobopx 可以连接 GitHub、Slack、Notion、Jira：
+**密钥是否只存在本机？**  
+是。配置与密钥不应提交到 Git；请自行备份 `~/.squid`。
 
-### 连接 GitHub
+**任务会改文件吗？**  
+取决于模式与工具策略：Ask 偏只读；Craft 可能写入；Plan 多为先说明再执行。请以界面提示为准。
 
-1. 点击左侧 **"连接器"**
-2. 找到 **GitHub** 连接器
-3. 点击 **"配置"**
-4. 输入你的 GitHub Personal Access Token
-5. 点击 **"连接"**
+**工作目录边界？**  
+文件类工具通常限制在当前会话绑定的工作目录内，具体校验见权限与沙箱实现。
 
-现在 AI 可以：
-- 读取你的仓库
-- 创建 Issue
-- 查看 PR
-- 等等...
+**如何停止运行中的任务？**  
+在任务或会话界面使用停止/中断控件（名称以 UI 为准）。
 
-### 连接 Notion
+**定时任务在关应用后还跑吗？**  
+不会；调度依赖应用进程存活。
 
-1. 在 Notion 中创建 Integration
-2. 获取 API Key
-3. 在 Jobopx 中配置 Notion 连接器
-4. AI 就可以读写你的 Notion 页面了！
+## 延伸阅读
 
-### 飞书 / Lark 机器人（可选）
+| 文档 | 内容 |
+|------|------|
+| [user-guide.md](./user-guide.md) | 功能与界面说明 |
+| [developer-guide.md](./developer-guide.md) | 目录结构与扩展 |
+| [tool-development-guide.md](./tool-development-guide.md) | 内置工具开发约定 |
+| [TEST_REPORT.md](./TEST_REPORT.md) | 自动化测试概览 |
 
-1. 在[飞书开放平台](https://open.feishu.cn/app)创建企业自建应用，开通机器人与 **「接收消息」**（`im.message.receive_v1`）等事件权限，取得 **App ID / App Secret**，并记录事件订阅里的 **Encrypt Key**、**Verification Token**（与控制台一致）。
-2. **推荐：长连接（WebSocket）入站（默认，无需公网地址与穿透）**  
-   在开放平台「事件订阅」中将接收方式设为 **使用长连接**（或等价选项）。squid 启动后会用官方 SDK **主动连接飞书**，本机只需能访问外网即可，**不要**再配置请求 URL / 内网穿透。  
-   若必须使用 HTTP 回调，可在 `feishu-channel.json` 中设置 **`"connectionMode": "webhook"`**，并将事件 URL 指向 **`http://<可达主机>:50001/api/feishu/webhook`**（该模式才需要公网或穿透）。
-3. 在本地创建或写入 **`~/.squid/feishu-channel.json`**（亦可通过 `POST /api/channels/feishu/config` 保存），至少包含：
-   - `appId`、`appSecret`
-   - `encryptKey`（与控制台一致；长连接与加密事件解密依赖此项）
-   - `verificationToken`（与控制台一致）
-   - `defaultReceiveId`（如群 `chat_id`）、`defaultReceiveIdType`（一般为 `chat_id`）
-   - 可选：`connectionMode`（默认 **`websocket`**）、`feishuDomain`（国际 Lark 填 **`lark`**）
-4. 重启应用；若出站配置完整，启动日志会出现「已注册 Feishu Channel」「Feishu ↔ squid 入站桥接已注册」及 **「正在建立飞书事件长连接」**。在飞书会话里发消息 → **长连接入站** → **自动走 squid 的 ask 流式任务**，回复发回同一聊天（需已配置模型 API Key 与工作区）。
-
-## ❓ 常见问题
-
-**Q: 我的 API 密钥安全吗？**  
-A: 是的！密钥使用 AES-256-GCM 加密存储在本地。
-
-**Q: 任务会修改我的文件吗？**  
-A: 取决于模式：
-- Ask 模式：只读，不会修改
-- Craft 模式：会自动修改
-- Plan 模式：先给你看计划，你确认后才修改
-
-**Q: 工作目录有什么限制？**  
-A: 所有文件操作都限制在你指定的工作目录内，无法访问其他目录。
-
-**Q: 如何停止正在运行的任务？**  
-A: 点击任务旁边的 **"停止"** 按钮。
-
-**Q: 定时任务会一直运行吗？**  
-A: 只有在应用运行时才会执行。关闭应用后，定时任务会暂停。
-
-## 📚 更多资源
-
-- [完整用户文档](docs/user-guide.md)
-- [开发者文档](docs/developer-guide.md)
-- [测试报告](TEST_REPORT.md)
-
-## 🆘 需要帮助？
-
-- 查看文档
-- 提交 Issue
-- 加入讨论
-
----
-
-**开始使用吧！** 🚀
+问题反馈与贡献请通过仓库 Issue / Pull Request。

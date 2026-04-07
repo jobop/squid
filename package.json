@@ -19,7 +19,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
     "@larksuiteoapi/node-sdk": "^1.60.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@types/ws": "^8.18.1",
     "adm-zip": "^0.5.17",
     "axios": "^1.14.0",
@@ -32,7 +31,8 @@
     "react-dom": "^18.3.0",
     "turndown": "^7.2.4",
     "ws": "^8.20.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

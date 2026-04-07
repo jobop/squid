@@ -1,12 +1,6 @@
-import {
-  type TaskAPI,
-  isTaskAPIConversationBusyError,
-} from '../../../src/api/task-api';
-import {
-  eventBridge as defaultEventBridge,
-  type EventBridge,
-  type ChannelInboundEvent,
-} from '../../../src/channels/bridge/event-bridge';
+import { type TaskAPI } from '../../../src/api/task-api';
+import { isTaskAPIConversationBusyError } from '../../../src/api/task-api-channel-errors';
+import type { EventBridge, ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
 import { loadTelegramChannelConfigSync } from './config-store';
 import { TELEGRAM_MAX_MESSAGE_CHARS, telegramSendMessage } from './telegram-client';
 
@@ -20,8 +14,8 @@ function telegramConversationId(chatId: string): string {
  */
 export function registerTelegramSquidBridge(
   taskAPI: TaskAPI,
-  /** 须与插件 emit channel:inbound 使用的 EventBridge 一致（一般为 ctx.eventBridge） */
-  bridge: EventBridge = defaultEventBridge
+  /** 须与插件 emit channel:inbound 使用的 EventBridge 一致（宿主 ctx.eventBridge） */
+  bridge: EventBridge
 ): () => void {
   const offQueued = taskAPI.addChannelQueuedCompleteHandler((cmd, assistantText) => {
     if (cmd.channelReply?.channelId !== 'telegram') return;

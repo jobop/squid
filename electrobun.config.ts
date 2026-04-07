@@ -5,9 +5,19 @@ export default {
     version: '0.1.0'
   },
   build: {
-    /** 与 BrowserWindow 加载的 `public/index.html` 及 lucide / websocket 等静态资源一致 */
+    /**
+     * public：Web UI 静态资源。
+     * config：含 channel-extensions.json；打包后 getSquidProjectRoot() 从 Resources/app/bun 向上可解析到 Resources/app。
+     * extensions：渠道扩展源码与 manifest；不打进包则 roots 为空，飞书/微信等扩展与扩展 Web 配置页均不可用。
+     * skills：内置技能 Markdown；与 ~/.squid/skills 合并扫描，同名以用户目录为准。
+     * task-api-channel-errors：扩展动态 import 时需解析 `src/api/task-api-channel-errors`（无 task-api 全量依赖）。
+     */
     copy: {
-      public: 'public'
+      public: 'public',
+      config: 'config',
+      extensions: 'extensions',
+      skills: 'skills',
+      'src/api/task-api-channel-errors.ts': 'src/api/task-api-channel-errors.ts'
     },
     bun: {
       entrypoint: './src/bun/index.ts'

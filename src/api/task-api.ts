@@ -38,33 +38,12 @@ import {
   type QueuePriority,
 } from '../utils/messageQueueManager';
 
-/** 同会话已有执行中任务时抛出，由 HTTP / Channel 捕获并入队 */
-export class TaskAPIConversationBusyError extends Error {
-  readonly conversationId: string;
+import { TaskAPIConversationBusyError } from './task-api-channel-errors';
 
-  constructor(conversationId: string) {
-    super(`conversation busy: ${conversationId}`);
-    this.name = 'TaskAPIConversationBusyError';
-    this.conversationId = conversationId;
-  }
-}
-
-export function isTaskAPIConversationBusyError(
-  e: unknown
-): e is TaskAPIConversationBusyError {
-  if (e instanceof TaskAPIConversationBusyError) return true;
-  // 动态 import 的扩展与宿主各有一份本模块时，instanceof 会失效；用 name + conversationId 识别
-  if (e !== null && typeof e === 'object') {
-    const o = e as { name?: unknown; conversationId?: unknown };
-    if (
-      o.name === 'TaskAPIConversationBusyError' &&
-      typeof o.conversationId === 'string'
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
+export {
+  TaskAPIConversationBusyError,
+  isTaskAPIConversationBusyError,
+} from './task-api-channel-errors';
 
 export interface TaskRequest {
   mode: TaskMode;

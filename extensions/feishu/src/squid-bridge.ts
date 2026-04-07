@@ -1,7 +1,5 @@
-import {
-  type TaskAPI,
-  isTaskAPIConversationBusyError,
-} from '../../../src/api/task-api';
+import { type TaskAPI } from '../../../src/api/task-api';
+import { isTaskAPIConversationBusyError } from '../../../src/api/task-api-channel-errors';
 import type { ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
 import { loadFeishuChannelConfigSync } from './config-store';
 import { getFeishuExtensionEventBridge } from './feishu-host-bridge';

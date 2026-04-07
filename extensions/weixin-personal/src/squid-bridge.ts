@@ -1,12 +1,6 @@
-import {
-  type TaskAPI,
-  isTaskAPIConversationBusyError,
-} from '../../../src/api/task-api';
-import {
-  eventBridge as defaultEventBridge,
-  type EventBridge,
-  type ChannelInboundEvent,
-} from '../../../src/channels/bridge/event-bridge';
+import { type TaskAPI } from '../../../src/api/task-api';
+import { isTaskAPIConversationBusyError } from '../../../src/api/task-api-channel-errors';
+import type { EventBridge, ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
 import { loadWeixinPersonalChannelConfigSync } from './config-store';
 import { getContextTokenForPeer } from './context-token-cache';
 import { ilinkSendTextMessage } from './ilink-api';
@@ -18,10 +12,7 @@ function weixinConversationId(chatId: string): string {
   return `weixinpersonal_${chatId.replace(/[^a-zA-Z0-9_@.-]/g, '_')}`;
 }
 
-export function registerWeixinPersonalSquidBridge(
-  taskAPI: TaskAPI,
-  bridge: EventBridge = defaultEventBridge
-): () => void {
+export function registerWeixinPersonalSquidBridge(taskAPI: TaskAPI, bridge: EventBridge): () => void {
   const offQueued = taskAPI.addChannelQueuedCompleteHandler((cmd, assistantText) => {
     if (cmd.channelReply?.channelId !== CHANNEL_ID) return;
     const chatId = cmd.channelReply.chatId?.trim();

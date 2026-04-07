@@ -130,6 +130,7 @@ Fallback description line.`;
     await writeFile(join(testDir, 'fallback-skill.md'), skillContent);
     const summary = (await loader.listSkillSummaries()).find((s) => s.filePath === 'fallback-skill.md');
     expect(summary).toBeTruthy();
+    expect(summary?.rootDir).toBe(testDir);
     expect(summary?.name).toBe('fallback-skill');
     expect(summary?.description).toContain('Fallback description line');
     expect(summary?.userInvocable).toBe(true);

@@ -6,7 +6,6 @@ export function MainLayout() {
           <a href="#tasks">任务</a>
           <a href="#skills">技能</a>
           <a href="#experts">专家</a>
-          <a href="#mcp">连接器</a>
           <a href="#claw">远程控制</a>
           <a href="#scheduler">定时任务</a>
           <a href="#settings">设置</a>

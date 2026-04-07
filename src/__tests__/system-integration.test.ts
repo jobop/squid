@@ -4,7 +4,6 @@ import { WorkspaceManager } from '../workspace/manager';
 import { PermissionEngine } from '../permissions/engine';
 import { SkillLoader } from '../skills/loader';
 import { ExpertManager } from '../experts/manager';
-import { MCPConnectionManager } from '../mcp/connection-manager';
 import { ClawServer } from '../claw/server';
 import { ClawTaskHandler } from '../claw/task-handler';
 import { TaskScheduler } from '../scheduler/task-scheduler';
@@ -31,10 +30,6 @@ describe('System Integration Test', () => {
     // Expert manager
     const expertManager = new ExpertManager();
     expect(expertManager).toBeDefined();
-
-    // MCP connection manager
-    const mcpManager = new MCPConnectionManager();
-    expect(mcpManager).toBeDefined();
 
     // Cron scheduler
     const cronScheduler = new CronScheduler();

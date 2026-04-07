@@ -1,4 +1,6 @@
-# Jobopx Desktop 开发者文档
+# squid 开发者文档
+
+桌面运行时入口为 **`src/bun/index.ts`**（Electrobun 在 `electrobun.config.ts` 的 `build.bun.entrypoint` 中引用）。WebView 前端入口为 **`src/browser/`**。修改默认拷贝的静态资源时，须同时维护 **`electrobun.config.ts`** 中的 `build.copy`（CLI **不读取** `.js` 配置文件）。**发行包须包含 `public`、`config`（含 `channel-extensions.json`）与 `extensions`**，否则渠道扩展无法扫描加载，渠道页会出现「未注册」或「无扩展 Web 配置」。
 
 ## 架构设计
 
@@ -32,10 +34,7 @@ src/
 │   └── validator.ts         # 权限验证
 ├── experts/         # 专家系统
 │   └── manager.ts           # 专家管理
-├── mcp/             # MCP 集成
-│   ├── client.ts            # MCP 客户端
-│   ├── connection-manager.ts # 连接管理
-│   └── tool-adapter.ts      # 工具适配
+├── channels/        # 渠道（内置 WebUI + 扩展加载）
 ├── claw/            # 远程控制
 │   ├── server.ts            # HTTP 服务器
 │   └── task-handler.ts      # 任务处理
@@ -172,45 +171,29 @@ export const myExpert: ExpertRole = {
 };
 ```
 
-### 添加 MCP 连接器
-
-在 `src/mcp/built-in-connectors.ts` 中添加配置：
-
-```typescript
-{
-  name: 'my-service',
-  command: 'npx',
-  args: ['-y', 'mcp-server-my-service'],
-  env: {
-    API_KEY: process.env.MY_SERVICE_API_KEY || ''
-  }
-}
-```
-
 ## 测试
 
 ```bash
-# 运行单元测试
 npm test
-
-# 运行集成测试
-npm run test:integration
-
-# 代码覆盖率
-npm run test:coverage
+npm run test:watch
 ```
+
+集成与渠道相关的手工步骤见 [integration-testing.md](./integration-testing.md)。是否另有 `test:integration`、`test:coverage` 等脚本以根目录 `package.json` 为准。
 
 ## 构建和发布
 
 ```bash
-# 开发模式
+# 桌面开发（Electrobun）
 npm run dev
 
-# 生产构建
+# TypeScript 编译
 npm run build
 
-# 打包桌面应用
-npm run package
+# 桌面打包（默认 dev 通道，输出见 build/）
+npm run build:electron
+
+# 稳定通道发行构建（输出 artifacts/，供 CI 上传 Release）
+npm run build:electron:release
 ```
 
 ## 贡献指南

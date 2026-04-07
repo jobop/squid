@@ -1,153 +1,96 @@
-# Jobopx Desktop v0.1.0 发布说明
+# squid v0.1.0 发布说明
 
-## 🎉 首个版本发布
+## 概述
 
-这是 Jobopx Desktop 的首个公开版本，一个功能完整的 AI 驱动桌面工作台。
+squid 首个对外版本：基于 Electrobun 的本地 AI 桌面工作台，集成多模型对话、任务模式、技能与专家、定时任务及可扩展渠道（飞书 / Telegram / 微信等，按需启用）。
 
-## ✨ 核心特性
+## 核心能力
 
-### 任务管理
-- 三种任务模式：Ask（只读）、Craft（自动执行）、Plan（预览后执行）
-- 任务状态机和生命周期管理
-- 权限系统和安全控制
+### 任务与工作区
 
-### 多模型支持
-- ✅ Anthropic Claude (Sonnet/Opus)
-- ✅ OpenAI GPT-4
-- ✅ DeepSeek
-- Token 使用统计和成本追踪
-- API 密钥加密存储
+- 任务模式：Ask（偏只读）、Craft（可自动执行工具）、Plan（偏规划与确认）
+- 任务状态机与持久化
+- 工作目录绑定与路径沙箱
 
-### 工作空间管理
-- 沙箱化文件访问
-- 文件读写工具
-- 文件搜索（Glob）
-- 内容搜索（Grep）
+### 模型
 
-### 技能系统
-- 10 个预置技能模板
-- 自定义技能支持
-- 工具权限白名单
-- Pre/Post hooks
+- Anthropic Claude 系列（以设置中可选模型为准）
+- OpenAI 兼容接口
+- DeepSeek 等兼容端点（取决于当前适配器与设置）
+- 流式输出与 Token 统计（以实际实现为准）
+- 本地加密存储 API 密钥
 
-### 专家角色
-- 8 个内置专家角色
-- 软件工程师、数据分析师、产品经理等
-- 专家提示词模板
+### 技能与专家
 
-### MCP 集成
-- GitHub 连接器
-- Slack 连接器
-- Notion 连接器
-- Jira 连接器
-- 动态工具加载
+- 多套内置技能模板；支持从 `~/.squid/skills` 加载与 SkillHub 等来源安装
+- 多种内置专家角色与自定义扩展点
 
-### Claw 远程控制
-- HTTP API 接口
-- Token 鉴权
-- 远程任务创建和查询
-- 执行历史记录
+### 渠道
 
-### 自动化调度
-- Cron 定时任务
-- 4 个预设模板（AI 新闻、周报、代码检查等）
-- 邮件通知
-- 执行历史
+- 内置 WebUI 渠道
+- 扩展渠道：`extensions/` 与 `~/.squid/extensions`，声明式配置与桥接 TaskAPI
 
-### 桌面应用
-- Electrobun 框架
-- 三栏布局
-- 任务创建向导
-- 结果面板
-- 设置页面
+### Claw 与自动化
 
-## 📊 测试覆盖
+- Claw 相关 HTTP 能力与 Token 设计见 `src/claw`；默认桌面入口是否启用 Claw 服务以 `src/bun/index.ts` 为准
+- 基于 node-cron 的定时任务与执行历史
 
-- ✅ 31 个测试用例全部通过
-- ✅ 9 个测试文件
-- ✅ 100% 核心功能覆盖
+### 桌面壳
 
-## 📦 安装
+- Electrobun：Bun 主进程 + 系统 WebView
+- 主界面布局、设置页、任务与会话 UI
+
+## 测试
+
+最近一次记录的自动化测试：9 个测试文件、31 条用例通过（详见 [TEST_REPORT.md](./TEST_REPORT.md)）。发布前请在目标环境执行 `npm test` 复核。
+
+## 安装与命令（源码）
 
 ```bash
-# 克隆仓库
 git clone <repository-url>
 cd squid
-
-# 安装依赖
 npm install
-
-# 运行测试
-npm test
-
-# 开发模式
-npm run dev
-
-# 构建
-npm run build
-
-# 启动
-npm start
+npm test          # 可选
+npm run dev       # 桌面开发
+npm run build     # tsc
+npm run build:electron:release   # 稳定通道桌面制品（输出 artifacts/）
 ```
 
-## ⚙️ 配置
+## 配置
 
-首次运行需要配置 API 密钥：
+首次运行：在应用 **设置** 中填写模型密钥并保存。渠道与飞书等：见 [QUICK_START.md](./QUICK_START.md)、[channel-extensions.md](./channel-extensions.md)。
 
-1. 打开设置页面
-2. 输入 Anthropic/OpenAI/DeepSeek API Key
-3. 保存配置
+**构建注意**：Electrobun **仅读取 `electrobun.config.ts`**；缺少该文件或误用 `.js` 将导致 stable 包未拷贝 `public`，界面白屏。
 
-## 📚 文档
+## 文档索引
 
-- [用户指南](docs/user-guide.md)
-- [开发者文档](docs/developer-guide.md)
-- [测试报告](TEST_REPORT.md)
-- [项目总结](PROJECT_SUMMARY.md)
+- [user-guide.md](./user-guide.md)
+- [developer-guide.md](./developer-guide.md)
+- [TEST_REPORT.md](./TEST_REPORT.md)
+- [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md)
 
-## 🔒 安全特性
+## 安全
 
-- 文件路径沙箱验证
-- API 密钥 AES-256-GCM 加密
-- Token 鉴权
-- 权限规则引擎
+- 工作区路径校验与工具权限分类
+- 密钥本地加密存储
+- 本地 HTTP 服务默认不应暴露公网
 
-## 🚀 性能
+## 已知限制
 
-- LRU 缓存
-- 虚拟滚动
-- 懒加载
-- 流式响应
-- 上下文压缩
+- 部分 UI 与选择器仍在迭代（以 Issue 与里程碑为准）
+- macOS 公开发行的未签名/未公证制品可能触发 Gatekeeper；分发建议采用 Developer ID 签名与公证
 
-## 🐛 已知问题
+## 后续方向（规划）
 
-- 部分 UI 组件待完善（任务列表侧边栏、技能选择器等）
-- 这些不影响核心功能使用
+- 完善技能与渠道生态、设置与可观测性
+- 性能与体验优化
 
-## 🛣️ 路线图
-
-### v0.2.0 (计划中)
-- 完善剩余 UI 组件
-- 更多技能模板
-- 性能优化
-- 用户体验改进
-
-### v0.3.0 (计划中)
-- 插件系统
-- 更多 MCP 连接器
-- 团队协作功能
-
-## 🙏 致谢
-
-感谢所有贡献者和测试人员！
-
-## 📄 许可证
+## 许可证
 
 MIT License
 
 ---
 
-**发布日期**: 2026-04-04  
-**版本**: v0.1.0  
-**状态**: Stable ✅
+**发布日期**：2026-04-04（随仓库维护更新）  
+**版本**：v0.1.0  
+**状态**：维护中

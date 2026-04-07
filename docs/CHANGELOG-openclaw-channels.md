@@ -7,22 +7,22 @@
 ## 实现的功能
 
 ### 1. EventBridge 事件总线
-- ✅ 基于 Node.js EventEmitter 的简单事件总线
-- ✅ 支持任务完成通知（`notifyTaskComplete`）
-- ✅ 支持命令发送（`sendCommand`）
-- ✅ 全局单例，所有模块共享
-- ✅ 错误隔离，订阅者错误不影响其他订阅者
+- 基于 Node.js EventEmitter 的简单事件总线
+- 支持任务完成通知（`notifyTaskComplete`）
+- 支持命令发送（`sendCommand`）
+- 全局单例，所有模块共享
+- 错误隔离，订阅者错误不影响其他订阅者
 
 **文件：**
 - `src/channels/bridge/event-bridge.ts`
 
 ### 2. WebUI Channel 插件
-- ✅ WebSocket 服务器（端口 8080）
-- ✅ 多客户端连接支持
-- ✅ 心跳检测（30 秒间隔）
-- ✅ 自动重连机制
-- ✅ 订阅 EventBridge 事件并广播到所有客户端
-- ✅ 接收客户端命令并转发到 EventBridge
+- WebSocket 服务器（端口 8080）
+- 多客户端连接支持
+- 心跳检测（30 秒间隔）
+- 自动重连机制
+- 订阅 EventBridge 事件并广播到所有客户端
+- 接收客户端命令并转发到 EventBridge
 
 **文件：**
 - `src/channels/plugins/webui/plugin.ts`
@@ -30,46 +30,46 @@
 - `src/channels/index.ts`
 
 ### 3. 前端 WebSocket 客户端
-- ✅ 自动连接和重连（指数退避策略）
-- ✅ 心跳发送和响应
-- ✅ 任务完成通知 UI 显示
-- ✅ 命令发送接口
-- ✅ 连接状态管理
+- 自动连接和重连（指数退避策略）
+- 心跳发送和响应
+- 任务完成通知 UI 显示
+- 命令发送接口
+- 连接状态管理
 
 **文件：**
 - `public/websocket-client.js`
 - `public/index.html`（集成代码）
 
 ### 4. 调度器集成
-- ✅ 任务完成时发送 EventBridge 通知
-- ✅ 包含任务信息、结果、耗时、状态
+- 任务完成时发送 EventBridge 通知
+- 包含任务信息、结果、耗时、状态
 
 **文件：**
 - `src/scheduler/task-scheduler.ts`
 
 ### 5. 任务执行集成
-- ✅ 后台任务完成时发送 EventBridge 通知
-- ✅ 错误处理和失败通知
+- 后台任务完成时发送 EventBridge 通知
+- 错误处理和失败通知
 
 **文件：**
 - `src/tasks/executor.ts`
 
 ### 6. OpenClaw 插件适配器
-- ✅ 通用适配器实现
-- ✅ 支持消息发送、接收、配置、状态检查
-- ✅ 自动订阅 EventBridge 事件
-- ✅ 兼容 OpenClaw 插件接口
+- 通用适配器实现
+- 支持消息发送、接收、配置、状态检查
+- 自动订阅 EventBridge 事件
+- 兼容 OpenClaw 插件接口
 
 **文件：**
 - `src/channels/openclaw-adapter/adapter.ts`
 
 ### 7. 配置和文档
-- ✅ Channel 配置示例
-- ✅ EventBridge API 文档
-- ✅ WebUI Channel 使用文档
-- ✅ OpenClaw 适配文档
-- ✅ 飞书插件接口清单
-- ✅ 集成测试指南
+- Channel 配置示例
+- EventBridge API 文档
+- WebUI Channel 使用文档
+- OpenClaw 适配文档
+- 飞书插件接口清单
+- 集成测试指南
 
 **文件：**
 - `config/channels.example.json`
@@ -80,8 +80,8 @@
 - `docs/integration-testing.md`
 
 ### 8. 测试
-- ✅ EventBridge 单元测试
-- ✅ WebUIChannelPlugin 单元测试
+- EventBridge 单元测试
+- WebUIChannelPlugin 单元测试
 
 **文件：**
 - `src/__tests__/event-bridge.test.ts`
@@ -179,9 +179,9 @@ await adapter.setup.initialize();
 
 ## 测试覆盖
 
-- ✅ EventBridge 单元测试
-- ✅ WebUIChannelPlugin 单元测试
-- ✅ 集成测试指南（手动测试）
+- EventBridge 单元测试
+- WebUIChannelPlugin 单元测试
+- 集成测试指南（手动测试）
 
 ## 文档
 

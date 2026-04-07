@@ -31,7 +31,7 @@ describe('Telegram squid bridge', () => {
   });
 
   it('channel:inbound 应调用 executeTaskStream 并向同一 chat 发回复', async () => {
-    const off = registerTelegramSquidBridge(taskAPI as any);
+    const off = registerTelegramSquidBridge(taskAPI as any, eventBridge);
     try {
       eventBridge.emitChannelInbound({
         channelId: 'telegram',

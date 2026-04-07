@@ -5,7 +5,6 @@ import { pathToFileURL } from 'url';
 import { BrowserWindow, ApplicationMenu } from 'electrobun/bun';
 import { ClawServer } from '../claw/server';
 import { CronScheduler } from '../scheduler/cron-scheduler';
-import { MCPConnectionManager } from '../mcp/connection-manager';
 import { TaskAPI, isTaskAPIConversationBusyError } from '../api/task-api';
 import {
   channelRegistry,
@@ -998,10 +997,6 @@ async function main() {
       ]
     }
   ] as any);
-
-  // Initialize MCP connection manager
-  const mcpManager = new MCPConnectionManager();
-  await mcpManager.loadConfigs();
 
   // Initialize Claw server
   const clawServer = new ClawServer({
