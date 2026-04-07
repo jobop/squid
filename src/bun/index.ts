@@ -26,6 +26,7 @@ import {
 } from '../channels/extension-web-config';
 import { runExtensionAuthPoll, runExtensionAuthStart } from '../channels/extension-web-auth';
 import { cronManager } from '../tools/cron-manager';
+import { clearAgentLogs, getAgentLogs } from '../utils/agent-execution-log';
 
 /**
  * 开发态入口在 `src/bun`，打包后在 `Resources/app/bun` 且静态资源在 `Resources/app/public`。
@@ -511,7 +512,7 @@ async function main() {
         }
       }
 
-      // 清空当前线程消息（聊天框 /reset）
+      // 清空当前线程消息（聊天框 /new）
       if (url.pathname === '/api/threads/clear-messages' && req.method === 'POST') {
         try {
           const body = (await req.json()) as { threadId?: unknown };
@@ -526,7 +527,7 @@ async function main() {
         }
       }
 
-      // 清空会话 + 全部记忆（聊天框 /new）
+      // 清空会话 + 全部记忆（聊天框 /reset）
       if (url.pathname === '/api/sessions/new' && req.method === 'POST') {
         try {
           const body = (await req.json()) as { threadId?: unknown };
@@ -549,6 +550,26 @@ async function main() {
         } catch (error: any) {
           return new Response(JSON.stringify([]), { headers });
         }
+      }
+
+      // Agent / Task 执行日志（内存环形缓冲）
+      if (url.pathname === '/api/agent-logs' && req.method === 'GET') {
+        const limit = Math.min(
+          500,
+          Math.max(1, Number(url.searchParams.get('limit')) || 300)
+        );
+        const sinceRaw = url.searchParams.get('since');
+        const since =
+          sinceRaw != null && sinceRaw !== '' ? Number(sinceRaw) : undefined;
+        const data = getAgentLogs({
+          limit,
+          since: Number.isFinite(since) ? since : undefined,
+        });
+        return new Response(JSON.stringify(data), { headers });
+      }
+      if (url.pathname === '/api/agent-logs' && req.method === 'DELETE') {
+        clearAgentLogs();
+        return new Response(JSON.stringify({ success: true }), { headers });
       }
 
       // Compress conversation

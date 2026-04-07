@@ -7,6 +7,7 @@ import { MemorySelector } from '../memory/selector';
 import { MemoryManager } from '../memory/manager';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { eventBridge } from '../channels/bridge/event-bridge';
+import { appendAgentLog, truncateText } from '../utils/agent-execution-log';
 
 /** 执行请求：模型 API Key 等凭证仅由 TaskExecutor 从 ~/.squid/config.json 读取，不由 Channel 传入 */
 export interface ExecuteRequest {
@@ -305,6 +306,9 @@ export class TaskExecutor {
     console.log(`[Executor] 发送给 API 的工具参数:`, JSON.stringify(toolsParam, null, 2));
     const maxToolRounds = 20;
     for (let round = 0; round < maxToolRounds; round++) {
+      appendAgentLog('executor', 'debug', `OpenAI 流式 第 ${round + 1} 轮请求`, {
+        toolCount: tools.length,
+      });
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -323,6 +327,11 @@ export class TaskExecutor {
 
       if (!response.ok) {
         const error = await response.text();
+        appendAgentLog('executor', 'error', 'OpenAI 流式 API 调用失败', {
+          status: response.status,
+          bodyPreview: truncateText(error, 300),
+          round: round + 1,
+        });
         throw new Error(`API 调用失败: ${response.status} ${error}`);
       }
 
@@ -400,10 +409,17 @@ export class TaskExecutor {
       // 本轮没有工具调用，说明模型已给出最终回答
       if (resolvedToolCalls.length === 0) {
         console.log(`[Executor] 第 ${round + 1} 轮未检测到工具调用，流式回复完成`);
+        appendAgentLog('executor', 'info', `OpenAI 流式 第 ${round + 1} 轮结束（无工具调用）`, {
+          assistantChars: assistantContent.length,
+        });
         return;
       }
 
       console.log(`[Executor] 第 ${round + 1} 轮检测到 ${resolvedToolCalls.length} 个工具调用`);
+      appendAgentLog('executor', 'info', `OpenAI 流式 第 ${round + 1} 轮：工具调用`, {
+        tools: resolvedToolCalls.map((c) => c.function?.name || '(unknown)').join(', '),
+        count: resolvedToolCalls.length,
+      });
       onChunk('\n\n[执行工具调用...]\n');
 
       // 先把 assistant tool_call 消息加入上下文，再追加每个 tool result
@@ -428,6 +444,7 @@ export class TaskExecutor {
 
         if (!tool) {
           const notFound = `工具 ${toolName} 未找到`;
+          appendAgentLog('executor', 'warn', notFound);
           onChunk(`\n❌ ${notFound}\n`);
           messages.push({
             role: 'tool',
@@ -454,6 +471,9 @@ export class TaskExecutor {
           }
 
           console.log('Parsed args:', args);
+          appendAgentLog('executor', 'info', `工具调用: ${toolName}`, {
+            argsPreview: truncateText(JSON.stringify(args), 500),
+          });
           onChunk(`\n🔧 调用工具: ${toolName}\n`);
 
           const result = await tool.call(args, {
@@ -474,6 +494,16 @@ export class TaskExecutor {
           const resultContent = typeof processedResult.content === 'string'
             ? processedResult.content
             : JSON.stringify(processedResult.content);
+
+          appendAgentLog(
+            'executor',
+            result.error ? 'warn' : 'debug',
+            `工具结果: ${toolName}`,
+            {
+              hasError: Boolean(result.error),
+              resultPreview: truncateText(resultContent, 400),
+            }
+          );
 
           if (result.error) {
             onChunk(`\n❌ 工具执行失败: ${result.error}\n`);
@@ -629,6 +659,7 @@ export class TaskExecutor {
 
       if (!config || !config.apiKey) {
         const error = '请先在设置页面配置 API Key';
+        appendAgentLog('executor', 'warn', 'execute 跳过：未配置 API Key');
         eventBridge.notifyTaskComplete(taskId, {
           taskName: request.instruction.substring(0, 50),
           error,
@@ -640,6 +671,13 @@ export class TaskExecutor {
           error
         };
       }
+
+      appendAgentLog('executor', 'info', 'TaskExecutor.execute 开始', {
+        provider: config.provider,
+        model: config.modelName || '',
+        workspace: request.workspace,
+        instructionPreview: truncateText(request.instruction, 240),
+      });
 
       // 根据提供商和协议类型调用相应的 API
       let response: string;
@@ -698,6 +736,10 @@ export class TaskExecutor {
         status: 'success',
       });
 
+      appendAgentLog('executor', 'info', 'TaskExecutor.execute 完成', {
+        durationMs: Date.now() - startTime,
+        responseChars: response.length,
+      });
       return {
         output: response,
         files: []
@@ -711,6 +753,10 @@ export class TaskExecutor {
         status: 'failed',
       });
 
+      appendAgentLog('executor', 'error', 'TaskExecutor.execute 失败', {
+        error: truncateText(error?.message || String(error), 500),
+        durationMs: Date.now() - startTime,
+      });
       return {
         output: '',
         error: error.message
@@ -734,6 +780,13 @@ export class TaskExecutor {
         config.provider,
         config.modelName || '(默认)'
       );
+
+      appendAgentLog('executor', 'info', 'TaskExecutor.executeStream 调用模型', {
+        provider: config.provider,
+        model: config.modelName || '',
+        workspace: request.workspace,
+        instructionPreview: truncateText(request.instruction, 240),
+      });
 
       // 根据提供商和协议类型调用相应的 API
       if (config.provider === 'openai') {
@@ -774,6 +827,9 @@ export class TaskExecutor {
           );
         }
       } else {
+        appendAgentLog('executor', 'error', '未知的 API 提供商', {
+          provider: String(config.provider),
+        });
         throw new Error('未知的 API 提供商');
       }
     } catch (error: any) {

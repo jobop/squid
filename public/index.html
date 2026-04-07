@@ -1117,6 +1117,10 @@
         <i data-lucide="plug" class="nav-item-icon"></i>
         <span>渠道</span>
       </a>
+      <a href="#" class="nav-item" data-page="agent-logs">
+        <i data-lucide="scroll-text" class="nav-item-icon"></i>
+        <span>执行日志</span>
+      </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings" class="nav-item-icon"></i>
         <span>设置</span>
@@ -1216,7 +1220,7 @@
           <textarea
             id="instruction"
             class="input-main"
-            placeholder="Ask squid anything, @ to add files, /reset 清空会话, /new 清空会话与记忆, $ for skills"
+            placeholder="Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, $ for skills"
             rows="1"
           ></textarea>
 
@@ -1564,6 +1568,30 @@
                 <li>85%：完整压缩 - AI 摘要全部历史</li>
               </ul>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="agent-logs-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
+      <div class="main-header">
+        <h1>执行日志</h1>
+        <div class="header-actions">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#666;margin-right:8px;">
+            <input type="checkbox" id="agentLogsAutoRefresh" checked />
+            自动刷新
+          </label>
+          <button type="button" class="btn btn-secondary" id="agentLogsRefreshBtn">刷新</button>
+          <button type="button" class="btn btn-secondary" id="agentLogsClearBtn">清空记录</button>
+        </div>
+      </div>
+      <div class="main-content" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="page-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+          <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin: 0 24px 24px;">
+            <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
+              记录本机 Agent 任务与工具调用（内存保留最近约 800 条，不含 API Key）。渠道队列触发的任务也会写入。
+            </p>
+            <pre id="agentLogsView" style="flex: 1; margin: 0; padding: 12px; background: #0f172a; color: #e2e8f0; font-size: 12px; line-height: 1.45; overflow: auto; border-radius: 8px; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"></pre>
           </div>
         </div>
       </div>
@@ -2085,6 +2113,15 @@
       loadExperts();
       refreshTaskList();
       loadModelConfig();
+
+      const agentLogsRefreshBtn = document.getElementById('agentLogsRefreshBtn');
+      if (agentLogsRefreshBtn) {
+        agentLogsRefreshBtn.addEventListener('click', () => loadAgentLogs());
+      }
+      const agentLogsClearBtn = document.getElementById('agentLogsClearBtn');
+      if (agentLogsClearBtn) {
+        agentLogsClearBtn.addEventListener('click', () => clearAgentLogsOnServer());
+      }
 
       // 启动上下文监控
       startContextMonitoring();
@@ -3190,8 +3227,58 @@
       }
     }
 
+    let agentLogsPollId = null;
+    function stopAgentLogsPolling() {
+      if (agentLogsPollId) {
+        clearInterval(agentLogsPollId);
+        agentLogsPollId = null;
+      }
+    }
+    function startAgentLogsPolling() {
+      stopAgentLogsPolling();
+      agentLogsPollId = setInterval(() => {
+        const ar = document.getElementById('agentLogsAutoRefresh');
+        const pageEl = document.getElementById('agent-logs-page');
+        const visible = pageEl && pageEl.style.display !== 'none' && !pageEl.classList.contains('hidden');
+        if (ar && ar.checked && visible) {
+          loadAgentLogs();
+        }
+      }, 2500);
+    }
+    async function loadAgentLogs() {
+      const el = document.getElementById('agentLogsView');
+      if (!el) return;
+      try {
+        const r = await fetch('http://localhost:50001/api/agent-logs?limit=400');
+        const data = await r.json();
+        const lines = (data.entries || []).map((e) => {
+          const t = new Date(e.ts).toLocaleString();
+          const meta = e.meta ? ' ' + JSON.stringify(e.meta) : '';
+          return `[${t}] [${e.level}] [${e.category}] ${e.message}${meta}`;
+        });
+        el.textContent = lines.length
+          ? lines.join('\n')
+          : '（暂无记录。发起对话或执行任务后可在此查看。）';
+      } catch (e) {
+        el.textContent = '加载失败: ' + (e && e.message ? e.message : e);
+      }
+    }
+    async function clearAgentLogsOnServer() {
+      if (!confirm('确定清空内存中的执行日志？')) return;
+      try {
+        const r = await fetch('http://localhost:50001/api/agent-logs', { method: 'DELETE' });
+        if (!r.ok) throw new Error(r.statusText);
+        await loadAgentLogs();
+        showNotification('已清空执行日志', 'success');
+      } catch (e) {
+        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
     async function switchPage(page, options = {}) {
       const { createFreshThread = false } = options;
+
+      stopAgentLogsPolling();
 
       // 更新激活状态
       document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
@@ -3233,6 +3320,12 @@
       if (page === 'channels') {
         channelsShowList();
       }
+
+      if (page === 'agent-logs') {
+        await loadAgentLogs();
+        startAgentLogsPolling();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
     }
 
     // Page switching
@@ -3245,42 +3338,8 @@
       });
     });
 
+    /** /reset：清空当前线程消息并清空全部长期记忆 */
     async function performSlashReset() {
-      try {
-        const response = await fetch('http://localhost:50001/api/threads/clear-messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            currentThreadId ? { threadId: currentThreadId } : {}
-          ),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!result.success) {
-          showNotification('清空失败: ' + (result.error || response.statusText), 'error');
-          return;
-        }
-        if (result.threadId) {
-          currentThreadId = result.threadId;
-        } else {
-          currentThreadId = null;
-        }
-        currentTaskId = null;
-        const chatContainer = document.getElementById('chatContainer');
-        chatContainer.innerHTML = `
-            <div class="empty-state">
-              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-              <h2>开始构建</h2>
-              <p>在下方输入你的需求，开始创建任务</p>
-            </div>
-          `;
-        await refreshTaskList();
-        showNotification('已清空当前会话上下文', 'success');
-      } catch (e) {
-        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
-      }
-    }
-
-    async function performSlashNew() {
       try {
         const response = await fetch('http://localhost:50001/api/sessions/new', {
           method: 'POST',
@@ -3312,6 +3371,42 @@
         showNotification('已清空当前会话与全部长期记忆', 'success');
       } catch (e) {
         showNotification('失败: ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
+    /** /new：仅清空当前线程消息（保留长期记忆） */
+    async function performSlashNew() {
+      try {
+        const response = await fetch('http://localhost:50001/api/threads/clear-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            currentThreadId ? { threadId: currentThreadId } : {}
+          ),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!result.success) {
+          showNotification('清空失败: ' + (result.error || response.statusText), 'error');
+          return;
+        }
+        if (result.threadId) {
+          currentThreadId = result.threadId;
+        } else {
+          currentThreadId = null;
+        }
+        currentTaskId = null;
+        const chatContainer = document.getElementById('chatContainer');
+        chatContainer.innerHTML = `
+            <div class="empty-state">
+              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
+              <h2>开始构建</h2>
+              <p>在下方输入你的需求，开始创建任务</p>
+            </div>
+          `;
+        await refreshTaskList();
+        showNotification('已清空当前会话上下文', 'success');
+      } catch (e) {
+        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
       }
     }
 

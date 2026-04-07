@@ -37,6 +37,7 @@ import {
   type QueuedCommandSource,
   type QueuePriority,
 } from '../utils/messageQueueManager';
+import { appendAgentLog, truncateText } from '../utils/agent-execution-log';
 
 import { TaskAPIConversationBusyError } from './task-api-channel-errors';
 
@@ -730,6 +731,11 @@ user-invocable: true
     try {
       try {
         console.log('Executing task:', request);
+        appendAgentLog('task', 'info', 'executeTask 开始', {
+          mode: request.mode,
+          workspace: request.workspace,
+          instructionPreview: truncateText(request.instruction, 240),
+        });
 
         const taskId = Date.now().toString();
 
@@ -758,6 +764,9 @@ user-invocable: true
         }
 
         if (result.error) {
+          appendAgentLog('task', 'error', 'executeTask 失败', {
+            error: truncateText(result.error, 500),
+          });
           return {
             success: false,
             error: result.error,
@@ -766,6 +775,9 @@ user-invocable: true
           };
         }
 
+        appendAgentLog('task', 'info', 'executeTask 完成', {
+          outputChars: (result.output || '').length,
+        });
         return {
           success: true,
           output: result.output,
@@ -773,6 +785,9 @@ user-invocable: true
         };
       } catch (error: any) {
         console.error('Task execution failed:', error);
+        appendAgentLog('task', 'error', 'executeTask 异常', {
+          error: truncateText(error?.message || String(error), 500),
+        });
 
         const taskId = Array.from(this.tasks.values()).find((t) => t.status === 'running')?.id;
         if (taskId) {
@@ -816,8 +831,13 @@ user-invocable: true
         }
 
         // 与 Web `/reset`、`/new` 对齐：任意走 executeTaskStream 的渠道（飞书/Telegram/队列/HTTP）共用，不经 LLM
-        if (/^\/reset\b/i.test(trimmedInstruction)) {
+        // /new = 仅清空当前线程消息；/reset = 清空会话并清空全部长期记忆
+        if (/^\/new\b/i.test(trimmedInstruction)) {
           const r = await this.clearThreadMessages(conversationId);
+          appendAgentLog('task-stream', 'info', '执行 /new（不经 LLM，仅会话消息）', {
+            success: r.success,
+            conversationId,
+          });
           onChunk(
             r.success
               ? '✅ 已清空当前会话。'
@@ -825,8 +845,12 @@ user-invocable: true
           );
           return;
         }
-        if (/^\/new\b/i.test(trimmedInstruction)) {
+        if (/^\/reset\b/i.test(trimmedInstruction)) {
           const r = await this.newSessionClearAll(conversationId);
+          appendAgentLog('task-stream', 'info', '执行 /reset（不经 LLM，会话+记忆）', {
+            success: r.success,
+            conversationId,
+          });
           onChunk(
             r.success
               ? '✅ 已清空当前会话与全部长期记忆。'
@@ -847,6 +871,15 @@ user-invocable: true
           modelConfig.provider || '(无)',
           apiKey ? '是' : '否'
         );
+
+        const streamStartedAt = Date.now();
+        appendAgentLog('task-stream', 'info', 'executeTaskStream → LLM', {
+          workspace: normalizedRequest.workspace,
+          conversationId,
+          mode: normalizedRequest.mode,
+          provider: modelConfig.provider || '',
+          instructionPreview: truncateText(normalizedRequest.instruction, 240),
+        });
 
         if (apiKey) {
           this.conversationManager.setApiKey(apiKey, baseURL, modelName);
@@ -895,8 +928,16 @@ user-invocable: true
         if (task) {
           task.status = 'completed';
         }
+        appendAgentLog('task-stream', 'info', 'executeTaskStream 完成', {
+          durationMs: Date.now() - streamStartedAt,
+          responseChars: fullResponse.length,
+          conversationId,
+        });
       } catch (error: any) {
         console.error('Task execution failed:', error);
+        appendAgentLog('task-stream', 'error', 'executeTaskStream 失败', {
+          error: truncateText(error?.message || String(error), 500),
+        });
 
         const taskId = Array.from(this.tasks.values()).find((t) => t.status === 'running')?.id;
         if (taskId) {
@@ -1037,7 +1078,7 @@ user-invocable: true
   }
 
   /**
-   * 与聊天框 `/new` 对应：清空当前（或指定）线程消息，并清空全部长期记忆文件。
+   * 与聊天框 `/reset` 对应：清空当前（或指定）线程消息，并清空全部长期记忆文件。
    */
   async newSessionClearAll(threadId?: string): Promise<{
     success: boolean;
