@@ -8,6 +8,7 @@ import {
   loadChannelExtensions as loadChannelExtensionsFromDisk,
   unloadChannelExtensions,
 } from './extensions/loader';
+import { hasExtensionAuthPending } from './extension-web-auth';
 
 /**
  * 全局 Channel Registry 实例
@@ -43,6 +44,12 @@ export async function reloadChannelExtensions(
   registry: ChannelRegistry,
   taskAPI?: TaskAPI
 ): Promise<void> {
+  if (hasExtensionAuthPending()) {
+    console.warn(
+      '[ChannelExtensions] 存在进行中的配置页 Auth 登录会话，已跳过扩展热重载（避免注销扩展导致轮询失败）。完成或失败后再保存配置/切换启用即可重载。'
+    );
+    return;
+  }
   const api = taskAPI ?? channelHostTaskAPI;
   if (!api) {
     console.warn(

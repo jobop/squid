@@ -2776,7 +2776,19 @@
       });
     }
 
+    function clearExtensionCfgAuthUi() {
+      try {
+        if (typeof window.__extCfgAuthStopPoll === 'function') {
+          window.__extCfgAuthStopPoll();
+        }
+      } finally {
+        window.__extCfgAuthStopPoll = null;
+        window.__extCfgAuthSessionKey = null;
+      }
+    }
+
     function channelsShowList() {
+      clearExtensionCfgAuthUi();
       const listV = document.getElementById('channelsListView');
       const detailV = document.getElementById('channelsDetailView');
       const backBtn = document.getElementById('channelsBackBtn');
@@ -2843,6 +2855,7 @@
       const introEl = document.getElementById('extCfgIntro');
       const h3 = document.getElementById('extCfgHeading');
       if (hint) hint.textContent = '';
+      clearExtensionCfgAuthUi();
       if (mount) mount.innerHTML = '';
       window.__extCfgChannelId = channelId;
       try {
@@ -2856,8 +2869,241 @@
         if (introEl)
           introEl.textContent = form.intro || '保存至 ~/.squid/' + form.userConfigFile;
         if (h3) h3.textContent = '配置（' + channelId + '）';
-        if (!mount || !form.fields) return;
+        if (!mount || !form || !Array.isArray(form.fields)) return;
+
+        /** Auth 区块始终在表单字段之上（与 manifest 中 authUi 先于 fields 的写法一致） */
+        if (form.authUi && form.authUi.type === 'auth_link') {
+          const authWrap = document.createElement('div');
+          authWrap.className = 'form-group';
+          authWrap.style.marginTop = '8px';
+          authWrap.style.paddingBottom = '16px';
+          authWrap.style.borderBottom = '1px solid #eee';
+          let hp = null;
+          if (form.authUi.help) {
+            hp = document.createElement('p');
+            hp.style.fontSize = '13px';
+            hp.style.color = '#666';
+            hp.style.marginBottom = '12px';
+            hp.style.display = 'none';
+            hp.textContent = form.authUi.help;
+            authWrap.appendChild(hp);
+          }
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-secondary';
+          btn.textContent = form.authUi.buttonLabel || '获取认证链接';
+          const qrStatus = document.createElement('p');
+          qrStatus.style.fontSize = '13px';
+          qrStatus.style.color = '#666';
+          qrStatus.style.minHeight = '1.2em';
+          qrStatus.style.display = 'none';
+
+          const linkBlock = document.createElement('div');
+          linkBlock.style.marginTop = '12px';
+          linkBlock.style.display = 'none';
+
+          const linkRow = document.createElement('div');
+          linkRow.style.position = 'relative';
+          linkRow.style.display = 'inline-block';
+          linkRow.style.maxWidth = '100%';
+
+          const copyLinkBtn = document.createElement('button');
+          copyLinkBtn.type = 'button';
+          copyLinkBtn.textContent = '点击复制认证链接';
+          copyLinkBtn.style.display = 'none';
+          copyLinkBtn.style.background = 'none';
+          copyLinkBtn.style.border = 'none';
+          copyLinkBtn.style.padding = '0';
+          copyLinkBtn.style.cursor = 'pointer';
+          copyLinkBtn.style.color = '#1a73e8';
+          copyLinkBtn.style.textDecoration = 'underline';
+          copyLinkBtn.style.font = 'inherit';
+
+          const pop = document.createElement('div');
+          pop.setAttribute('role', 'tooltip');
+          pop.style.display = 'none';
+          pop.style.position = 'absolute';
+          pop.style.left = '0';
+          pop.style.top = '100%';
+          pop.style.marginTop = '8px';
+          pop.style.padding = '12px';
+          pop.style.background = '#fff';
+          pop.style.border = '1px solid #e0e0e0';
+          pop.style.borderRadius = '8px';
+          pop.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)';
+          pop.style.zIndex = '100';
+          const img = document.createElement('img');
+          img.alt = '认证二维码';
+          img.width = 200;
+          img.height = 200;
+          pop.appendChild(img);
+
+          linkRow.appendChild(copyLinkBtn);
+          linkRow.appendChild(pop);
+
+          copyLinkBtn.addEventListener('click', async function (ev) {
+            ev.preventDefault();
+            const t = currentAuthUrl.trim();
+            if (!t) return;
+            const labelDefault = '点击复制认证链接';
+            try {
+              await navigator.clipboard.writeText(t);
+              copyLinkBtn.textContent = '已复制到剪贴板';
+              setTimeout(function () {
+                copyLinkBtn.textContent = labelDefault;
+              }, 2000);
+            } catch (_) {
+              try {
+                const ta = document.createElement('textarea');
+                ta.value = t;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                copyLinkBtn.textContent = '已复制到剪贴板';
+                setTimeout(function () {
+                  copyLinkBtn.textContent = labelDefault;
+                }, 2000);
+              } catch (e2) {
+                qrStatus.textContent = '复制失败，请到浏览器地址栏手动粘贴完整链接。';
+              }
+            }
+          });
+          linkBlock.appendChild(linkRow);
+
+          let currentAuthUrl = '';
+          let hidePopTimer = null;
+          function showQrPopover() {
+            if (hidePopTimer) {
+              clearTimeout(hidePopTimer);
+              hidePopTimer = null;
+            }
+            if (currentAuthUrl) pop.style.display = 'block';
+          }
+          function hideQrPopover() {
+            hidePopTimer = setTimeout(function () {
+              pop.style.display = 'none';
+              hidePopTimer = null;
+            }, 200);
+          }
+          linkRow.addEventListener('mouseenter', showQrPopover);
+          linkRow.addEventListener('mouseleave', hideQrPopover);
+
+          function setAuthUrl(u) {
+            currentAuthUrl = (u && String(u).trim()) || '';
+            if (currentAuthUrl) {
+              copyLinkBtn.style.display = 'inline';
+              copyLinkBtn.textContent = '点击复制认证链接';
+              img.src =
+                'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' +
+                encodeURIComponent(currentAuthUrl);
+            } else {
+              copyLinkBtn.style.display = 'none';
+              img.removeAttribute('src');
+              pop.style.display = 'none';
+            }
+          }
+
+          img.onerror = function () {
+            qrStatus.textContent = '二维码预览加载失败，可复制链接后在外部应用或浏览器中打开。';
+          };
+
+          authWrap.appendChild(btn);
+          authWrap.appendChild(qrStatus);
+          authWrap.appendChild(linkBlock);
+          mount.appendChild(authWrap);
+
+          btn.addEventListener('click', async () => {
+            clearExtensionCfgAuthUi();
+            setAuthUrl('');
+            linkBlock.style.display = 'none';
+            if (hp) hp.style.display = 'none';
+            qrStatus.style.display = 'block';
+            qrStatus.textContent = '正在获取认证链接…';
+            try {
+              const res = await fetch('http://localhost:50001/api/channels/extension-auth/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channelId: window.__extCfgChannelId }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error || res.statusText);
+              const authUrl = data.authUrl;
+              const sessionKey = data.sessionKey;
+              window.__extCfgAuthSessionKey = sessionKey;
+              linkBlock.style.display = 'block';
+              if (hp) hp.style.display = 'block';
+              setAuthUrl(authUrl);
+              qrStatus.textContent =
+                '请复制认证链接，在对应客户端或浏览器中完成验证；鼠标悬停在按钮上可查看二维码。';
+
+              /** 串行轮询：每次 poll 可能长轮询数十秒，不能用 setInterval 叠多个请求 */
+              let pollStopped = false;
+              window.__extCfgAuthStopPoll = function () {
+                pollStopped = true;
+              };
+              const delay = function (ms) {
+                return new Promise(function (r) {
+                  setTimeout(r, ms);
+                });
+              };
+              (async function runAuthPollLoop() {
+                const pendingFallback =
+                  '正在检测登录状态（服务器长轮询中，请稍候）… 若已扫码，请在客户端或设备上确认。';
+                while (!pollStopped) {
+                  const sk = window.__extCfgAuthSessionKey;
+                  const cid = window.__extCfgChannelId;
+                  if (!sk || !cid) break;
+                  try {
+                    const pr = await fetch('http://localhost:50001/api/channels/extension-auth/poll', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ channelId: cid, sessionKey: sk }),
+                    });
+                    const pd = await pr.json().catch(() => ({}));
+                    if (pollStopped) break;
+                    if (!pr.ok) {
+                      clearExtensionCfgAuthUi();
+                      qrStatus.textContent = '轮询失败: ' + (pd.error || pr.statusText);
+                      return;
+                    }
+                    if (pd.status === 'pending') {
+                      qrStatus.textContent = pd.message || pendingFallback;
+                      const nextUrl = pd.authUrl;
+                      if (nextUrl) setAuthUrl(nextUrl);
+                      await delay(2000);
+                    } else if (pd.status === 'success') {
+                      clearExtensionCfgAuthUi();
+                      qrStatus.textContent = (pd.message || '登录成功') + ' 正在刷新配置…';
+                      await loadExtensionWebConfigForm(cid);
+                      loadChannelsList();
+                      return;
+                    } else if (pd.status === 'failed') {
+                      clearExtensionCfgAuthUi();
+                      qrStatus.textContent = pd.message || '登录失败';
+                      return;
+                    } else {
+                      await delay(2000);
+                    }
+                  } catch (err) {
+                    if (pollStopped) break;
+                    clearExtensionCfgAuthUi();
+                    qrStatus.textContent = '轮询异常: ' + (err && err.message ? err.message : err);
+                    return;
+                  }
+                }
+              })();
+            } catch (e) {
+              qrStatus.textContent = '获取失败: ' + (e && e.message ? e.message : e);
+            }
+          });
+        }
+
         for (const f of form.fields) {
+          if (f.hidden) continue;
           const wrap = document.createElement('div');
           wrap.className = 'form-group';
           const lab = document.createElement('label');

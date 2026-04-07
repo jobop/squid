@@ -1,0 +1,41 @@
+{
+  "id": "weixin-personal",
+  "name": "微信（个人）",
+  "version": "1.0.0",
+  "main": "./extension-entry.ts",
+  "configForm": {
+    "userConfigFile": "weixin-personal-channel.json",
+    "intro": "凭证保存在 ~/.squid/weixin-personal-channel.json。登录成功后 Bot Token 与消息 API 地址由服务端自动写入，无需手填。可配置允许的对方微信 ID；同步游标在 ~/.squid/weixin-personal-getupdates.buf。",
+    "authUi": {
+      "type": "auth_link",
+      "buttonLabel": "获取认证链接",
+      "help": "点击按钮后点「复制认证链接」粘贴到微信中打开；鼠标悬停在复制按钮上会显示二维码。成功后凭证写入配置文件，再点「保存」并刷新渠道或重启应用以加载长轮询。"
+    },
+    "fields": [
+      {
+        "key": "botToken",
+        "label": "Bot Token（ilink_bot_token，登录后自动写入）",
+        "type": "password",
+        "secret": true,
+        "optional": true,
+        "hidden": true,
+        "placeholder": "Bearer 值，不含 Bearer 前缀"
+      },
+      {
+        "key": "baseUrl",
+        "label": "消息 API Base URL",
+        "type": "text",
+        "optional": true,
+        "hidden": true,
+        "placeholder": "登录后由服务端返回"
+      },
+      {
+        "key": "allowedUserIds",
+        "label": "允许的对方微信 ID（JSON 数组，如 xxx@im.wechat）",
+        "type": "json",
+        "optional": true,
+        "placeholder": "[\"user@im.wechat\"]"
+      }
+    ]
+  }
+}

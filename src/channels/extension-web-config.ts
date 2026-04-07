@@ -121,6 +121,9 @@ export function buildPublicValuesForForm(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of form.fields) {
+    if (f.hidden) {
+      continue;
+    }
     if (f.secret) {
       const v = raw[f.key];
       const s = typeof v === 'string' ? v : v != null ? String(v) : '';
@@ -164,6 +167,17 @@ async function validateMergedConfig(
     type F = import('../../extensions/feishu/src/types').FeishuChannelFileConfig;
     return validateFeishuChannelConfig(data as Partial<F>);
   }
+  if (channelId === 'weixin-personal') {
+    const { validateWeixinPersonalChannelConfig } = await import(
+      '../../extensions/weixin-personal/src/config-store'
+    );
+    type W = import('../../extensions/weixin-personal/src/types').WeixinPersonalChannelFileConfig;
+    const w = data as Partial<W>;
+    if (!w.botToken?.trim() && !w.baseUrl?.trim()) {
+      return { ok: true, errors: [] };
+    }
+    return validateWeixinPersonalChannelConfig(w);
+  }
   return { ok: true, errors: [] };
 }
 
@@ -189,6 +203,9 @@ export async function saveExtensionWebConfig(
   const next: Record<string, unknown> = { ...prev };
 
   for (const f of form.fields) {
+    if (f.hidden) {
+      continue;
+    }
     const incoming = rawValues[f.key];
     const trimmed = incoming !== undefined && incoming !== null ? String(incoming).trim() : '';
 

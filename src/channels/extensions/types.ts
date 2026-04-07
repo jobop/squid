@@ -19,6 +19,8 @@ export interface ChannelWebConfigField {
   key: string;
   label: string;
   type: ChannelWebConfigFieldType;
+  /** 为 true 时不在配置页渲染；保存时不从表单覆盖，保留磁盘已有值（适合登录自动写入的字段） */
+  hidden?: boolean;
   /** 为 true 时 GET 仅返回 hasXxx，POST 空字符串表示不修改原值 */
   optional?: boolean;
   secret?: boolean;
@@ -27,11 +29,22 @@ export interface ChannelWebConfigField {
   options?: { value: string; label: string }[];
 }
 
+/** 配置页额外 UI：由宿主渲染（认证链接 + 可选二维码；见 manifest 对 qr_callback 的兼容归一化） */
+export type ChannelWebConfigAuthUi =
+  | {
+      /** 通过认证链接完成身份验证；宿主展示链接与同内容二维码 */
+      type: 'auth_link';
+      buttonLabel?: string;
+      help?: string;
+    };
+
 export interface ChannelWebConfigForm {
   /** 仅允许安全文件名，实际路径 ~/.squid/<userConfigFile> */
   userConfigFile: string;
   intro?: string;
   fields: ChannelWebConfigField[];
+  /** 可选：声明 Auth 链接认证交互，宿主配合 /api/channels/extension-auth/* 与插件 extensionWebAuth */
+  authUi?: ChannelWebConfigAuthUi;
 }
 
 /** 根目录下子文件夹内的 channel-plugin.json */

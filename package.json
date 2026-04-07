@@ -12,7 +12,8 @@
     "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "server": "tsx src/claw/server-standalone.ts"
+    "server": "tsx src/claw/server-standalone.ts",
+    "weixin-personal:login": "npx tsx scripts/weixin-personal-login.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

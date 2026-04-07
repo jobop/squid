@@ -105,6 +105,16 @@ export interface ChannelAuthAdapter {
 }
 
 /**
+ * 渠道配置页 Auth 链接 Web 认证（由宿主调插件，非 OpenClaw）
+ */
+export interface ChannelExtensionWebAuth {
+  startAuthLink(): Promise<{ authUrl: string; sessionKey: string }>;
+  pollAuthLogin(
+    sessionKey: string
+  ): Promise<{ status: 'pending' | 'success' | 'failed'; message?: string; authUrl?: string }>;
+}
+
+/**
  * Channel 插件接口
  *
  * v1 必须实现：config, outbound, status
@@ -128,4 +138,7 @@ export interface ChannelPlugin {
   setup?: ChannelSetupAdapter;
   lifecycle?: ChannelLifecycleAdapter;
   auth?: ChannelAuthAdapter;
+
+  /** 可选：配合 configForm.authUi=auth_link 与 /api/channels/extension-auth/* */
+  extensionWebAuth?: ChannelExtensionWebAuth;
 }

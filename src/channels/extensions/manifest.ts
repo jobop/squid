@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import type {
   ChannelExtensionManifest,
+  ChannelWebConfigAuthUi,
   ChannelWebConfigField,
   ChannelWebConfigForm,
 } from './types';
@@ -106,6 +107,7 @@ function parseConfigForm(
       label: String(f.label).trim(),
       type: t as ChannelWebConfigField['type'],
     };
+    if (f.hidden === true) field.hidden = true;
     if (f.optional === true) field.optional = true;
     if (f.secret === true) field.secret = true;
     if (typeof f.placeholder === 'string' && f.placeholder.trim()) {
@@ -139,10 +141,39 @@ function parseConfigForm(
     return undefined;
   }
 
+  let authUi: ChannelWebConfigAuthUi | undefined;
+  if (c.authUi !== undefined) {
+    if (c.authUi === null || typeof c.authUi !== 'object' || Array.isArray(c.authUi)) {
+      errors.push('configForm.authUi 须为对象');
+    } else {
+      const a = c.authUi as Record<string, unknown>;
+      const typ = typeof a.type === 'string' ? a.type.trim() : '';
+      const normalizedType =
+        typ === 'auth_link' || typ === 'qr_callback' ? 'auth_link' : null;
+      if (!normalizedType) {
+        errors.push(
+          'configForm.authUi.type 暂仅支持 auth_link（qr_callback 已弃用，仍兼容并会归一为 auth_link）'
+        );
+      } else {
+        const au: ChannelWebConfigAuthUi = { type: 'auth_link' };
+        if (typeof a.buttonLabel === 'string' && a.buttonLabel.trim()) {
+          au.buttonLabel = a.buttonLabel.trim();
+        }
+        if (typeof a.help === 'string' && a.help.trim()) {
+          au.help = a.help.trim();
+        }
+        authUi = au;
+      }
+    }
+  }
+
+  if (errors.length) return undefined;
+
   const intro = typeof c.intro === 'string' && c.intro.trim() ? c.intro.trim() : undefined;
   return {
     userConfigFile: fn,
     intro,
     fields,
+    ...(authUi ? { authUi } : {}),
   };
 }

@@ -36,6 +36,77 @@ describe('validateChannelExtensionManifest', () => {
     const r = validateChannelExtensionManifest({ id: 'x' });
     expect(r.ok).toBe(false);
   });
+
+  it('configForm.authUi auth_link 通过', () => {
+    const r = validateChannelExtensionManifest({
+      id: 'wx',
+      name: 'Wx',
+      version: '1',
+      main: './a.ts',
+      configForm: {
+        userConfigFile: 'x.json',
+        intro: 'i',
+        fields: [{ key: 'a', label: 'A', type: 'text' }],
+        authUi: { type: 'auth_link', buttonLabel: '获取链接', help: 'h' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.configForm?.authUi?.type).toBe('auth_link');
+  });
+
+  it('configForm.authUi qr_callback 归一化为 auth_link', () => {
+    const r = validateChannelExtensionManifest({
+      id: 'wx',
+      name: 'Wx',
+      version: '1',
+      main: './a.ts',
+      configForm: {
+        userConfigFile: 'x.json',
+        intro: 'i',
+        fields: [{ key: 'a', label: 'A', type: 'text' }],
+        authUi: { type: 'qr_callback', buttonLabel: '扫码', help: 'h' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.configForm?.authUi?.type).toBe('auth_link');
+  });
+
+  it('configForm.fields hidden 写入解析结果', () => {
+    const r = validateChannelExtensionManifest({
+      id: 'wx',
+      name: 'Wx',
+      version: '1',
+      main: './a.ts',
+      configForm: {
+        userConfigFile: 'x.json',
+        fields: [
+          { key: 'secretK', label: 'S', type: 'password', secret: true, hidden: true },
+          { key: 'vis', label: 'V', type: 'text' },
+        ],
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const fields = r.data.configForm?.fields;
+      expect(fields?.[0].hidden).toBe(true);
+      expect(fields?.[1].hidden).toBeUndefined();
+    }
+  });
+
+  it('configForm.authUi.type 非法拒绝', () => {
+    const r = validateChannelExtensionManifest({
+      id: 'wx',
+      name: 'Wx',
+      version: '1',
+      main: './a.ts',
+      configForm: {
+        userConfigFile: 'x.json',
+        fields: [{ key: 'a', label: 'A', type: 'text' }],
+        authUi: { type: 'unknown' },
+      },
+    });
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe('assertSafeMainEntry', () => {

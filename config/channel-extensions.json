@@ -1,4 +1,10 @@
 {
-  "roots": ["extensions"],
-  "enabled": ["feishu", "telegram"]
+  "roots": [
+    "extensions"
+  ],
+  "enabled": [
+    "feishu",
+    "telegram",
+    "weixin-personal"
+  ]
 }

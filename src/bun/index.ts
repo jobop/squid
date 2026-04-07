@@ -25,6 +25,7 @@ import {
   readUserConfigJson,
   saveExtensionWebConfig,
 } from '../channels/extension-web-config';
+import { runExtensionAuthPoll, runExtensionAuthStart } from '../channels/extension-web-auth';
 import { cronManager } from '../tools/cron-manager';
 
 /**
@@ -863,6 +864,72 @@ async function main() {
           return new Response(JSON.stringify({ success: true }), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify({ success: false, error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
+      if (url.pathname === '/api/channels/extension-auth/start' && req.method === 'POST') {
+        try {
+          const body = (await req.json()) as { channelId?: unknown };
+          const channelId = typeof body.channelId === 'string' ? body.channelId.trim() : '';
+          const form = findExtensionWebConfigForm(channelId);
+          const result = await runExtensionAuthStart({ channelId, form, registry: channelRegistry });
+          if (!result.ok) {
+            return new Response(JSON.stringify({ error: result.error }), {
+              status: result.status,
+              headers,
+            });
+          }
+          return new Response(
+            JSON.stringify({ authUrl: result.authUrl, sessionKey: result.sessionKey }),
+            { headers }
+          );
+        } catch (error: any) {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+
+      if (url.pathname === '/api/channels/extension-auth/poll' && req.method === 'POST') {
+        try {
+          const body = (await req.json()) as { channelId?: unknown; sessionKey?: unknown };
+          const channelId = typeof body.channelId === 'string' ? body.channelId.trim() : '';
+          const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
+          const form = findExtensionWebConfigForm(channelId);
+          const result = await runExtensionAuthPoll({
+            channelId,
+            sessionKey,
+            form,
+            registry: channelRegistry,
+          });
+          if (!result.ok) {
+            return new Response(JSON.stringify({ error: result.error }), {
+              status: result.status,
+              headers,
+            });
+          }
+          /** 凭证已写入磁盘，必须重载扩展才会执行 initialize 并启动 getUpdates；否则仅靠保存表单才可能重载，且 Auth 进行中保存会被跳过 */
+          if (result.status === 'success') {
+            try {
+              await reloadChannelExtensions(channelRegistry);
+            } catch (reloadErr: unknown) {
+              console.error('[Channels] 扩展 Auth 登录成功后重载失败:', reloadErr);
+            }
+          }
+          return new Response(
+            JSON.stringify({
+              status: result.status,
+              message: result.message,
+              authUrl: result.authUrl,
+            }),
+            { headers }
+          );
+        } catch (error: any) {
+          return new Response(JSON.stringify({ error: error.message }), {
             status: 500,
             headers,
           });
