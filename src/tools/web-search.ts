@@ -1,8 +1,14 @@
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import type { Tool, ToolResult, ToolContext } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { z } from 'zod';
+import { readWebSearchProviderRawFromSquidConfigRoot } from '../config/tools-config';
+import {
+  parseBingCnHtml,
+  parseDuckDuckGoHtml,
+  type WebSearchProviderId,
+  normalizeWebSearchProvider,
+} from './web-search-providers';
 
 const WebSearchInputSchema = z.object({
   query: z.string().describe('搜索查询'),
@@ -23,17 +29,54 @@ interface WebSearchOutput {
   results: SearchResult[];
   count: number;
   error?: string;
+  provider?: WebSearchProviderId;
 }
+
+/** 可用环境变量 WEB_SEARCH_TIMEOUT_MS（5000–120000）覆盖 */
+const WEB_SEARCH_TIMEOUT_MS = (() => {
+  const raw = process.env.WEB_SEARCH_TIMEOUT_MS;
+  if (raw != null && raw.trim() !== '') {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 5000 && n <= 120_000) return Math.floor(n);
+  }
+  return 55_000;
+})();
+
+async function resolveWebSearchProvider(): Promise<WebSearchProviderId> {
+  const env = process.env.WEB_SEARCH_PROVIDER?.trim().toLowerCase();
+  if (env === 'bing' || env === 'duckduckgo') {
+    return env;
+  }
+  try {
+    const { readFile } = await import('fs/promises');
+    const { join } = await import('path');
+    const { homedir } = await import('os');
+    const configPath = join(homedir(), '.squid', 'config.json');
+    const content = await readFile(configPath, 'utf-8');
+    const root = JSON.parse(content) as Record<string, unknown>;
+    return normalizeWebSearchProvider(readWebSearchProviderRawFromSquidConfigRoot(root));
+  } catch {
+    return 'duckduckgo';
+  }
+}
+
+const DEFAULT_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+};
 
 export const WebSearchTool: Tool<typeof WebSearchInputSchema, WebSearchOutput> = {
   name: 'web_search',
-  description: '使用 DuckDuckGo 搜索网页。返回搜索结果列表（标题、链接、摘要）。',
+  description:
+    '联网搜索网页（设置 → 工具设置 → 联网搜索；配置存于 config.json 的 tools.webSearch.provider）。可选 DuckDuckGo 或必应中国站；仅 HTML 抓取，无官方 API。',
   inputSchema: WebSearchInputSchema,
   maxResultSizeChars: 50000,
 
   async call(
     input: WebSearchInput,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolResult<WebSearchOutput>> {
     try {
       const maxResults = Math.min(input.max_results || 10, 10);
@@ -50,58 +93,50 @@ export const WebSearchTool: Tool<typeof WebSearchInputSchema, WebSearchOutput> =
         };
       }
 
-      // 使用 DuckDuckGo HTML 搜索
-      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(input.query)}`;
+      const provider = await resolveWebSearchProvider();
+
+      let searchUrl: string;
+      let parse: (html: string, n: number) => SearchResult[];
+
+      if (provider === 'bing') {
+        searchUrl = `https://cn.bing.com/search?q=${encodeURIComponent(input.query)}&ensearch=0`;
+        parse = parseBingCnHtml;
+      } else {
+        searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(input.query)}`;
+        parse = parseDuckDuckGoHtml;
+      }
 
       const response = await axios.get(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        },
-        timeout: 10000
+        headers: DEFAULT_HEADERS,
+        timeout: WEB_SEARCH_TIMEOUT_MS,
+        validateStatus: (s) => s >= 200 && s < 400
       });
 
-      // 解析 HTML
-      const $ = cheerio.load(response.data);
-      const results: SearchResult[] = [];
+      const results = parse(typeof response.data === 'string' ? response.data : String(response.data), maxResults);
 
-      // DuckDuckGo HTML 结果在 .result 类中
-      $('.result').each((index, element) => {
-        if (results.length >= maxResults) {
-          return false; // 停止迭代
-        }
-
-        const $result = $(element);
-        const $title = $result.find('.result__a');
-        const $snippet = $result.find('.result__snippet');
-        const $link = $result.find('.result__url');
-
-        const title = $title.text().trim();
-        const snippet = $snippet.text().trim();
-        let link = $title.attr('href') || '';
-
-        // DuckDuckGo 使用重定向链接，需要提取实际 URL
-        if (link.startsWith('//duckduckgo.com/l/?')) {
-          const urlMatch = link.match(/uddg=([^&]+)/);
-          if (urlMatch) {
-            link = decodeURIComponent(urlMatch[1]);
+      if (results.length === 0) {
+        return {
+          data: {
+            success: false,
+            query: input.query,
+            results: [],
+            count: 0,
+            provider,
+            error:
+              provider === 'bing'
+                ? '未解析到结果（必应页面结构可能变更、需验证页或网络限制）。可尝试改为 DuckDuckGo 或配置代理。'
+                : '未解析到结果（DuckDuckGo 页面结构可能变更或网络不可达）。可尝试改为必应或配置代理。'
           }
-        }
-
-        if (title && link) {
-          results.push({
-            title,
-            link,
-            snippet: snippet || '无摘要'
-          });
-        }
-      });
+        };
+      }
 
       return {
         data: {
           success: true,
           query: input.query,
           results,
-          count: results.length
+          count: results.length,
+          provider
         }
       };
     } catch (error) {
@@ -131,7 +166,9 @@ export const WebSearchTool: Tool<typeof WebSearchInputSchema, WebSearchOutput> =
       };
     }
 
-    let output = `搜索查询: ${content.query}\n找到 ${content.count} 条结果\n\n`;
+    const src =
+      content.provider === 'bing' ? '必应（cn.bing.com）' : 'DuckDuckGo';
+    let output = `搜索源: ${src}\n搜索查询: ${content.query}\n找到 ${content.count} 条结果\n\n`;
 
     content.results.forEach((result, index) => {
       output += `${index + 1}. ${result.title}\n`;

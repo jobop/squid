@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSearchTool } from '../tools/web-search';
 import type { ToolContext } from '../tools/base';
 import axios from 'axios';
@@ -12,6 +12,14 @@ describe('WebSearchTool', () => {
     taskId: 'test-task',
     mode: 'craft'
   };
+
+  /** 避免测试机 ~/.squid/config.json 里选了必应，导致 mock 的 DDG HTML 被必应解析器解析失败 */
+  beforeEach(() => {
+    vi.stubEnv('WEB_SEARCH_PROVIDER', 'duckduckgo');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
 
   it('应该返回错误当查询为空', async () => {
     const result = await WebSearchTool.call(
@@ -117,9 +125,10 @@ describe('WebSearchTool', () => {
       mockContext
     );
 
-    expect(result.data.success).toBe(true);
+    expect(result.data.success).toBe(false);
     expect(result.data.count).toBe(0);
     expect(result.data.results).toHaveLength(0);
+    expect(result.data.error).toMatch(/未解析到结果/);
   });
 
   it('mapToolResultToToolResultBlockParam 应该正确格式化输出', () => {

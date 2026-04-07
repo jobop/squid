@@ -57,6 +57,8 @@ async function main() {
   // Start HTTP API server for frontend communication
   const apiServer = Bun.serve({
     port: 50001,
+    /** 默认 10s 无字节收发即断连；流式任务在工具执行（如联网搜索）期间可能长时间不写 SSE，会误杀连接并导致 Controller is already closed */
+    idleTimeout: 0,
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -95,12 +97,25 @@ async function main() {
           const stream = new ReadableStream({
             async start(controller) {
               const enc = new TextEncoder();
+              let streamClosed = false;
+              const safeEnqueue = (bytes: Uint8Array) => {
+                if (streamClosed) return;
+                try {
+                  controller.enqueue(bytes);
+                } catch {
+                  streamClosed = true;
+                }
+              };
+              const pushChunk = (chunk: string) => {
+                safeEnqueue(enc.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
+              };
               try {
-                await taskAPI.executeTaskStream(body, (chunk: string) => {
-                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
-                });
-                controller.enqueue(enc.encode('data: [DONE]\n\n'));
-                controller.close();
+                await taskAPI.executeTaskStream(body, pushChunk);
+                safeEnqueue(enc.encode('data: [DONE]\n\n'));
+                if (!streamClosed) {
+                  controller.close();
+                  streamClosed = true;
+                }
               } catch (error: unknown) {
                 if (isTaskAPIConversationBusyError(error)) {
                   const pos = taskAPI.enqueueFromRequest(body, { source: 'user', priority: 'next' });
@@ -111,14 +126,20 @@ async function main() {
                     message:
                       '当前会话繁忙，已加入队列，将在上一任务结束后自动执行。',
                   });
-                  controller.enqueue(enc.encode(`data: ${payload}\n\n`));
-                  controller.enqueue(enc.encode('data: [DONE]\n\n'));
-                  controller.close();
+                  safeEnqueue(enc.encode(`data: ${payload}\n\n`));
+                  safeEnqueue(enc.encode('data: [DONE]\n\n'));
+                  if (!streamClosed) {
+                    controller.close();
+                    streamClosed = true;
+                  }
                   return;
                 }
                 const msg = error instanceof Error ? error.message : String(error);
-                controller.enqueue(enc.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
-                controller.close();
+                safeEnqueue(enc.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
+                if (!streamClosed) {
+                  controller.close();
+                  streamClosed = true;
+                }
               }
             }
           });
@@ -422,6 +443,28 @@ async function main() {
         try {
           const body = await req.json();
           const result = await taskAPI.saveWorkspaceConfig(body);
+          return new Response(JSON.stringify(result), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error.message
+          }), { status: 500, headers });
+        }
+      }
+
+      // Web search provider (not part of model config)
+      if (url.pathname === '/api/config/web-search' && req.method === 'GET') {
+        try {
+          const config = await taskAPI.getWebSearchConfig();
+          return new Response(JSON.stringify(config), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({ webSearchProvider: 'duckduckgo' }), { headers });
+        }
+      }
+      if (url.pathname === '/api/config/web-search' && req.method === 'POST') {
+        try {
+          const body = await req.json();
+          const result = await taskAPI.saveWebSearchConfig(body);
           return new Response(JSON.stringify(result), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify({

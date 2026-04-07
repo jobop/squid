@@ -1543,6 +1543,25 @@
           </div>
 
           <div class="card">
+            <h3>工具设置</h3>
+            <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+              各工具独立配置，写入 <code>~/.squid/config.json</code> 的 <code>tools</code> 对象，与大模型 API 无关。后续可在此扩展更多工具项。
+            </p>
+            <h4 style="font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">联网搜索（web_search）</h4>
+            <div class="form-group">
+              <label>搜索提供商</label>
+              <select id="webSearchProvider">
+                <option value="duckduckgo">DuckDuckGo</option>
+                <option value="bing">必应（cn.bing.com）</option>
+              </select>
+              <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
+                对应 <code>tools.webSearch.provider</code>。环境变量 <code>WEB_SEARCH_PROVIDER</code> 为 bing / duckduckgo 时优先于此项。
+              </small>
+            </div>
+            <button class="btn" id="saveWebSearchConfigBtn">保存工具设置</button>
+          </div>
+
+          <div class="card">
             <h3>对话压缩设置</h3>
             <div class="form-group">
               <label>自动压缩阈值 (%)</label>
@@ -2182,6 +2201,11 @@
         console.log('saveWorkspaceConfig button found and bound');
       } else {
         console.error('saveWorkspaceConfigBtn not found!');
+      }
+
+      const saveWebSearchConfigBtn = document.getElementById('saveWebSearchConfigBtn');
+      if (saveWebSearchConfigBtn) {
+        saveWebSearchConfigBtn.addEventListener('click', () => saveWebSearchConfig());
       }
 
       const channelsBackBtn = document.getElementById('channelsBackBtn');
@@ -3934,6 +3958,25 @@
       }, 3000);
     }
 
+    async function saveWebSearchConfig() {
+      const webSearchProvider = document.getElementById('webSearchProvider').value;
+      try {
+        const response = await fetch('http://localhost:50001/api/config/web-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webSearchProvider })
+        });
+        const result = await response.json();
+        if (result.success) {
+          alert('工具设置（联网搜索）已保存！');
+        } else {
+          alert('保存失败: ' + (result.error || '未知错误'));
+        }
+      } catch (error) {
+        alert('错误: ' + error.message);
+      }
+    }
+
     async function saveWorkspaceConfig() {
       const workspace = document.getElementById('defaultWorkspace').value;
 
@@ -3971,6 +4014,15 @@
             document.getElementById('temperature').value = config.temperature || 0.7;
             document.getElementById('maxTokens').value = config.maxTokens || 4096;
             updateProviderFields();
+          }
+        }
+
+        const webSearchResponse = await fetch('http://localhost:50001/api/config/web-search');
+        if (webSearchResponse.ok) {
+          const ws = await webSearchResponse.json();
+          const wsp = document.getElementById('webSearchProvider');
+          if (wsp) {
+            wsp.value = ws.webSearchProvider === 'bing' ? 'bing' : 'duckduckgo';
           }
         }
 

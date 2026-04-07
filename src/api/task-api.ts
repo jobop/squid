@@ -15,6 +15,11 @@ import { FileEditTool } from '../tools/file-edit';
 import { BashTool } from '../tools/bash';
 import { PowerShellTool } from '../tools/powershell';
 import { WebSearchTool } from '../tools/web-search';
+import {
+  readWebSearchProviderRawFromSquidConfigRoot,
+  setWebSearchProviderInSquidConfig
+} from '../config/tools-config';
+import { normalizeWebSearchProvider } from '../tools/web-search-providers';
 import { CronCreateTool } from '../tools/cron-create';
 import { CronDeleteTool } from '../tools/cron-delete';
 import { CronListTool } from '../tools/cron-list';
@@ -1396,6 +1401,58 @@ user-invocable: true
       }
 
       existingConfig.workspace = config.workspace;
+      await writeFile(configPath, JSON.stringify(existingConfig, null, 2), 'utf-8');
+
+      return { success: true };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /** 联网搜索：config.json → tools.webSearch.provider（与大模型无关） */
+  async getWebSearchConfig(): Promise<{ webSearchProvider: 'duckduckgo' | 'bing' }> {
+    try {
+      const { readFile } = await import('fs/promises');
+      const { join } = await import('path');
+      const { homedir } = await import('os');
+
+      const configPath = join(homedir(), '.squid', 'config.json');
+      const content = await readFile(configPath, 'utf-8');
+      const root = JSON.parse(content) as Record<string, unknown>;
+      const raw = readWebSearchProviderRawFromSquidConfigRoot(root);
+      return { webSearchProvider: normalizeWebSearchProvider(raw) };
+    } catch {
+      return { webSearchProvider: 'duckduckgo' };
+    }
+  }
+
+  async saveWebSearchConfig(body: {
+    webSearchProvider?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { mkdir, readFile, writeFile } = await import('fs/promises');
+      const { join } = await import('path');
+      const { homedir } = await import('os');
+
+      const configDir = join(homedir(), '.squid');
+      await mkdir(configDir, { recursive: true });
+
+      const configPath = join(configDir, 'config.json');
+
+      let existingConfig: Record<string, unknown> = {};
+      try {
+        const content = await readFile(configPath, 'utf-8');
+        existingConfig = JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        // File doesn't exist
+      }
+
+      const provider = normalizeWebSearchProvider(body.webSearchProvider);
+      setWebSearchProviderInSquidConfig(existingConfig, provider);
+
       await writeFile(configPath, JSON.stringify(existingConfig, null, 2), 'utf-8');
 
       return { success: true };
