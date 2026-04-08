@@ -170,7 +170,7 @@ describe('AgentTool', () => {
   });
 
   it('应该正确标记工具属性', () => {
-    expect(AgentTool.isConcurrencySafe()).toBe(true);
+    expect(AgentTool.isConcurrencySafe()).toBe(false);
     expect(AgentTool.isReadOnly()).toBe(false);
     expect(AgentTool.isDestructive?.()).toBe(false);
   });

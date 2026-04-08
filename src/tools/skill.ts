@@ -3,7 +3,6 @@ import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs
 import { execSync } from 'node:child_process';
 import { z } from 'zod';
 import { SkillLoader } from '../skills/loader';
-import { executeWithUnifiedStack } from './unified-executor';
 
 const SkillInputSchema = z.object({
   skill_name: z
@@ -20,13 +19,9 @@ interface SkillOutput {
   success: boolean;
   skillName: string;
   result?: string;
+  // 保留字段兼容历史结构；inline skill 模式下通常为空
   duration?: number;
-  metadata?: {
-    executor: 'TaskExecutor';
-    mode: 'ask' | 'craft' | 'plan';
-    workspace: string;
-    timeoutMs: number;
-  };
+  metadata?: Record<string, unknown>;
   error?: string;
 }
 
@@ -134,40 +129,26 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
         }
       }
 
-      // 构建结果
+      // 采用 inline skill：仅展开技能内容并返回给当前主执行器继续。
+      // 这样避免再起一层 TaskExecutor（防止 skill->skill 递归套娃）。
       const instructionParts: string[] = [];
       instructionParts.push(`# Skill: ${skill.metadata.name}`);
+      instructionParts.push(
+        '以下为技能内容。请在当前对话中继续完成任务；不要再次调用同名 skill，以避免递归。'
+      );
       instructionParts.push(skill.systemPrompt.trim());
       if (input.args?.trim()) {
         instructionParts.push(`## Skill Arguments\n${input.args.trim()}`);
       }
-
-      const execution = await executeWithUnifiedStack({
-        instruction: instructionParts.join('\n\n'),
-        workspace: context.workDir,
-        mode: context.mode,
-      });
-
-      if (!execution.success) {
-        return {
-          data: {
-            success: false,
-            skillName: input.skill_name,
-            duration: execution.duration,
-            metadata: execution.metadata,
-            error: execution.error || '技能执行失败'
-          },
-          error: execution.error || 'Skill execution failed'
-        };
-      }
+      instructionParts.push(
+        `## Runtime Context\n- workspace: ${context.workDir}\n- mode: ${context.mode}`
+      );
 
       return {
         data: {
           success: true,
           skillName: skill.metadata.name,
-          result: execution.output || '',
-          duration: execution.duration,
-          metadata: execution.metadata
+          result: instructionParts.join('\n\n')
         }
       };
     } catch (error) {
@@ -202,7 +183,8 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
     };
   },
 
-  isConcurrencySafe: () => true,
+  // 会嵌套 TaskExecutor.execute（整段子任务 + 多轮工具），同轮并行会 N 倍 API 与日志风暴
+  isConcurrencySafe: () => false,
   isReadOnly: () => false,
   isDestructive: () => false
 };

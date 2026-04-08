@@ -16,7 +16,6 @@ import { CronCreateTool } from './cron-create';
 import { CronDeleteTool } from './cron-delete';
 import { CronListTool } from './cron-list';
 import { BriefTool } from './brief';
-import { SkillTool } from './skill';
 
 export type UnifiedExecutionErrorType = 'timeout' | 'config' | 'execution';
 
@@ -40,7 +39,7 @@ const DEFAULT_TIMEOUT_MS = 300000;
 
 /**
  * 子代理（agent / skill 内嵌执行）使用的工具集。
- * 与 TaskAPI 主会话对齐核心能力（含 skill）；不含嵌套 `agent` 以免深度与成本失控（需要时可再开放）。
+ * 与 TaskAPI 主会话对齐核心能力；为避免递归链路，显式不注册 `skill` / `agent`。
  */
 function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -57,7 +56,6 @@ function createRegistry(): ToolRegistry {
   registry.register(CronCreateTool);
   registry.register(CronDeleteTool);
   registry.register(CronListTool);
-  registry.register(SkillTool);
   registry.register(BriefTool);
   return registry;
 }

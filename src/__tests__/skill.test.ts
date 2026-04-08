@@ -1,14 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SkillTool } from '../tools/skill';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { ToolContext } from '../tools/base';
-import { executeWithUnifiedStack } from '../tools/unified-executor';
-
-vi.mock('../tools/unified-executor', () => ({
-  executeWithUnifiedStack: vi.fn()
-}));
 
 describe('SkillTool', () => {
   const testSkillsDir = join(homedir(), '.squid', 'skills');
@@ -20,14 +15,13 @@ describe('SkillTool', () => {
 
   beforeEach(async () => {
     await mkdir(testSkillsDir, { recursive: true });
-    vi.clearAllMocks();
   });
 
   afterEach(async () => {
     await rm(testSkillsDir, { recursive: true, force: true });
   });
 
-  it('应该成功加载并调用技能', async () => {
+  it('应该成功加载并以内联方式展开技能', async () => {
     const skillContent = `---
 name: test-skill
 description: Test skill for testing
@@ -43,18 +37,6 @@ This is a test skill system prompt.
 Execute the test task.`;
 
     await writeFile(join(testSkillsDir, 'test-skill.md'), skillContent);
-    vi.mocked(executeWithUnifiedStack).mockResolvedValue({
-      success: true,
-      output: 'Skill executed successfully',
-      duration: 100,
-      metadata: {
-        executor: 'TaskExecutor',
-        mode: 'craft',
-        workspace: mockContext.workDir,
-        timeoutMs: 300000
-      }
-    });
-
     const result = await SkillTool.call(
       {
         skill_name: 'test-skill'
@@ -64,8 +46,8 @@ Execute the test task.`;
 
     expect(result.data.success).toBe(true);
     expect(result.data.skillName).toBe('test-skill');
-    expect(result.data.result).toBe('Skill executed successfully');
-    expect(vi.mocked(executeWithUnifiedStack)).toHaveBeenCalled();
+    expect(result.data.result).toContain('# Skill: test-skill');
+    expect(result.data.result).toContain('This is a test skill system prompt.');
   });
 
   it('应该支持传递参数', async () => {
@@ -82,18 +64,6 @@ user-invocable: true
 Skill with parameters.`;
 
     await writeFile(join(testSkillsDir, 'param-skill.md'), skillContent);
-    vi.mocked(executeWithUnifiedStack).mockResolvedValue({
-      success: true,
-      output: 'Param skill executed',
-      duration: 80,
-      metadata: {
-        executor: 'TaskExecutor',
-        mode: 'craft',
-        workspace: mockContext.workDir,
-        timeoutMs: 300000
-      }
-    });
-
     const result = await SkillTool.call(
       {
         skill_name: 'param-skill',
@@ -103,10 +73,8 @@ Skill with parameters.`;
     );
 
     expect(result.data.success).toBe(true);
-    expect(result.data.result).toBe('Param skill executed');
-    const calledWith = vi.mocked(executeWithUnifiedStack).mock.calls[0]?.[0];
-    expect(calledWith?.instruction).toContain('## Skill Arguments');
-    expect(calledWith?.instruction).toContain('test arguments');
+    expect(result.data.result).toContain('## Skill Arguments');
+    expect(result.data.result).toContain('test arguments');
   });
 
   it('应该返回错误当技能不存在', async () => {
@@ -145,7 +113,6 @@ List skill prompt.`;
     expect(result.data.success).toBe(true);
     expect(result.data.result).toContain('可用技能列表');
     expect(result.data.result).toContain('listed-skill');
-    expect(vi.mocked(executeWithUnifiedStack)).not.toHaveBeenCalled();
   });
 
   it('应该支持下划线与连字符技能名兼容匹配', async () => {
@@ -162,18 +129,6 @@ user-invocable: true
 Alias prompt.`;
 
     await writeFile(join(testSkillsDir, 'creator-alpha-feed.md'), skillContent);
-    vi.mocked(executeWithUnifiedStack).mockResolvedValue({
-      success: true,
-      output: 'Alias matched',
-      duration: 12,
-      metadata: {
-        executor: 'TaskExecutor',
-        mode: 'craft',
-        workspace: mockContext.workDir,
-        timeoutMs: 300000
-      }
-    });
-
     const result = await SkillTool.call(
       {
         skill_name: 'creator_alpha_feed'
@@ -183,7 +138,7 @@ Alias prompt.`;
 
     expect(result.data.success).toBe(true);
     expect(result.data.skillName).toBe('creator-alpha-feed');
-    expect(result.data.result).toBe('Alias matched');
+    expect(result.data.result).toContain('# Skill: creator-alpha-feed');
   });
 
   it('应该拒绝不可调用的技能', async () => {
@@ -210,43 +165,6 @@ Internal skill prompt.`;
 
     expect(result.data.success).toBe(false);
     expect(result.data.error).toContain('不可被直接调用');
-  });
-
-  it('应该返回执行失败并标记错误', async () => {
-    const skillContent = `---
-name: fail-skill
-description: Fail skill
-when-to-use: test fail
-allowed-tools:
-  - read_file
-effort: low
-user-invocable: true
----
-
-Fail skill prompt.`;
-    await writeFile(join(testSkillsDir, 'fail-skill.md'), skillContent);
-    vi.mocked(executeWithUnifiedStack).mockResolvedValue({
-      success: false,
-      error: '执行失败',
-      errorType: 'execution',
-      duration: 30,
-      metadata: {
-        executor: 'TaskExecutor',
-        mode: 'craft',
-        workspace: mockContext.workDir,
-        timeoutMs: 300000
-      }
-    });
-
-    const result = await SkillTool.call(
-      {
-        skill_name: 'fail-skill'
-      },
-      mockContext
-    );
-
-    expect(result.data.success).toBe(false);
-    expect(result.data.error).toContain('执行失败');
   });
 
   it('mapToolResultToToolResultBlockParam 应该正确格式化输出', () => {
@@ -279,7 +197,7 @@ Fail skill prompt.`;
   });
 
   it('应该正确标记为只读操作', () => {
-    expect(SkillTool.isConcurrencySafe()).toBe(true);
+    expect(SkillTool.isConcurrencySafe()).toBe(false);
     expect(SkillTool.isReadOnly()).toBe(false);
     expect(SkillTool.isDestructive?.()).toBe(false);
   });

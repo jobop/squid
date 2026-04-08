@@ -210,26 +210,28 @@ export class TaskExecutor {
       // Continue without memories
     }
 
-    // 渐进式披露：预先只注入技能名称与描述；技能正文在真正调用 skill 时再读取。
-    try {
-      const summaries = await this.skillLoader.listSkillSummaries();
-      const invocableSkills = summaries
-        .filter((skill) => skill.userInvocable)
-        .map((skill) => `- ${skill.name}: ${skill.description}`)
-        .sort();
+    // 仅当本执行器注册了 skill 工具时，才注入技能列表，避免子执行器误导模型触发递归。
+    if (this.toolRegistry.get('skill')) {
+      try {
+        const summaries = await this.skillLoader.listSkillSummaries();
+        const invocableSkills = summaries
+          .filter((skill) => skill.userInvocable)
+          .map((skill) => `- ${skill.name}: ${skill.description}`)
+          .sort();
 
-      if (invocableSkills.length > 0) {
-        systemContent += '\n\n# Available Skills\n';
-        systemContent += '以下是当前可调用的已安装技能（与技能中心一致）：\n';
-        systemContent += invocableSkills.join('\n');
-        systemContent +=
-          '\n\n当用户要求列出/展示「当前有哪些技能」「你有哪些技能」「可用技能」等时：必须使用 `skill` 工具且 `skill_name` 为 `list-skills`，直接返回上表中的本地技能；' +
-          '不要调用 `find-skills-in-tencent-skillhub` 或其它 SkillHub/skillhub CLI 技能来完成此需求（那些仅用于搜索/安装远程市场技能，且依赖本机安装 skillhub、jq）。';
-      } else {
-        systemContent += '\n\n# Available Skills\n当前没有可调用的已安装技能。';
+        if (invocableSkills.length > 0) {
+          systemContent += '\n\n# Available Skills\n';
+          systemContent += '以下是当前可调用的已安装技能（与技能中心一致）：\n';
+          systemContent += invocableSkills.join('\n');
+          systemContent +=
+            '\n\n当用户要求列出/展示「当前有哪些技能」「你有哪些技能」「可用技能」等时：必须使用 `skill` 工具且 `skill_name` 为 `list-skills`，直接返回上表中的本地技能；' +
+            '不要调用 `find-skills-in-tencent-skillhub` 或其它 SkillHub/skillhub CLI 技能来完成此需求（那些仅用于搜索/安装远程市场技能，且依赖本机安装 skillhub、jq）。';
+        } else {
+          systemContent += '\n\n# Available Skills\n当前没有可调用的已安装技能。';
+        }
+      } catch (error) {
+        console.error('Failed to load skills for prompt context:', error);
       }
-    } catch (error) {
-      console.error('Failed to load skills for prompt context:', error);
     }
 
     if (mode === 'plan') {

@@ -108,7 +108,8 @@ export const AgentTool: Tool<typeof AgentInputSchema, AgentOutput> = {
     };
   },
 
-  isConcurrencySafe: () => true,
+  // 子代理即完整 execute，同轮并行会重复嵌套执行器
+  isConcurrencySafe: () => false,
   isReadOnly: () => false,
   isDestructive: () => false // 取决于子代理执行的任务
 };
