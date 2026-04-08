@@ -1,6 +1,7 @@
 ---
 name: find-skills-in-tencent-skillhub
-description: "Search, install, upgrade, and manage agent skills using skillhub CLI. Use when you need to discover new skills, install skills by slug, upgrade installed skills, list available skills, or self-upgrade the skillhub CLI."
+description: "Tencent SkillHub / skillhub CLI only: search or install skills from the remote SkillHub store, upgrade CLI-installed packages, or list what the skillhub CLI has installed. Do NOT use this skill when the user only wants the app's registered skill list — use the skill tool with skill_name=list-skills instead."
+when-to-use: When the user explicitly wants to search/install/upgrade via Tencent SkillHub or the skillhub CLI, not for listing skills already shown under Available Skills in system prompt.
 metadata: { "version": "1.0.4", "source": "https://github.com/wuhonglei/skills", "openclaw": { "emoji": "🔧", "requires": { "bins": ["skillhub", "jq"] } } }
 ---
 

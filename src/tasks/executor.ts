@@ -222,6 +222,9 @@ export class TaskExecutor {
         systemContent += '\n\n# Available Skills\n';
         systemContent += '以下是当前可调用的已安装技能（与技能中心一致）：\n';
         systemContent += invocableSkills.join('\n');
+        systemContent +=
+          '\n\n当用户要求列出/展示「当前有哪些技能」「你有哪些技能」「可用技能」等时：必须使用 `skill` 工具且 `skill_name` 为 `list-skills`，直接返回上表中的本地技能；' +
+          '不要调用 `find-skills-in-tencent-skillhub` 或其它 SkillHub/skillhub CLI 技能来完成此需求（那些仅用于搜索/安装远程市场技能，且依赖本机安装 skillhub、jq）。';
       } else {
         systemContent += '\n\n# Available Skills\n当前没有可调用的已安装技能。';
       }

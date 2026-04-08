@@ -1,8 +1,44 @@
 import { spawn } from 'child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { platform } from 'os';
 import type { Tool, ToolResult, ToolContext } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { z } from 'zod';
+
+function getWindowsSystemRoot(): string {
+  return process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+}
+
+/** 供 Electrobun 等 PATH 收窄的宿主使用：避免 uv_spawn 解析不到 powershell.exe。 */
+function resolveWindowsPowerShellPath(): string | null {
+  const root = getWindowsSystemRoot();
+  const candidates = [
+    join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    join(root, 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+/** 为子进程前置 System32 与 PowerShell 目录，便于 powershell 内调用 git 等。 */
+function getWindowsSpawnEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const root = getWindowsSystemRoot();
+  const prefixes = [
+    join(root, 'System32'),
+    join(root, 'System32', 'WindowsPowerShell', 'v1.0'),
+  ];
+  const existing = env.Path || env.PATH || '';
+  const merged = [...prefixes, existing].filter(Boolean).join(';');
+  env.Path = merged;
+  env.PATH = merged;
+  return env;
+}
 
 const PowerShellInputSchema = z.object({
   command: z.string().describe('要执行的 PowerShell 命令'),
@@ -55,6 +91,32 @@ export const PowerShellTool: Tool<typeof PowerShellInputSchema, PowerShellOutput
     const timeout = input.timeout || 30000;
     const workDir = input.working_directory || context.workDir;
 
+    const pwshPath = resolveWindowsPowerShellPath();
+    if (!pwshPath) {
+      const root = getWindowsSystemRoot();
+      const stderr =
+        `未找到 Windows PowerShell（powershell.exe）。请确认系统已安装，且 SystemRoot/windir 指向正确（当前推断根目录: ${root}）。`;
+      return {
+        data: {
+          success: false,
+          stdout: '',
+          stderr,
+          exitCode: null,
+          command: input.command,
+          platform: currentPlatform,
+        },
+        error: 'PowerShell executable not found',
+      };
+    }
+
+    const spawnEnv = getWindowsSpawnEnv();
+    const spawnOpts = {
+      cwd: workDir,
+      env: spawnEnv,
+      windowsHide: true as const,
+    };
+    const pwshArgs = ['-NoProfile', '-Command', input.command];
+
     // 如果是后台运行
     if (input.run_in_background) {
       const taskId = `ps-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -69,9 +131,7 @@ export const PowerShellTool: Tool<typeof PowerShellInputSchema, PowerShellOutput
         platform: currentPlatform
       };
 
-      const childProcess = spawn('powershell.exe', ['-Command', input.command], {
-        cwd: workDir
-      });
+      const childProcess = spawn(pwshPath, pwshArgs, spawnOpts);
 
       childProcess.stdout?.on('data', (data) => {
         output.stdout += data.toString();
@@ -84,6 +144,12 @@ export const PowerShellTool: Tool<typeof PowerShellInputSchema, PowerShellOutput
       childProcess.on('exit', (code) => {
         output.exitCode = code;
         output.success = code === 0;
+      });
+
+      childProcess.on('error', (err) => {
+        output.stderr += err.message;
+        output.success = false;
+        output.exitCode = null;
       });
 
       backgroundTasks.set(taskId, { process: childProcess, output });
@@ -107,9 +173,7 @@ export const PowerShellTool: Tool<typeof PowerShellInputSchema, PowerShellOutput
       let stderr = '';
       let timedOut = false;
 
-      const childProcess = spawn('powershell.exe', ['-Command', input.command], {
-        cwd: workDir
-      });
+      const childProcess = spawn(pwshPath, pwshArgs, spawnOpts);
 
       // 设置超时
       const timeoutId = setTimeout(() => {

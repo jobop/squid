@@ -1,11 +1,16 @@
 import type { Tool, ToolResult, ToolContext } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
+import { execSync } from 'node:child_process';
 import { z } from 'zod';
 import { SkillLoader } from '../skills/loader';
 import { executeWithUnifiedStack } from './unified-executor';
 
 const SkillInputSchema = z.object({
-  skill_name: z.string().describe('技能名称'),
+  skill_name: z
+    .string()
+    .describe(
+      '技能名称。仅当需要列出本应用已注册技能时，必须填 list-skills（不要用 SkillHub 类技能代替）。'
+    ),
   args: z.string().optional().describe('传递给技能的参数（可选）')
 });
 
@@ -27,12 +32,33 @@ interface SkillOutput {
 
 function isListSkillsAlias(name: string): boolean {
   const normalized = name.trim().toLowerCase().replace(/[\s_]+/g, '-');
-  return normalized === 'list-skills' || normalized === 'list-skills-skill';
+  return (
+    normalized === 'list-skills' ||
+    normalized === 'list-skills-skill' ||
+    normalized === 'list-all-skills' ||
+    normalized === 'skills'
+  );
+}
+
+const TENCENT_SKILLHUB_SKILL = 'find-skills-in-tencent-skillhub';
+
+function commandAvailable(cmd: string): boolean {
+  try {
+    if (process.platform === 'win32') {
+      execSync(`where ${cmd}`, { stdio: 'ignore', windowsHide: true });
+    } else {
+      execSync(`command -v ${cmd}`, { stdio: 'ignore' });
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
   name: 'skill',
-  description: '调用已注册的技能。技能是预定义的任务模板，可以执行特定的操作。',
+  description:
+    '调用本应用已注册的技能。若用户只想查看当前环境可用技能列表（含内置与用户目录），必须使用 skill_name=`list-skills`，不要为此调用腾讯 SkillHub / skillhub CLI 类技能。',
   inputSchema: SkillInputSchema,
   maxResultSizeChars: 100000,
 
@@ -86,6 +112,26 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
           },
           error: 'Skill is not user-invocable'
         };
+      }
+
+      // 腾讯 SkillHub CLI 技能依赖本机 skillhub 与 jq；缺失时尽快失败并引导 list-skills，避免模型多轮空转。
+      if (skill.metadata.name === TENCENT_SKILLHUB_SKILL) {
+        const missing: string[] = [];
+        if (!commandAvailable('skillhub')) missing.push('skillhub');
+        if (!commandAvailable('jq')) missing.push('jq');
+        if (missing.length > 0) {
+          const hint =
+            `本机未检测到 ${missing.join('、')}（PATH 中不可用），无法执行 ${TENCENT_SKILLHUB_SKILL}。` +
+            '若用户只是想列出当前应用已注册的技能，请立即改用 skill 工具且 skill_name 为 `list-skills`，勿再调用本技能。';
+          return {
+            data: {
+              success: false,
+              skillName: input.skill_name,
+              error: hint
+            },
+            error: hint
+          };
+        }
       }
 
       // 构建结果

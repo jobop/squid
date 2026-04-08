@@ -29,8 +29,9 @@ export default {
       entrypoint: './src/bun/index.ts'
     },
     // macOS：默认读取项目根目录下的 icon.iconset/（见 Electrobun Application Icons 文档）
+    // Windows：Resources/app.ico 须为真实 ICO。PNG 改名会导致开始菜单/快捷方式显示占位图标。
     win: {
-      icon: 'icon.iconset/icon_256x256.png'
+      icon: 'assets/icon.ico'
     },
     linux: {
       icon: 'icon.iconset/icon_256x256.png'
