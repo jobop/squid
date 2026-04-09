@@ -680,6 +680,95 @@
     .message.user .message-content pre {
       background: rgba(255, 255, 255, 0.1);
     }
+    .message-image-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+      max-width: 560px;
+    }
+    .message-image-item {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .message-image-item img {
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      background: #fff;
+      display: block;
+      cursor: zoom-in;
+    }
+    .message.user .message-image-item img {
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .message-image-caption {
+      font-size: 11px;
+      opacity: 0.8;
+      line-height: 1.3;
+      word-break: break-all;
+    }
+    .image-preview-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 12000;
+      padding: 24px;
+    }
+    .image-preview-overlay.open {
+      display: flex;
+    }
+    .image-preview-content {
+      position: relative;
+      max-width: min(96vw, 1200px);
+      max-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .image-preview-content img {
+      max-width: 100%;
+      max-height: calc(92vh - 42px);
+      object-fit: contain;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 36px rgba(0, 0, 0, 0.42);
+    }
+    .image-preview-caption {
+      color: #f5f5f5;
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: center;
+      word-break: break-all;
+      max-width: min(90vw, 920px);
+    }
+    .image-preview-close {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 0;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 18px;
+      line-height: 30px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .image-preview-close:hover {
+      background: rgba(0, 0, 0, 0.78);
+    }
     .message-time {
       font-size: 11px;
       color: #999;
@@ -1729,6 +1818,14 @@
     </div>
   </div>
 
+  <div id="imagePreviewOverlay" class="image-preview-overlay" aria-hidden="true">
+    <div class="image-preview-content" role="dialog" aria-modal="true" aria-label="图片预览">
+      <button type="button" class="image-preview-close" id="imagePreviewCloseBtn" aria-label="关闭图片预览">×</button>
+      <img id="imagePreviewImg" src="" alt="preview" />
+      <div id="imagePreviewCaption" class="image-preview-caption"></div>
+    </div>
+  </div>
+
   <!-- Debug Console -->
   <div id="debugConsole" style="position: fixed; bottom: 0; left: 0; width: 350px; height: 250px; background: #1a1a1a; color: #00ff00; font-family: monospace; font-size: 11px; overflow-y: auto; padding: 10px; border-top: 2px solid #00ff00; border-right: 2px solid #00ff00; z-index: 10000; display: none;">
     <div style="position: sticky; top: 0; background: #1a1a1a; padding-bottom: 5px; margin-bottom: 5px; border-bottom: 1px solid #00ff00;">
@@ -1743,6 +1840,10 @@
     // Debug console
     const debugLog = document.getElementById('debugLog');
     const debugConsole = document.getElementById('debugConsole');
+    const imagePreviewOverlay = document.getElementById('imagePreviewOverlay');
+    const imagePreviewImg = document.getElementById('imagePreviewImg');
+    const imagePreviewCaption = document.getElementById('imagePreviewCaption');
+    const imagePreviewCloseBtn = document.getElementById('imagePreviewCloseBtn');
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
 
@@ -1772,11 +1873,47 @@
 
     // Show debug console on Ctrl+D
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && imagePreviewOverlay?.classList.contains('open')) {
+        e.preventDefault();
+        closeImagePreview();
+        return;
+      }
       if (e.ctrlKey && e.key === 'd') {
         e.preventDefault();
         debugConsole.style.display = debugConsole.style.display === 'none' ? 'block' : 'none';
       }
     });
+
+    function closeImagePreview() {
+      if (!imagePreviewOverlay || !imagePreviewImg || !imagePreviewCaption) return;
+      imagePreviewOverlay.classList.remove('open');
+      imagePreviewOverlay.setAttribute('aria-hidden', 'true');
+      imagePreviewImg.src = '';
+      imagePreviewImg.alt = 'preview';
+      imagePreviewCaption.textContent = '';
+    }
+
+    function openImagePreview(src, caption) {
+      if (!imagePreviewOverlay || !imagePreviewImg || !imagePreviewCaption) return;
+      const safeSrc = String(src || '').trim();
+      if (!safeSrc) return;
+      imagePreviewImg.src = safeSrc;
+      imagePreviewImg.alt = caption || 'preview';
+      imagePreviewCaption.textContent = caption || '';
+      imagePreviewOverlay.classList.add('open');
+      imagePreviewOverlay.setAttribute('aria-hidden', 'false');
+    }
+
+    if (imagePreviewCloseBtn) {
+      imagePreviewCloseBtn.addEventListener('click', () => closeImagePreview());
+    }
+    if (imagePreviewOverlay) {
+      imagePreviewOverlay.addEventListener('click', (e) => {
+        if (e.target === imagePreviewOverlay) {
+          closeImagePreview();
+        }
+      });
+    }
 
     // Task list management
     let tasks = [];
@@ -1866,6 +2003,132 @@
       const m = /\.([a-z0-9]+)$/i.exec(String(path || '').trim());
       if (!m) return null;
       return IMAGE_MIME_BY_EXT[m[1].toLowerCase()] || null;
+    }
+
+    function toPreviewFileUrl(workspace, relativePath) {
+      const ws = String(workspace || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+      const rel = String(relativePath || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+      if (!ws || !rel) return '';
+      const params = new URLSearchParams({
+        workspace: ws,
+        path: rel,
+      });
+      return `http://localhost:50001/api/workspace/images/preview?${params.toString()}`;
+    }
+
+    function buildUserMessageImagePreviews(workspace, mentions, attachments) {
+      const previews = [];
+      const seen = new Set();
+
+      (attachments || []).forEach((item) => {
+        const src = typeof item?.dataUrl === 'string' ? item.dataUrl.trim() : '';
+        if (!src || seen.has(src)) return;
+        seen.add(src);
+        previews.push({
+          src,
+          mimeType: item.mimeType,
+          name: item.name,
+          path: item.path,
+        });
+      });
+
+      (mentions || []).forEach((item) => {
+        if (!item || item.type !== 'file') return;
+        const path = normalizeMentionFilePath(item.path || '');
+        if (!path) return;
+        const mimeType = inferImageMimeFromPath(path);
+        if (!mimeType) return;
+        const src = toPreviewFileUrl(workspace, path);
+        if (!src || seen.has(src)) return;
+        seen.add(src);
+        previews.push({
+          src,
+          mimeType,
+          path,
+          name: item.label || path,
+        });
+      });
+
+      return previews;
+    }
+
+    function appendMissingFileMentionsToInstruction(instruction, filePaths) {
+      const base = String(instruction || '');
+      const uniquePaths = Array.from(new Set((filePaths || []).filter((p) => typeof p === 'string' && p.trim())));
+      if (uniquePaths.length === 0) return base;
+      const missing = uniquePaths.filter((p) => !base.includes(`@${p}`));
+      if (missing.length === 0) return base;
+      const mentionTail = missing.map((p) => `@${p}`).join(' ');
+      return `${base}\n\n${mentionTail}`.trim();
+    }
+
+    function appendMissingSkillMentionsToInstruction(instruction, skillsWithArgs) {
+      const base = String(instruction || '');
+      const normalized = (skillsWithArgs || [])
+        .map((s) => {
+          const name = String(s?.name || '').trim();
+          if (!name) return null;
+          const args = String(s?.args || '').trim();
+          return { name, args };
+        })
+        .filter(Boolean);
+      if (normalized.length === 0) return base;
+
+      const missing = [];
+      normalized.forEach((s) => {
+        const escapedName = s.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const exists = new RegExp(`(^|\\s)%${escapedName}(\\s|$)`, 'i').test(base);
+        if (!exists) {
+          missing.push(`%${s.name}${s.args ? `:${s.args}` : ''}`);
+        }
+      });
+      if (missing.length === 0) return base;
+      return `${base}\n\n${missing.join(' ')}`.trim();
+    }
+
+    async function persistPastedImagesToWorkspace(workspace, attachments) {
+      const savedMentions = [];
+      const remainingAttachments = [];
+      for (const item of (attachments || [])) {
+        const source = String(item?.source || '').toLowerCase();
+        const hasPath = typeof item?.path === 'string' && item.path.trim();
+        const dataUrl = typeof item?.dataUrl === 'string' ? item.dataUrl.trim() : '';
+        const shouldPersist = source !== 'mention' && !hasPath && dataUrl.startsWith('data:image/');
+        if (!shouldPersist) {
+          remainingAttachments.push(item);
+          continue;
+        }
+        try {
+          const response = await fetch('http://localhost:50001/api/workspace/images/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              workspace,
+              dataUrl: item.dataUrl,
+              name: item.name,
+              mimeType: item.mimeType,
+            }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.success || !result.path) {
+            remainingAttachments.push(item);
+            continue;
+          }
+          const path = normalizeMentionFilePath(result.path);
+          if (!path) {
+            remainingAttachments.push(item);
+            continue;
+          }
+          savedMentions.push({
+            type: 'file',
+            path,
+            label: result.name || path,
+          });
+        } catch {
+          remainingAttachments.push(item);
+        }
+      }
+      return { savedMentions, remainingAttachments };
     }
 
     function isAbortError(error) {
@@ -2105,9 +2368,9 @@
       if (!parsed || parsed.type !== 'skill') return;
       const before = input.value.slice(0, parsed.start);
       const after = input.value.slice(cursor);
-      const insertText = `%${skill.name} `;
-      input.value = `${before}${insertText}${after}`;
-      const nextPos = before.length + insertText.length;
+      // %技能选择后仅保留 token，不把技能名文本写回输入框
+      input.value = `${before}${after}`;
+      const nextPos = before.length;
       input.setSelectionRange(nextPos, nextPos);
       addMentionSkill(skill);
       closeMentionSkillPanel();
@@ -2124,9 +2387,9 @@
       if (!parsed || parsed.type !== 'file') return;
       const before = input.value.slice(0, parsed.start);
       const after = input.value.slice(cursor);
-      const insertText = `@${file.path} `;
-      input.value = `${before}${insertText}${after}`;
-      const nextPos = before.length + insertText.length;
+      // @文件选择后仅保留 token，不把路径文本写回输入框
+      input.value = `${before}${after}`;
+      const nextPos = before.length;
       input.setSelectionRange(nextPos, nextPos);
       addMentionFile(file);
       closeMentionSkillPanel();
@@ -3060,7 +3323,18 @@
 
         messages.forEach((message) => {
           if (message.role === 'user' || message.role === 'assistant') {
-            addMessage(message.role, message.content || '');
+            const text = message.content || '';
+            if (message.role === 'user') {
+              const mentionedFiles = collectMentionFilesFromInstruction(text);
+              const userMessageImages = buildUserMessageImagePreviews(
+                result.workspace || document.getElementById('workspace')?.value || '',
+                mentionedFiles,
+                []
+              );
+              addMessage(message.role, text, { images: userMessageImages });
+            } else {
+              addMessage(message.role, text);
+            }
           }
         });
       } catch (error) {
@@ -3983,8 +4257,9 @@
       const instruction = document.getElementById('instruction').value;
       const startInNewThread = startInNewThreadPending;
       const expertId = selectedExpert;
-      const mentionSkills = collectMentionSkillsFromInstruction(instruction);
-      const mentionFiles = collectMentionFilesFromInstruction(instruction);
+      let instructionToSend = instruction;
+      const mentionSkills = collectMentionSkillsFromInstruction(instructionToSend);
+      const mentionFiles = collectMentionFilesFromInstruction(instructionToSend);
       const selectedMentionSkillsMap = new Map();
       const mentionMap = new Map();
       selectedMentionSkills.forEach((s) => {
@@ -4009,8 +4284,7 @@
         const p = normalizeMentionFilePath(f?.path || '');
         if (p) mentionMap.set(`file:${p}`, { type: 'file', path: p, label: f?.label || p });
       });
-      const mentions = Array.from(mentionMap.values());
-      const attachments = selectedImageAttachments.map((item) => ({
+      let attachments = selectedImageAttachments.map((item) => ({
         type: 'image',
         mimeType: item.mimeType,
         dataUrl: item.dataUrl,
@@ -4019,7 +4293,7 @@
         path: item.path,
       }));
 
-      if (!instruction.trim()) {
+      if (!instruction.trim() && mentionMap.size === 0 && attachments.length === 0) {
         alert('请输入任务指令');
         return;
       }
@@ -4050,6 +4324,26 @@
         return;
       }
 
+      const persisted = await persistPastedImagesToWorkspace(workspace, attachments);
+      persisted.savedMentions.forEach((f) => {
+        const p = normalizeMentionFilePath(f?.path || '');
+        if (p) mentionMap.set(`file:${p}`, { type: 'file', path: p, label: f?.label || p });
+      });
+      attachments = persisted.remainingAttachments;
+      const mentions = Array.from(mentionMap.values());
+      instructionToSend = appendMissingSkillMentionsToInstruction(
+        instructionToSend,
+        mentions
+          .filter((m) => m.type === 'skill')
+          .map((m) => ({ name: m.name, args: m.args }))
+      );
+      instructionToSend = appendMissingFileMentionsToInstruction(
+        instructionToSend,
+        mentions
+          .filter((m) => m.type === 'file')
+          .map((m) => m.path)
+      );
+
       const runBtn = document.getElementById('runBtn');
       const chatContainer = document.getElementById('chatContainer');
       const emptyState = chatContainer.querySelector('.empty-state');
@@ -4059,8 +4353,9 @@
         emptyState.style.display = 'none';
       }
 
-      // 添加用户消息
-      addMessage('user', instruction);
+      // 添加用户消息（文本 + 本轮图片附件快照，覆盖粘贴图与 @图片）
+      const userMessageImages = buildUserMessageImagePreviews(workspace, mentions, attachments);
+      addMessage('user', instruction, { images: userMessageImages });
 
       // 清空输入框
       document.getElementById('instruction').value = '';
@@ -4099,7 +4394,7 @@
           body: JSON.stringify({
             mode: mode,
             workspace: workspace,
-            instruction: instruction,
+            instruction: instructionToSend,
             startInNewThread: startInNewThread || undefined,
             mentions: mentions.length > 0 ? mentions : undefined,
             attachments: attachments.length > 0 ? attachments : undefined,
@@ -4291,7 +4586,47 @@
     }
 
     // 添加消息到聊天容器
-    function addMessage(role, content) {
+    function renderMessageImages(container, images) {
+      if (!container || !Array.isArray(images) || images.length === 0) return;
+      const safeImages = images.filter((item) => {
+        const src = typeof item?.src === 'string' ? item.src.trim() : '';
+        const dataUrl = typeof item?.dataUrl === 'string' ? item.dataUrl.trim() : '';
+        const mimeType = typeof item?.mimeType === 'string' ? item.mimeType.trim().toLowerCase() : '';
+        const finalSrc = src || dataUrl;
+        if (!finalSrc) return false;
+        return finalSrc.startsWith('data:image/') || finalSrc.startsWith('file://') || mimeType.startsWith('image/');
+      });
+      if (!safeImages.length) return;
+
+      const imageGrid = document.createElement('div');
+      imageGrid.className = 'message-image-grid';
+      safeImages.forEach((item, index) => {
+        const figure = document.createElement('figure');
+        figure.className = 'message-image-item';
+
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.src = item.src || item.dataUrl;
+        img.alt = item.name || item.path || `image-${index + 1}`;
+        img.addEventListener('click', () => {
+          openImagePreview(img.src, item.name || item.path || '');
+        });
+        figure.appendChild(img);
+
+        const captionText = item.name || item.path || '';
+        if (captionText) {
+          const caption = document.createElement('figcaption');
+          caption.className = 'message-image-caption';
+          caption.textContent = captionText;
+          figure.appendChild(caption);
+        }
+
+        imageGrid.appendChild(figure);
+      });
+      container.appendChild(imageGrid);
+    }
+
+    function addMessage(role, content, options = {}) {
       const chatContainer = document.getElementById('chatContainer');
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${role}`;
@@ -4310,6 +4645,7 @@
       messageContent.className = 'message-content';
 
       renderMessageContent(messageContent, content);
+      renderMessageImages(messageContent, options.images);
 
       contentDiv.appendChild(messageContent);
 

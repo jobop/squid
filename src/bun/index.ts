@@ -102,6 +102,46 @@ async function main() {
         }
       }
 
+      if (url.pathname === '/api/workspace/images/preview' && req.method === 'GET') {
+        try {
+          const workspace = String(url.searchParams.get('workspace') || '').trim();
+          const relPath = String(url.searchParams.get('path') || '').trim();
+          if (!workspace || !relPath) {
+            return new Response('workspace and path are required', { status: 400 });
+          }
+
+          const sandbox = new (await import('../workspace/sandbox')).WorkspaceSandbox(workspace);
+          await sandbox.validatePath(workspace);
+          const absPath = sandbox.resolvePath(relPath);
+          const { readFile } = await import('fs/promises');
+          const bytes = await readFile(absPath);
+          const ext = (relPath.split('.').pop() || '').toLowerCase();
+          const mimeByExt: Record<string, string> = {
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            webp: 'image/webp',
+            gif: 'image/gif',
+            bmp: 'image/bmp',
+            tif: 'image/tiff',
+            tiff: 'image/tiff',
+            heic: 'image/heic',
+            heif: 'image/heif',
+            avif: 'image/avif',
+          };
+          const contentType = mimeByExt[ext] || 'application/octet-stream';
+          return new Response(bytes, {
+            headers: {
+              'Content-Type': contentType,
+              'Cache-Control': 'private, max-age=60',
+              'Access-Control-Allow-Origin': '*',
+            }
+          });
+        } catch {
+          return new Response('Not Found', { status: 404 });
+        }
+      }
+
       // Execute task with streaming
       if (url.pathname === '/api/task/execute-stream' && req.method === 'POST') {
         try {
@@ -264,6 +304,82 @@ async function main() {
             success: false,
             error: error?.message || String(error),
             files: [],
+          }), { status: 400, headers });
+        }
+      }
+
+      if (url.pathname === '/api/workspace/images/save' && req.method === 'POST') {
+        try {
+          const body = await req.json() as {
+            workspace?: string;
+            dataUrl?: string;
+            name?: string;
+            mimeType?: string;
+          };
+          const workspace = String(body.workspace || '').trim();
+          const dataUrl = String(body.dataUrl || '').trim();
+          const inputMime = String(body.mimeType || '').trim().toLowerCase();
+          const inputName = String(body.name || '').trim();
+          if (!workspace) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'workspace is required',
+            }), { status: 400, headers });
+          }
+          if (!dataUrl) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'dataUrl is required',
+            }), { status: 400, headers });
+          }
+
+          const sandbox = new (await import('../workspace/sandbox')).WorkspaceSandbox(workspace);
+          await sandbox.validatePath(workspace);
+
+          const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(dataUrl);
+          if (!m) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'invalid image dataUrl',
+            }), { status: 400, headers });
+          }
+
+          const mimeType = (m[1] || inputMime || 'image/png').toLowerCase();
+          const base64 = m[2] || '';
+          const extByMime: Record<string, string> = {
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/webp': 'webp',
+            'image/gif': 'gif',
+            'image/bmp': 'bmp',
+            'image/tiff': 'tiff',
+            'image/heic': 'heic',
+            'image/heif': 'heif',
+            'image/avif': 'avif',
+          };
+          const extFromName = /\.[a-z0-9]+$/i.test(inputName)
+            ? inputName.split('.').pop()!.toLowerCase()
+            : '';
+          const ext = (extFromName || extByMime[mimeType] || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png';
+          const relDir = '.squid/attachments';
+          const relPath = `${relDir}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+          const absPath = sandbox.resolvePath(relPath);
+          const parentDir = dirname(absPath);
+          const { mkdir, writeFile } = await import('fs/promises');
+          await mkdir(parentDir, { recursive: true });
+          await writeFile(absPath, Buffer.from(base64, 'base64'));
+
+          return new Response(JSON.stringify({
+            success: true,
+            path: relPath.replace(/\\/g, '/'),
+            mimeType,
+            name: inputName || relPath.split('/').pop(),
+          }), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error?.message || String(error),
           }), { status: 400, headers });
         }
       }
