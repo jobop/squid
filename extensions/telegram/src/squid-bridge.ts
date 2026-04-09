@@ -1,8 +1,13 @@
 import { type TaskAPI } from '../../../src/api/task-api';
 import { isTaskAPIConversationBusyError } from '../../../src/api/task-api-channel-errors';
 import type { EventBridge, ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
+import { saveInboundImageToWorkspace } from '../../shared/workspace-image-store';
 import { loadTelegramChannelConfigSync } from './config-store';
-import { TELEGRAM_MAX_MESSAGE_CHARS, telegramSendMessage } from './telegram-client';
+import {
+  TELEGRAM_MAX_MESSAGE_CHARS,
+  telegramDownloadFileById,
+  telegramSendMessage,
+} from './telegram-client';
 
 function telegramConversationId(chatId: string): string {
   return `telegrambot_${chatId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
@@ -56,12 +61,25 @@ export function registerTelegramSquidBridge(
   };
 }
 
+type TelegramInboundMedia = {
+  kind?: 'photo' | 'document';
+  fileId?: string;
+  fileName?: string;
+  mimeType?: string;
+};
+
+function extractTelegramInboundMedia(event: ChannelInboundEvent): TelegramInboundMedia[] {
+  const raw = event.raw as Record<string, unknown> | undefined;
+  const media = raw?.media;
+  if (!Array.isArray(media)) return [];
+  return media
+    .filter((it) => !!it && typeof it === 'object')
+    .map((it) => it as TelegramInboundMedia)
+    .filter((it) => typeof it.fileId === 'string' && it.fileId.trim());
+}
+
 async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEvent): Promise<void> {
-  const text = event.text?.trim();
-  if (!text) {
-    console.warn('[TelegramBridge] 文本为空，跳过');
-    return;
-  }
+  const text = event.text?.trim() || '';
 
   const chatId = event.chatId?.trim();
   if (!chatId) {
@@ -87,6 +105,36 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
   const conversationId = telegramConversationId(chatId);
   console.log('[TelegramBridge] conversationId=%s workspace=%s', conversationId, workspace);
 
+  const mentions: Array<{ type: 'file'; path: string; label?: string }> = [];
+  const mediaRefs = extractTelegramInboundMedia(event);
+  for (const media of mediaRefs) {
+    const fileId = media.fileId?.trim();
+    if (!fileId) continue;
+    const downloaded = await telegramDownloadFileById(token, fileId, { apiBase: cfg.apiBase });
+    if (!downloaded.ok) {
+      console.warn('[TelegramBridge] 下载媒体失败 fileId=%s error=%s', fileId, downloaded.error);
+      continue;
+    }
+    const saved = await saveInboundImageToWorkspace({
+      workspace,
+      bytes: downloaded.bytes,
+      channelId: 'telegram',
+      mimeType: media.mimeType || downloaded.contentType,
+      filenameHint: media.fileName || downloaded.filePath.split('/').pop(),
+    });
+    if (!saved.ok) {
+      console.warn('[TelegramBridge] 媒体落盘失败 fileId=%s error=%s', fileId, saved.error);
+      continue;
+    }
+    mentions.push({ type: 'file', path: saved.relativePath, label: saved.filename });
+  }
+
+  if (!text && mentions.length === 0) {
+    console.warn('[TelegramBridge] 文本与可识别图片均为空，跳过');
+    return;
+  }
+  const instruction = text || '请识别并描述用户发送的图片内容。';
+
   try {
     await taskAPI.prepareExternalConversation(conversationId, workspace);
   } catch (prepErr: unknown) {
@@ -105,7 +153,8 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
       {
         mode: 'ask',
         workspace,
-        instruction: text,
+        instruction,
+        mentions,
         conversationId,
       },
       (chunk) => {
@@ -115,7 +164,7 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
   } catch (err: unknown) {
     if (isTaskAPIConversationBusyError(err)) {
       const pos = taskAPI.enqueueFromRequest(
-        { mode: 'ask', workspace, instruction: text, conversationId },
+        { mode: 'ask', workspace, instruction, mentions, conversationId },
         { source: 'channel', priority: 'next', channelReply: { channelId: 'telegram', chatId } }
       );
       const r = await telegramSendMessage(

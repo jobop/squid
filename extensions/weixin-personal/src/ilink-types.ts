@@ -27,9 +27,50 @@ export interface TextItem {
   text?: string;
 }
 
+export interface ImageItem {
+  media?: {
+    encrypt_query_param?: string;
+    aes_key?: string;
+    full_url?: string;
+  };
+  thumb_media?: {
+    encrypt_query_param?: string;
+    aes_key?: string;
+    full_url?: string;
+  };
+  aeskey?: string;
+  image_url?: string;
+  url?: string;
+  download_url?: string;
+  cdn_url?: string;
+  media_url?: string;
+  file_url?: string;
+  pic_url?: string;
+  file_name?: string;
+  mime_type?: string;
+  data_url?: string;
+  base64?: string;
+}
+
+export interface FileItem {
+  media?: {
+    encrypt_query_param?: string;
+    aes_key?: string;
+    full_url?: string;
+  };
+  url?: string;
+  download_url?: string;
+  file_url?: string;
+  file_name?: string;
+  mime_type?: string;
+}
+
 export interface MessageItem {
   type?: number;
   text_item?: TextItem;
+  image_item?: ImageItem;
+  file_item?: FileItem;
+  [key: string]: unknown;
 }
 
 export interface WeixinMessage {

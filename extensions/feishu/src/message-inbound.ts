@@ -57,6 +57,30 @@ export function extractInboundTextFromFeishuMessage(message: Record<string, unkn
   return null;
 }
 
+function extractInboundMediaFromFeishuMessage(message: Record<string, unknown>): NonNullable<FeishuInboundAdapterPayload['media']> {
+  const mt = String(message.message_type || '').trim();
+  const contentStr = message.content;
+  if (typeof contentStr !== 'string') return [];
+  const content = parseJsonObject(contentStr);
+  if (!content) return [];
+
+  if (mt === 'image') {
+    const key = typeof content.image_key === 'string' ? content.image_key.trim() : '';
+    if (!key) return [];
+    return [{ kind: 'image', resourceKey: key }];
+  }
+
+  if (mt === 'file') {
+    const key = typeof content.file_key === 'string' ? content.file_key.trim() : '';
+    const fileName = typeof content.file_name === 'string' ? content.file_name : undefined;
+    const mimeType = typeof content.mime_type === 'string' ? content.mime_type : undefined;
+    if (!key) return [];
+    return [{ kind: 'file', resourceKey: key, fileName, mimeType }];
+  }
+
+  return [];
+}
+
 /**
  * 统一解析 im.message.receive_v1（HTTP 2.0 整包 / 仅 event 体 / 长连接 SDK 回调）
  */
@@ -82,10 +106,11 @@ export function parseFeishuImReceiveForInbound(data: unknown): FeishuInboundAdap
   if (sender.sender_type === 'app') return null;
 
   const text = extractInboundTextFromFeishuMessage(message);
-  if (!text) {
+  const media = extractInboundMediaFromFeishuMessage(message);
+  if (!text && media.length === 0) {
     if (process.env.FEISHU_DEBUG_INBOUND === '1') {
       console.warn(
-        '[FeishuInbound] 无法从 message 解析文本，message_type=',
+        '[FeishuInbound] 无法从 message 解析文本/媒体，message_type=',
         message.message_type,
         'keys=',
         Object.keys(message)
@@ -99,10 +124,11 @@ export function parseFeishuImReceiveForInbound(data: unknown): FeishuInboundAdap
     senderId && typeof senderId.open_id === 'string' ? senderId.open_id : undefined;
 
   return {
-    text,
+    text: text ?? '',
     chatId: typeof message.chat_id === 'string' ? message.chat_id : undefined,
     messageId: typeof message.message_id === 'string' ? message.message_id : undefined,
     senderOpenId: openId,
+    media,
     raw: body as Record<string, unknown>,
   };
 }

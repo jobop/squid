@@ -43,9 +43,67 @@ export interface TelegramMessageUpdate {
   message?: {
     message_id: number;
     text?: string;
+    caption?: string;
+    photo?: Array<{ file_id: string; file_size?: number; width?: number; height?: number }>;
+    document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
     chat?: { id: number; type?: string };
     from?: { id: number; is_bot?: boolean };
   };
+}
+
+export async function telegramGetFilePath(
+  botToken: string,
+  fileId: string,
+  options?: { apiBase?: string; signal?: AbortSignal }
+): Promise<{ ok: true; filePath: string } | { ok: false; error: string }> {
+  const base = apiRoot(options?.apiBase);
+  const token = botToken.trim();
+  const url = new URL(`${base}/bot${token}/getFile`);
+  url.searchParams.set('file_id', fileId);
+  const res = await fetch(url.href, { signal: options?.signal });
+  const data = (await res.json()) as {
+    ok?: boolean;
+    result?: { file_path?: string };
+    description?: string;
+  };
+  const filePath = data.result?.file_path;
+  if (!data.ok || typeof filePath !== 'string' || !filePath.trim()) {
+    return { ok: false, error: data.description ?? `getFile failed: HTTP ${res.status}` };
+  }
+  return { ok: true, filePath: filePath.trim() };
+}
+
+export async function telegramDownloadFileByPath(
+  botToken: string,
+  filePath: string,
+  options?: { apiBase?: string; signal?: AbortSignal }
+): Promise<{ ok: true; bytes: Uint8Array; contentType?: string } | { ok: false; error: string }> {
+  const base = apiRoot(options?.apiBase);
+  const token = botToken.trim();
+  const cleanPath = String(filePath || '').replace(/^\/+/, '');
+  const res = await fetch(`${base}/file/bot${token}/${cleanPath}`, { signal: options?.signal });
+  if (!res.ok) {
+    return { ok: false, error: `download failed: HTTP ${res.status}` };
+  }
+  const ab = await res.arrayBuffer();
+  const bytes = new Uint8Array(ab);
+  return {
+    ok: true,
+    bytes,
+    contentType: res.headers.get('content-type') || undefined,
+  };
+}
+
+export async function telegramDownloadFileById(
+  botToken: string,
+  fileId: string,
+  options?: { apiBase?: string; signal?: AbortSignal }
+): Promise<{ ok: true; bytes: Uint8Array; filePath: string; contentType?: string } | { ok: false; error: string }> {
+  const p = await telegramGetFilePath(botToken, fileId, options);
+  if (!p.ok) return p;
+  const d = await telegramDownloadFileByPath(botToken, p.filePath, options);
+  if (!d.ok) return d;
+  return { ok: true, bytes: d.bytes, filePath: p.filePath, contentType: d.contentType };
 }
 
 export async function telegramGetUpdates(

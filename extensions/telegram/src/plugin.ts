@@ -11,6 +11,7 @@ import {
 } from './config-store';
 import { registerTelegramSquidBridge } from './squid-bridge';
 import { telegramGetUpdates, telegramSendMessage } from './telegram-client';
+import { isLikelyImageFile } from '../../shared/workspace-image-store';
 
 let allowedAllLogged = false;
 
@@ -28,6 +29,44 @@ function isChatAllowed(
     return true;
   }
   return allowed.some((a) => a.trim() === chatIdStr);
+}
+
+type TelegramInboundMediaRef = {
+  kind: 'photo' | 'document';
+  fileId: string;
+  fileName?: string;
+  mimeType?: string;
+};
+
+function pickTelegramInboundMedia(message: {
+  photo?: Array<{ file_id: string; file_size?: number }>;
+  document?: { file_id: string; file_name?: string; mime_type?: string };
+}): TelegramInboundMediaRef[] {
+  const refs: TelegramInboundMediaRef[] = [];
+  const photos = Array.isArray(message.photo) ? message.photo : [];
+  if (photos.length > 0) {
+    const best = [...photos]
+      .filter((p) => typeof p.file_id === 'string' && p.file_id.trim())
+      .sort((a, b) => (b.file_size || 0) - (a.file_size || 0))[0];
+    if (best?.file_id) {
+      refs.push({ kind: 'photo', fileId: best.file_id });
+    }
+  }
+
+  const doc = message.document;
+  if (doc?.file_id) {
+    const mime = String(doc.mime_type || '').toLowerCase();
+    const isImage = mime.startsWith('image/') || isLikelyImageFile(doc.file_name);
+    if (isImage) {
+      refs.push({
+        kind: 'document',
+        fileId: doc.file_id,
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+      });
+    }
+  }
+  return refs;
 }
 
 /**
@@ -217,19 +256,22 @@ export class TelegramChannelPlugin implements ChannelPlugin {
         for (const u of r.result) {
           offset = u.update_id + 1;
           const msg = u.message;
-          if (!msg?.text?.trim()) continue;
+          if (!msg) continue;
           if (msg.from?.is_bot) continue;
           const chatId = msg.chat?.id;
           if (chatId === undefined) continue;
           const chatIdStr = String(chatId);
           if (!isChatAllowed(chatIdStr, allowedChatIds)) continue;
+          const text = String(msg.text || msg.caption || '').trim();
+          const media = pickTelegramInboundMedia(msg);
+          if (!text && media.length === 0) continue;
 
           this.bridge.emitChannelInbound({
             channelId: 'telegram',
-            text: msg.text,
+            text,
             chatId: chatIdStr,
             messageId: String(msg.message_id),
-            raw: { update_id: u.update_id, chat_type: msg.chat?.type },
+            raw: { update_id: u.update_id, chat_type: msg.chat?.type, media },
           });
         }
       } catch (e: unknown) {

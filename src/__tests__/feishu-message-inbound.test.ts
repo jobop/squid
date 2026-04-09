@@ -82,4 +82,19 @@ describe('parseFeishuImReceiveForInbound', () => {
     expect(r?.text).toContain('标题');
     expect(r?.text).toContain('正文行');
   });
+
+  it('image 类型消息应保留为媒体入站', () => {
+    const r = parseFeishuImReceiveForInbound({
+      message: {
+        chat_id: 'oc_img',
+        message_id: 'mimg',
+        message_type: 'image',
+        content: JSON.stringify({ image_key: 'img_key_001' }),
+      },
+      sender: { sender_type: 'user', sender_id: { open_id: 'ou_img' } },
+    });
+    expect(r).not.toBeNull();
+    expect(r?.text).toBe('');
+    expect(r?.media).toEqual([{ kind: 'image', resourceKey: 'img_key_001' }]);
+  });
 });

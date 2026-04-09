@@ -196,3 +196,48 @@ export async function ilinkApiGet(params: {
     throw err;
   }
 }
+
+export async function ilinkDownloadImageByUrl(params: {
+  baseUrl: string;
+  token?: string;
+  url: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<{ ok: true; bytes: Uint8Array; contentType?: string } | { ok: false; error: string }> {
+  try {
+    const timeoutMs = params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+    const controller = new AbortController();
+    const extSignal = params.signal;
+    const onAbort = () => controller.abort();
+    if (extSignal) {
+      if (extSignal.aborted) controller.abort();
+      else extSignal.addEventListener('abort', onAbort, { once: true });
+    }
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    const base = ensureTrailingSlash(params.baseUrl);
+    const url = /^https?:\/\//i.test(params.url) ? params.url : new URL(params.url, base).toString();
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        AuthorizationType: 'ilink_bot_token',
+        ...(params.token?.trim() ? { Authorization: `Bearer ${params.token.trim()}` } : {}),
+        'X-WECHAT-UIN': randomWechatUin(),
+        ...buildCommonHeaders(),
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    extSignal?.removeEventListener('abort', onAbort);
+    if (!res.ok) {
+      return { ok: false, error: `download image failed: HTTP ${res.status}` };
+    }
+    const ab = await res.arrayBuffer();
+    return {
+      ok: true,
+      bytes: new Uint8Array(ab),
+      contentType: res.headers.get('content-type') || undefined,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

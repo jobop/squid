@@ -3,6 +3,7 @@ import { getFeishuLastInboundReceiveTarget } from './last-inbound-chat';
 
 const TOKEN_URL = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
 const MESSAGES_URL = 'https://open.feishu.cn/open-apis/im/v1/messages';
+const MESSAGE_RESOURCE_URL_ROOT = 'https://open.feishu.cn/open-apis/im/v1/messages';
 
 type TokenCache = { token: string; expiresAtMs: number };
 let tokenCache: TokenCache | null = null;
@@ -143,4 +144,54 @@ export async function sendFeishuTextMessage(
     };
   }
   return sendFeishuTextMessageTo(cfg, text, receiveId, receiveIdType, fetchImpl);
+}
+
+function readFilenameFromDisposition(disposition: string | null): string | undefined {
+  if (!disposition) return undefined;
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1];
+}
+
+export async function downloadFeishuMessageResource(params: {
+  cfg: FeishuChannelFileConfig;
+  messageId: string;
+  resourceKey: string;
+  resourceType: 'image' | 'file';
+  fetchImpl?: typeof fetch;
+}): Promise<
+  | { ok: true; bytes: Uint8Array; contentType?: string; fileName?: string }
+  | { ok: false; error: string }
+> {
+  const fetchImpl = params.fetchImpl ?? fetch;
+  const tokenRes = await getTenantAccessToken(params.cfg, fetchImpl);
+  if (!tokenRes.ok) return { ok: false, error: tokenRes.error };
+  const messageId = params.messageId.trim();
+  const resourceKey = params.resourceKey.trim();
+  if (!messageId || !resourceKey) {
+    return { ok: false, error: 'messageId/resourceKey 为空' };
+  }
+  const url = `${MESSAGE_RESOURCE_URL_ROOT}/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(resourceKey)}?type=${params.resourceType}`;
+  const res = await fetchImpl(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${tokenRes.token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, error: text || `HTTP ${res.status}` };
+  }
+  const ab = await res.arrayBuffer();
+  return {
+    ok: true,
+    bytes: new Uint8Array(ab),
+    contentType: res.headers.get('content-type') || undefined,
+    fileName: readFilenameFromDisposition(res.headers.get('content-disposition')),
+  };
 }

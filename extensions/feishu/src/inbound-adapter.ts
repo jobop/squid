@@ -23,6 +23,6 @@ export function submitFeishuInboundToEventBridge(payload: FeishuInboundAdapterPa
     messageId: payload.messageId,
     senderOpenId: payload.senderOpenId,
     accountId: payload.accountId,
-    raw: payload.raw,
+    raw: { ...(payload.raw || {}), media: payload.media || [] },
   });
 }

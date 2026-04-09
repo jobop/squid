@@ -31,5 +31,11 @@ export interface FeishuInboundAdapterPayload {
   messageId?: string;
   senderOpenId?: string;
   accountId?: string;
+  media?: Array<{
+    kind: 'image' | 'file';
+    resourceKey: string;
+    fileName?: string;
+    mimeType?: string;
+  }>;
   raw?: Record<string, unknown>;
 }

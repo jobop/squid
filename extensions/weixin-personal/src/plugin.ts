@@ -14,6 +14,7 @@ import { MessageItemType, MessageType } from './ilink-types';
 import type { WeixinMessage } from './ilink-types';
 import { pollWeixinPersonalQrLoginOnce, startWeixinPersonalQrLogin } from './ilink-login';
 import { registerWeixinPersonalSquidBridge } from './squid-bridge';
+import { isLikelyImageFile } from '../../shared/workspace-image-store';
 
 const CHANNEL_ID = 'weixin-personal';
 
@@ -36,11 +37,121 @@ function extractTextFromWeixinMessage(msg: WeixinMessage): string {
   const items = msg.item_list ?? [];
   const parts: string[] = [];
   for (const it of items) {
-    if (it.type === MessageItemType.TEXT && it.text_item?.text?.trim()) {
+    const itemType = typeof it.type === 'string' ? Number(it.type) : it.type;
+    if (itemType === MessageItemType.TEXT && it.text_item?.text?.trim()) {
       parts.push(it.text_item.text.trim());
     }
   }
   return parts.join('\n').trim();
+}
+
+type WeixinInboundImageRef = {
+  url?: string;
+  fullUrl?: string;
+  dataUrl?: string;
+  base64?: string;
+  fileName?: string;
+  mimeType?: string;
+  encryptQueryParam?: string;
+  aesKeyBase64?: string;
+  aesKeyHex?: string;
+};
+
+function pickDeepStringByKey(input: unknown, keys: string[]): string | undefined {
+  const keySet = new Set(keys.map((k) => k.toLowerCase()));
+  const stack: unknown[] = [input];
+  const seen = new Set<unknown>();
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== 'object') continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    if (Array.isArray(cur)) {
+      for (const it of cur) stack.push(it);
+      continue;
+    }
+    const obj = cur as Record<string, unknown>;
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string' && v.trim() && keySet.has(k.toLowerCase())) {
+        return v;
+      }
+      if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return undefined;
+}
+
+function pickDeepUrlLike(input: unknown): string | undefined {
+  const stack: unknown[] = [input];
+  const seen = new Set<unknown>();
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== 'object') continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    if (Array.isArray(cur)) {
+      for (const it of cur) stack.push(it);
+      continue;
+    }
+    const obj = cur as Record<string, unknown>;
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string' && v.trim()) {
+        const key = k.toLowerCase();
+        const value = v.trim();
+        if ((key.includes('url') || key.includes('uri') || key.includes('link')) && value.length > 6) {
+          if (/^https?:\/\//i.test(value) || value.startsWith('/')) return value;
+        }
+      }
+      if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return undefined;
+}
+
+function extractImageRefsFromWeixinMessage(msg: WeixinMessage): WeixinInboundImageRef[] {
+  const items = msg.item_list ?? [];
+  const refs: WeixinInboundImageRef[] = [];
+  for (const it of items) {
+    const itemType = typeof it.type === 'string' ? Number(it.type) : it.type;
+    const maybeImage =
+      itemType === MessageItemType.IMAGE ||
+      itemType === MessageItemType.FILE ||
+      !!it.image_item ||
+      !!it.file_item;
+    if (!maybeImage) continue;
+    const ii = (it.image_item || it.file_item || it) as Record<string, unknown>;
+    const mimeType = pickDeepStringByKey(ii, ['mime_type', 'mimeType', 'content_type', 'contentType']);
+    const fileName = pickDeepStringByKey(ii, ['file_name', 'filename', 'name', 'title']);
+    const canBeImage =
+      itemType === MessageItemType.IMAGE ||
+      String(mimeType || '').toLowerCase().startsWith('image/') ||
+      isLikelyImageFile(fileName) ||
+      !!pickDeepStringByKey(ii, ['aeskey', 'aes_key']);
+    if (!canBeImage) continue;
+    refs.push({
+      fullUrl: pickDeepStringByKey(ii, ['full_url', 'fullUrl']),
+      url:
+        pickDeepStringByKey(ii, [
+          'image_url',
+          'url',
+          'download_url',
+          'cdn_url',
+          'media_url',
+          'file_url',
+          'pic_url',
+          'source_url',
+          'resource_url',
+        ]) || pickDeepUrlLike(ii),
+      dataUrl: pickDeepStringByKey(ii, ['data_url', 'dataUrl', 'data_uri', 'dataUri']),
+      base64: pickDeepStringByKey(ii, ['base64', 'b64', 'image_base64', 'content_base64']),
+      fileName,
+      mimeType,
+      encryptQueryParam: pickDeepStringByKey(ii, ['encrypt_query_param', 'encryptQueryParam']),
+      aesKeyBase64: pickDeepStringByKey(ii, ['aes_key', 'aesKey']),
+      aesKeyHex: pickDeepStringByKey(ii, ['aeskey']),
+    });
+  }
+  return refs;
 }
 
 /**
@@ -293,7 +404,8 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
           if (!isUserAllowed(from, allowedUserIds)) continue;
 
           const body = extractTextFromWeixinMessage(full);
-          if (!body) continue;
+          const media = extractImageRefsFromWeixinMessage(full);
+          if (!body && media.length === 0) continue;
 
           rememberContextToken(from, full.context_token);
 
@@ -302,7 +414,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
             text: body,
             chatId: from,
             messageId: full.message_id != null ? String(full.message_id) : undefined,
-            raw: { contextToken: full.context_token },
+            raw: { contextToken: full.context_token, media },
             timestamp: Date.now(),
           });
         }

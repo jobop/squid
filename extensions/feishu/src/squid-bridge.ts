@@ -1,9 +1,10 @@
 import { type TaskAPI } from '../../../src/api/task-api';
 import { isTaskAPIConversationBusyError } from '../../../src/api/task-api-channel-errors';
 import type { ChannelInboundEvent } from '../../../src/channels/bridge/event-bridge';
+import { isLikelyImageFile, saveInboundImageToWorkspace } from '../../shared/workspace-image-store';
 import { loadFeishuChannelConfigSync } from './config-store';
 import { getFeishuExtensionEventBridge } from './feishu-host-bridge';
-import { sendFeishuTextMessageTo } from './lark-client';
+import { downloadFeishuMessageResource, sendFeishuTextMessageTo } from './lark-client';
 
 const FEISHU_REPLY_MAX_CHARS = 18000;
 
@@ -57,12 +58,25 @@ export function registerFeishuSquidBridge(taskAPI: TaskAPI): () => void {
   };
 }
 
+type FeishuInboundMedia = {
+  kind: 'image' | 'file';
+  resourceKey: string;
+  fileName?: string;
+  mimeType?: string;
+};
+
+function extractFeishuInboundMedia(event: ChannelInboundEvent): FeishuInboundMedia[] {
+  const raw = event.raw as Record<string, unknown> | undefined;
+  const media = raw?.media;
+  if (!Array.isArray(media)) return [];
+  return media
+    .filter((it) => !!it && typeof it === 'object')
+    .map((it) => it as FeishuInboundMedia)
+    .filter((m) => typeof m.resourceKey === 'string' && m.resourceKey.trim());
+}
+
 async function handleFeishuInbound(taskAPI: TaskAPI, event: ChannelInboundEvent): Promise<void> {
-  const text = event.text?.trim();
-  if (!text) {
-    console.warn('[FeishuBridge] 文本为空，跳过');
-    return;
-  }
+  const text = event.text?.trim() || '';
 
   const chatId = event.chatId?.trim();
   if (!chatId) {
@@ -87,6 +101,55 @@ async function handleFeishuInbound(taskAPI: TaskAPI, event: ChannelInboundEvent)
   const conversationId = feishuConversationId(chatId);
   console.log('[FeishuBridge] 开始处理 conversationId=%s workspace=%s', conversationId, workspace);
 
+  const mentions: Array<{ type: 'file'; path: string; label?: string }> = [];
+  const mediaRefs = extractFeishuInboundMedia(event);
+  const messageId = event.messageId?.trim() || '';
+  if (messageId) {
+    for (const media of mediaRefs) {
+      const type = media.kind === 'image' ? 'image' : 'file';
+      if (type === 'file') {
+        const mime = String(media.mimeType || '').toLowerCase();
+        const imgByMime = mime.startsWith('image/');
+        const imgByName = isLikelyImageFile(media.fileName);
+        if (!imgByMime && !imgByName) {
+          continue;
+        }
+      }
+      const downloaded = await downloadFeishuMessageResource({
+        cfg,
+        messageId,
+        resourceKey: media.resourceKey,
+        resourceType: type,
+      });
+      if (!downloaded.ok) {
+        console.warn(
+          '[FeishuBridge] 下载媒体失败 messageId=%s key=%s error=%s',
+          messageId,
+          media.resourceKey,
+          downloaded.error
+        );
+        continue;
+      }
+      const saved = await saveInboundImageToWorkspace({
+        workspace,
+        bytes: downloaded.bytes,
+        channelId: 'feishu',
+        mimeType: media.mimeType || downloaded.contentType,
+        filenameHint: media.fileName || downloaded.fileName,
+      });
+      if (!saved.ok) {
+        console.warn('[FeishuBridge] 媒体落盘失败 key=%s error=%s', media.resourceKey, saved.error);
+        continue;
+      }
+      mentions.push({ type: 'file', path: saved.relativePath, label: saved.filename });
+    }
+  }
+  if (!text && mentions.length === 0) {
+    console.warn('[FeishuBridge] 文本与可识别图片均为空，跳过');
+    return;
+  }
+  const instruction = text || '请识别并描述用户发送的图片内容。';
+
   try {
     await taskAPI.prepareExternalConversation(conversationId, workspace);
   } catch (prepErr: unknown) {
@@ -104,7 +167,8 @@ async function handleFeishuInbound(taskAPI: TaskAPI, event: ChannelInboundEvent)
       {
         mode: 'ask',
         workspace,
-        instruction: text,
+        instruction,
+        mentions,
         conversationId,
       },
       (chunk) => {
@@ -115,7 +179,7 @@ async function handleFeishuInbound(taskAPI: TaskAPI, event: ChannelInboundEvent)
   } catch (err: unknown) {
     if (isTaskAPIConversationBusyError(err)) {
       const pos = taskAPI.enqueueFromRequest(
-        { mode: 'ask', workspace, instruction: text, conversationId },
+        { mode: 'ask', workspace, instruction, mentions, conversationId },
         { source: 'channel', priority: 'next', channelReply: { channelId: 'feishu', chatId } }
       );
       const r = await sendFeishuTextMessageTo(
