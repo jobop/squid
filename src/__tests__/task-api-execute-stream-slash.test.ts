@@ -413,4 +413,59 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(id1).not.toBe('__squid_default_conversation__');
     expect(id2).not.toBe('__squid_default_conversation__');
   });
+
+  it('abortConversation 后应中断 executeTaskStream 并释放 busy 状态', async () => {
+    executeStreamSpy.mockImplementationOnce(async (request: any) => {
+      const signal = request.abortSignal as AbortSignal | undefined;
+      expect(signal).toBeDefined();
+      await new Promise<void>((_resolve, reject) => {
+        if (!signal) {
+          reject(new Error('missing abort signal'));
+          return;
+        }
+        if (signal.aborted) {
+          const err = new Error('aborted') as Error & { name: string };
+          err.name = 'AbortError';
+          reject(err);
+          return;
+        }
+        const onAbort = () => {
+          signal.removeEventListener('abort', onAbort);
+          const err = new Error('aborted') as Error & { name: string };
+          err.name = 'AbortError';
+          reject(err);
+        };
+        signal.addEventListener('abort', onAbort);
+      });
+    });
+
+    const chunks: string[] = [];
+    const conversationId = 'tid_abort_test';
+    const runPromise = api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '这条消息会被中断',
+        conversationId,
+      },
+      (c) => chunks.push(c)
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(api.isConversationBusy(conversationId)).toBe(true);
+    expect(api.abortConversation(conversationId)).toBe(true);
+
+    await runPromise;
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    expect(chunks.join('')).toContain('已中断当前生成');
+    expect(api.isConversationBusy(conversationId)).toBe(false);
+    expect(api.abortConversation(conversationId)).toBe(false);
+  });
+
+  it('abortConversation 对空会话和未知会话应返回 false', () => {
+    expect(api.abortConversation('')).toBe(false);
+    expect(api.abortConversation('   ')).toBe(false);
+    expect(api.abortConversation('unknown_conversation')).toBe(false);
+  });
 });

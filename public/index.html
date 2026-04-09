@@ -1802,6 +1802,10 @@
     let skillsLoadedAt = 0;
     let mentionSearchRequestSeq = 0;
     let startInNewThreadPending = false;
+    let activeRunAbortController = null;
+    let activeRunConversationId = null;
+    let isTaskRunning = false;
+    const DEFAULT_CONVERSATION_ID = '__squid_default_conversation__';
     const IMAGE_MIME_BY_EXT = {
       png: 'image/png',
       jpg: 'image/jpeg',
@@ -1862,6 +1866,33 @@
       const m = /\.([a-z0-9]+)$/i.exec(String(path || '').trim());
       if (!m) return null;
       return IMAGE_MIME_BY_EXT[m[1].toLowerCase()] || null;
+    }
+
+    function isAbortError(error) {
+      if (!error) return false;
+      if (error.name === 'AbortError') return true;
+      const msg = String(error.message || error).toLowerCase();
+      return msg.includes('aborted') || msg.includes('aborterror');
+    }
+
+    async function interruptCurrentRun() {
+      if (!activeRunAbortController || activeRunAbortController.signal.aborted) {
+        return false;
+      }
+      const cid = activeRunConversationId;
+      activeRunAbortController.abort();
+      if (cid) {
+        try {
+          await fetch('http://localhost:50001/api/task/abort', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId: cid }),
+          });
+        } catch {
+          // 请求断开场景下后端会由 req.signal 自动触发中断，这里静默兜底。
+        }
+      }
+      return true;
     }
 
     function buildImageAttachmentKey(item) {
@@ -2612,6 +2643,11 @@
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             runTask();
+            return;
+          }
+          if (e.key === 'Escape' && isTaskRunning) {
+            e.preventDefault();
+            void interruptCurrentRun();
           }
         });
         instructionInput.addEventListener('paste', async (e) => {
@@ -3938,6 +3974,10 @@
 
     // 执行任务
     async function runTask() {
+      if (isTaskRunning) {
+        showNotification('当前任务仍在运行，请先等待或按 Esc 中断。', 'warning');
+        return;
+      }
       const mode = document.getElementById('mode').value;
       const workspace = document.getElementById('workspace').value;
       const instruction = document.getElementById('instruction').value;
@@ -4040,16 +4080,22 @@
       // 添加助手思考消息
       const assistantMsg = addMessage('assistant', '');
       const assistantContent = assistantMsg.querySelector('.message-content');
+      let fullText = '';
 
       try {
         // 一次性标志：仅对本次实际发送生效
         startInNewThreadPending = false;
+        const runController = new AbortController();
+        activeRunAbortController = runController;
+        activeRunConversationId = currentThreadId || (startInNewThread ? null : DEFAULT_CONVERSATION_ID);
+        isTaskRunning = true;
         // 使用流式 API
         const response = await fetch('http://localhost:50001/api/task/execute-stream', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
+          signal: runController.signal,
           body: JSON.stringify({
             mode: mode,
             workspace: workspace,
@@ -4069,7 +4115,6 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let fullText = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -4121,9 +4166,20 @@
         // 更新上下文使用率
         updateContextUsage();
       } catch (error) {
-        assistantMsg.remove();
-        addMessage('assistant', '❌ 错误: ' + error.message);
+        if (isAbortError(error)) {
+          const interrupted = fullText
+            ? `${fullText}\n\n⛔ 已中断当前生成。`
+            : '⛔ 已中断当前生成。';
+          renderMessageContent(assistantContent, interrupted);
+          showNotification('已中断当前生成', 'warning');
+        } else {
+          assistantMsg.remove();
+          addMessage('assistant', '❌ 错误: ' + error.message);
+        }
       } finally {
+        isTaskRunning = false;
+        activeRunAbortController = null;
+        activeRunConversationId = null;
         runBtn.disabled = false;
         runBtn.innerHTML = '<i data-lucide="arrow-up"></i>';
         lucide.createIcons();

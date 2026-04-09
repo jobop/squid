@@ -43,6 +43,8 @@ export interface ExecuteRequest {
   attachments?: ImageAttachment[];
   /** 用于 Plan 模式计划文件路径：`.squid/plan-<id>.md` */
   conversationId?: string;
+  /** 任务级取消信号（Esc/主动中断） */
+  abortSignal?: AbortSignal;
 }
 
 export interface ExecuteResult {
@@ -124,6 +126,7 @@ export class TaskExecutor {
     workspace: string;
     mode: TaskMode;
     conversationId?: string;
+    abortSignal?: AbortSignal;
   }): Promise<{ content: string; isError: boolean }> {
     const tool = this.toolRegistry.get(params.toolName);
     if (!tool) {
@@ -163,6 +166,7 @@ export class TaskExecutor {
         workDir: params.workspace || process.cwd(),
         taskId: randomUUID(),
         mode: params.mode,
+        abortSignal: params.abortSignal,
       });
 
       if (result.error) {
@@ -405,7 +409,8 @@ export class TaskExecutor {
     onChunk: (chunk: string) => void,
     mode: TaskMode,
     attachments: ImageAttachment[] = [],
-    conversationId?: string
+    conversationId?: string,
+    abortSignal?: AbortSignal
   ): Promise<void> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
     const initialMessages = await this.buildMessages(
@@ -443,6 +448,7 @@ export class TaskExecutor {
           'Authorization': `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json'
         },
+        signal: abortSignal,
         body: JSON.stringify({
           model: config.modelName || 'gpt-4-turbo',
           messages,
@@ -588,6 +594,7 @@ export class TaskExecutor {
           workspace,
           mode,
           conversationId,
+          abortSignal,
         });
 
         if (toolResult.isError) {
@@ -633,7 +640,8 @@ export class TaskExecutor {
     workspace: string | undefined,
     history: Message[] | undefined,
     mode: TaskMode,
-    conversationId?: string
+    conversationId?: string,
+    abortSignal?: AbortSignal
   ): Promise<string> {
     const endpoint = config.apiEndpoint || 'https://api.anthropic.com/v1';
 
@@ -686,6 +694,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json'
         },
+        signal: abortSignal,
         body: JSON.stringify({
           model: config.modelName || 'claude-3-5-sonnet-20241022',
           max_tokens: config.maxTokens || 4096,
@@ -738,6 +747,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           workspace: ws,
           mode,
           conversationId,
+          abortSignal,
         });
         return {
           type: 'tool_result' as const,
@@ -923,7 +933,8 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           onChunk,
           request.mode,
           request.attachments || [],
-          request.conversationId
+          request.conversationId,
+          request.abortSignal
         );
       } else if (config.provider === 'anthropic') {
         if ((request.attachments || []).length > 0) {
@@ -937,6 +948,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           request.conversationHistory,
           request.mode,
           request.conversationId,
+          request.abortSignal,
         );
         onChunk(response);
       } else if (config.provider === 'custom') {
@@ -952,6 +964,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
             request.conversationHistory,
             request.mode,
             request.conversationId,
+            request.abortSignal,
           );
           onChunk(response);
         } else {
@@ -964,7 +977,8 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
             onChunk,
             request.mode,
             request.attachments || [],
-            request.conversationId
+            request.conversationId,
+            request.abortSignal
           );
         }
       } else {

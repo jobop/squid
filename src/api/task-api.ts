@@ -164,6 +164,14 @@ function normalizeSyntheticConversationId(raw?: string): string | undefined {
   return id;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { name?: unknown; message?: unknown };
+  if (e.name === 'AbortError') return true;
+  const msg = typeof e.message === 'string' ? e.message.toLowerCase() : '';
+  return msg.includes('aborted') || msg.includes('aborterror');
+}
+
 function normalizeFilePath(pathValue: string): string {
   return pathValue.replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
 }
@@ -624,6 +632,8 @@ export class TaskAPI {
   private currentConversationId: string | null = null;
   /** 与队列分桶键一致：同一会话同时仅一条 execute 路径 */
   private readonly runningConversations = new Set<string>();
+  /** 运行中会话 -> AbortController，用于 Esc / API 主动打断 */
+  private readonly runningConversationAbortControllers = new Map<string, AbortController>();
   private onCronQueuedComplete?: (taskId: string, success: boolean, result: string) => void;
   private channelQueuedCompleteHandlers: Array<(cmd: QueuedCommand, assistantText: string) => void> = [];
 
@@ -751,6 +761,17 @@ export class TaskAPI {
 
   isConversationBusy(conversationId: string): boolean {
     return this.runningConversations.has(conversationId);
+  }
+
+  abortConversation(conversationId: string): boolean {
+    const cid = String(conversationId || '').trim();
+    if (!cid) return false;
+    const controller = this.runningConversationAbortControllers.get(cid);
+    if (!controller || controller.signal.aborted) {
+      return false;
+    }
+    controller.abort('user_interrupt');
+    return true;
   }
 
   private static resolveChannelReplyMeta(meta: {
@@ -1410,6 +1431,8 @@ user-invocable: true
       throw new TaskAPIConversationBusyError(cid);
     }
     this.runningConversations.add(cid);
+    const runAbortController = new AbortController();
+    this.runningConversationAbortControllers.set(cid, runAbortController);
     const normalizedRequest = {
       ...request,
       attachments: normalizedAttachmentResult.attachments,
@@ -1559,6 +1582,7 @@ user-invocable: true
             conversationHistory,
             conversationId: executorConversationId,
             attachments: mergedAttachments,
+            abortSignal: runAbortController.signal,
           },
           (chunk: string) => {
             fullResponse += chunk;
@@ -1579,6 +1603,13 @@ user-invocable: true
           conversationId,
         });
       } catch (error: any) {
+        if (isAbortError(error)) {
+          appendAgentLog('task-stream', 'info', 'executeTaskStream 已中断', {
+            conversationId: cid,
+          });
+          onChunk('⛔ 已中断当前生成。');
+          return;
+        }
         console.error('Task execution failed:', error);
         appendAgentLog('task-stream', 'error', 'executeTaskStream 失败', {
           error: truncateText(error?.message || String(error), 500),
@@ -1596,6 +1627,7 @@ user-invocable: true
       }
     } finally {
       this.runningConversations.delete(cid);
+      this.runningConversationAbortControllers.delete(cid);
       this.scheduleDrain(cid);
     }
   }

@@ -27,6 +27,19 @@ import {
 import { runExtensionAuthPoll, runExtensionAuthStart } from '../channels/extension-web-auth';
 import { cronManager } from '../tools/cron-manager';
 import { clearAgentLogs, getAgentLogs } from '../utils/agent-execution-log';
+import { handleAbortTaskRoute } from './task-abort-route';
+import {
+  attachRequestAbortHandler,
+  cancelStreamForConversation,
+} from './task-execute-stream-route';
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { name?: unknown; message?: unknown };
+  if (e.name === 'AbortError') return true;
+  const msg = typeof e.message === 'string' ? e.message.toLowerCase() : '';
+  return msg.includes('aborted') || msg.includes('aborterror');
+}
 
 /**
  * 开发态入口在 `src/bun`，打包后在 `Resources/app/bun` 且静态资源在 `Resources/app/public`。
@@ -93,11 +106,17 @@ async function main() {
       if (url.pathname === '/api/task/execute-stream' && req.method === 'POST') {
         try {
           const body = await req.json();
+          const requestConversationId = taskAPI.resolveConversationIdForQueue(body);
 
           const stream = new ReadableStream({
             async start(controller) {
               const enc = new TextEncoder();
               let streamClosed = false;
+              const detachAbortByRequestClose = attachRequestAbortHandler(
+                req.signal,
+                taskAPI,
+                requestConversationId
+              );
               const safeEnqueue = (bytes: Uint8Array) => {
                 if (streamClosed) return;
                 try {
@@ -135,12 +154,19 @@ async function main() {
                   return;
                 }
                 const msg = error instanceof Error ? error.message : String(error);
-                safeEnqueue(enc.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
+                if (!isAbortError(error)) {
+                  safeEnqueue(enc.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
+                }
                 if (!streamClosed) {
                   controller.close();
                   streamClosed = true;
                 }
+              } finally {
+                detachAbortByRequestClose();
               }
+            },
+            cancel() {
+              cancelStreamForConversation(taskAPI, requestConversationId);
             }
           });
 
@@ -156,6 +182,19 @@ async function main() {
           return new Response(JSON.stringify({
             success: false,
             error: error.message
+          }), { status: 500, headers });
+        }
+      }
+
+      if (url.pathname === '/api/task/abort' && req.method === 'POST') {
+        try {
+          const body = await req.json() as { conversationId?: string };
+          const result = handleAbortTaskRoute(taskAPI, body);
+          return new Response(JSON.stringify(result.payload), { status: result.status, headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error?.message || String(error),
           }), { status: 500, headers });
         }
       }
