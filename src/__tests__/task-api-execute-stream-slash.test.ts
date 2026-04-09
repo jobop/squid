@@ -137,4 +137,82 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(req.instruction).toContain('- github');
     expect(req.instruction).toContain('## User Instruction');
   });
+
+  it('startInNewThread=true 时应忽略 currentConversationId 并新建线程', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '旧线程首条消息',
+      },
+      (c) => chunks.push(c)
+    );
+    const oldId = (api as any).currentConversationId as string;
+    expect(oldId).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 2));
+
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '新线程首条消息',
+        startInNewThread: true,
+      },
+      (c) => chunks.push(c)
+    );
+
+    const newId = (api as any).currentConversationId as string;
+    expect(newId).toBeTruthy();
+    expect(newId).not.toBe(oldId);
+  });
+
+  it('队列路径下 startInNewThread=true 也不应复用 currentConversationId', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '队列旧线程消息',
+      },
+      (c) => chunks.push(c)
+    );
+    const oldId = (api as any).currentConversationId as string;
+    expect(oldId).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 2));
+
+    await api.runFromQueue({
+      conversationId: '__squid_default_conversation__',
+      value: '队列新线程消息',
+      mode: 'ask',
+      workspace: process.cwd(),
+      startInNewThread: true,
+      source: 'user',
+    });
+
+    const newId = (api as any).currentConversationId as string;
+    expect(newId).toBeTruthy();
+    expect(newId).not.toBe(oldId);
+  });
+
+  it('startInNewThread=true 时队列分桶键应唯一，避免共享默认会话桶', () => {
+    const id1 = api.resolveConversationIdForQueue({
+      mode: 'ask',
+      workspace: process.cwd(),
+      instruction: 'first',
+      startInNewThread: true,
+    });
+    const id2 = api.resolveConversationIdForQueue({
+      mode: 'ask',
+      workspace: process.cwd(),
+      instruction: 'second',
+      startInNewThread: true,
+    });
+
+    expect(id1).toMatch(/^__squid_new_thread__:/);
+    expect(id2).toMatch(/^__squid_new_thread__:/);
+    expect(id1).not.toBe(id2);
+    expect(id1).not.toBe('__squid_default_conversation__');
+    expect(id2).not.toBe('__squid_default_conversation__');
+  });
 });

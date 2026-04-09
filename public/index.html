@@ -1740,6 +1740,7 @@
     let mentionActiveIndex = 0;
     let skillsLoadingPromise = null;
     let skillsLoadedAt = 0;
+    let startInNewThreadPending = false;
 
     function initCustomSelects() {
       // Toggle dropdown
@@ -2692,6 +2693,7 @@
         }
 
         currentThreadId = taskId;
+        startInNewThreadPending = false;
         currentTaskId = null;
         renderTaskList();
         await switchPage('task', { createFreshThread: false });
@@ -2842,6 +2844,7 @@
         }
 
         currentThreadId = null;
+        startInNewThreadPending = true;
         currentTaskId = null;
         renderTaskList();
 
@@ -3631,6 +3634,7 @@
       const mode = document.getElementById('mode').value;
       const workspace = document.getElementById('workspace').value;
       const instruction = document.getElementById('instruction').value;
+      const startInNewThread = startInNewThreadPending;
       const expertId = selectedExpert;
       const mentionSkills = collectMentionSkillsFromInstruction(instruction);
       const selectedSkillsMap = new Map();
@@ -3693,6 +3697,8 @@
       const assistantContent = assistantMsg.querySelector('.message-content');
 
       try {
+        // 一次性标志：仅对本次实际发送生效
+        startInNewThreadPending = false;
         // 使用流式 API
         const response = await fetch('http://localhost:50001/api/task/execute-stream', {
           method: 'POST',
@@ -3703,6 +3709,7 @@
             mode: mode,
             workspace: workspace,
             instruction: instruction,
+            startInNewThread: startInNewThread || undefined,
             selectedSkills: selectedSkills.length > 0 ? selectedSkills : undefined,
             expertId: expertId || undefined,
             conversationId: currentThreadId || undefined

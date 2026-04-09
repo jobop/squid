@@ -28,6 +28,8 @@ export interface QueuedCommand {
   taskId?: string;
   mode?: TaskMode;
   workspace?: string;
+  /** 一次性意图：下一次执行必须新建会话（懒创建首条消息场景） */
+  startInNewThread?: boolean;
   expertId?: string;
   skill?: string;
   selectedSkills?: Array<{ name: string; args?: string }>;

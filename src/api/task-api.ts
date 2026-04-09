@@ -70,6 +70,8 @@ export interface TaskRequest {
   modelName?: string;
   skill?: string;
   selectedSkills?: SelectedSkillInput[];
+  /** 一次性意图：当前请求即便无 conversationId，也应强制创建新线程 */
+  startInNewThread?: boolean;
   expertId?: string;
   conversationId?: string;
 }
@@ -103,6 +105,21 @@ export interface ThreadListItem {
   updatedAt: string;
   messageCount: number;
   workspace?: string;
+}
+
+const DEFAULT_CONVERSATION_ID = '__squid_default_conversation__';
+const NEW_THREAD_PLACEHOLDER_PREFIX = '__squid_new_thread__:';
+
+function buildNewThreadPlaceholderConversationId(): string {
+  return `${NEW_THREAD_PLACEHOLDER_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeSyntheticConversationId(raw?: string): string | undefined {
+  const id = String(raw || '').trim();
+  if (!id) return undefined;
+  if (id === DEFAULT_CONVERSATION_ID) return undefined;
+  if (id.startsWith(NEW_THREAD_PLACEHOLDER_PREFIX)) return undefined;
+  return id;
 }
 
 function normalizeSelectedSkills(input: unknown): SelectedSkillInput[] {
@@ -343,8 +360,9 @@ export class TaskAPI {
   resolveConversationIdForQueue(request: TaskRequest): string {
     const fromReq = request.conversationId?.trim();
     if (fromReq) return fromReq;
+    if (request.startInNewThread) return buildNewThreadPlaceholderConversationId();
     if (this.currentConversationId) return this.currentConversationId;
-    return '__squid_default_conversation__';
+    return DEFAULT_CONVERSATION_ID;
   }
 
   isConversationBusy(conversationId: string): boolean {
@@ -389,6 +407,7 @@ export class TaskAPI {
       value: request.instruction,
       mode: request.mode,
       workspace: request.workspace,
+      startInNewThread: request.startInNewThread === true,
       expertId: request.expertId,
       skill: request.skill,
       selectedSkills: normalizeSelectedSkills(request.selectedSkills),
@@ -437,6 +456,7 @@ export class TaskAPI {
           workspace,
           instruction: cmd.value,
           conversationId: cmd.conversationId,
+          startInNewThread: cmd.startInNewThread,
           expertId: cmd.expertId,
           skill: cmd.skill,
           selectedSkills: cmd.selectedSkills,
@@ -865,6 +885,7 @@ user-invocable: true
           workspace: request.workspace,
           instructionPreview: truncateText(request.instruction, 240),
           selectedSkillsCount: normalizeSelectedSkills(request.selectedSkills).length,
+          startInNewThread: request.startInNewThread === true,
           expertId: request.expertId || undefined,
         });
 
@@ -898,7 +919,7 @@ user-invocable: true
         });
 
         const planConversationId =
-          cid === '__squid_default_conversation__' ? undefined : cid;
+          normalizeSyntheticConversationId(cid);
         const result = await this.executor.execute({
           mode: request.mode,
           instruction: effectiveInstruction,
@@ -962,15 +983,21 @@ user-invocable: true
       throw new TaskAPIConversationBusyError(cid);
     }
     this.runningConversations.add(cid);
-    const normalizedRequest =
-      request.conversationId === '__squid_default_conversation__'
-        ? { ...request, conversationId: undefined }
-        : request;
+    const normalizedRequest = {
+      ...request,
+      conversationId: normalizeSyntheticConversationId(request.conversationId),
+    };
     try {
       try {
         const trimmedInstruction = (normalizedRequest.instruction || '').trim();
 
-        let conversationId = normalizedRequest.conversationId || this.currentConversationId;
+        const shouldForceNewConversation =
+          normalizedRequest.startInNewThread === true &&
+          !normalizedRequest.conversationId;
+
+        let conversationId = shouldForceNewConversation
+          ? undefined
+          : (normalizedRequest.conversationId || this.currentConversationId);
         if (!conversationId) {
           conversationId = await this.conversationManager.createConversation(normalizedRequest.workspace);
           this.currentConversationId = conversationId;
@@ -1037,6 +1064,7 @@ user-invocable: true
           mode: normalizedRequest.mode,
           provider: modelConfig.provider || '',
           instructionPreview: truncateText(normalizedRequest.instruction, 240),
+          startInNewThread: normalizedRequest.startInNewThread === true,
           selectedSkillsCount: normalizeSelectedSkills(normalizedRequest.selectedSkills).length,
           expertId: normalizedRequest.expertId || undefined,
           expertApplied: effective.expertApplied,
@@ -1071,9 +1099,7 @@ user-invocable: true
         console.log('[LLM] TaskAPI → TaskExecutor.executeStream（模型凭证仅来自 ~/.squid/config.json）');
 
         const executorConversationId =
-          conversationId === '__squid_default_conversation__'
-            ? undefined
-            : conversationId;
+          normalizeSyntheticConversationId(conversationId);
         await this.executor.executeStream(
           {
             mode: normalizedRequest.mode,
