@@ -106,4 +106,27 @@ describe('Feishu squid bridge', () => {
       off();
     }
   });
+
+  it('收到 /wtf 时应透传给 TaskAPI 统一命令分支', async () => {
+    const off = registerFeishuSquidBridge(taskAPI as any);
+    try {
+      getFeishuExtensionEventBridge().emitChannelInbound({
+        channelId: 'feishu',
+        text: '/wtf',
+        chatId: 'oc_bridge_stop',
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(taskAPI.executeTaskStream).toHaveBeenCalled();
+        },
+        { timeout: 3000 }
+      );
+
+      const req = taskAPI.executeTaskStream.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(req.instruction).toBe('/wtf');
+    } finally {
+      off();
+    }
+  });
 });

@@ -64,4 +64,26 @@ describe('Weixin personal squid bridge', () => {
       off();
     }
   });
+
+  it('收到 /wtf 时应透传给 TaskAPI 统一命令分支', async () => {
+    const off = registerWeixinPersonalSquidBridge(taskAPI as any, eventBridge);
+    try {
+      eventBridge.emitChannelInbound({
+        channelId: 'weixin-personal',
+        text: '/wtf',
+        chatId: 'u1@im.wechat',
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(taskAPI.executeTaskStream).toHaveBeenCalled();
+        },
+        { timeout: 3000 }
+      );
+      const req = taskAPI.executeTaskStream.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(req.instruction).toBe('/wtf');
+    } finally {
+      off();
+    }
+  });
 });

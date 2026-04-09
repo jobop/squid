@@ -1,5 +1,19 @@
 # squid v0.1.0 发布说明
 
+## 最近更新（2026-04-10）
+
+### 渠道图片识别链路补齐
+
+- Telegram / Feishu / 微信个人号入站图片统一走“下载到 workspace + `mentions(file)`”链路。
+- 渠道繁忙入队场景保留同一 `mentions`，避免图片在队列路径丢失。
+- 新增扩展侧共享落盘能力：`extensions/shared/workspace-image-store.ts`。
+
+### Channel 打断命令 `/wtf`
+
+- 在 `TaskAPI.executeTaskStream` 新增 `/wtf` 命令，语义与 Web ESC 一致：仅中断当前会话运行中的任务，不清队列。
+- `/wtf` 分支位于会话 busy 检查之前，保证“会话忙时”也能即时触发中断，不会被先拦成 busy。
+- Telegram / Feishu / 微信桥接测试已补齐，验证 `/wtf` 会透传到统一命令分支。
+
 ## 概述
 
 squid 首个对外版本：基于 Electrobun 的本地 AI 桌面工作台，集成多模型对话、任务模式、技能与专家、定时任务及可扩展渠道（飞书 / Telegram / 微信等，按需启用）。

@@ -22,6 +22,12 @@
 - 队列执行完成后，TaskAPI 向所有 **`addChannelQueuedCompleteHandler`** 注册的回调广播；各渠道桥接内判断 `cmd.channelReply?.channelId === '<id>'` 再回贴。
 - **兼容**：meta 仍支持已废弃的 `feishuChatId`（等价于 `channelReply: { channelId: 'feishu', chatId }`）。
 
+## 渠道打断命令（`/wtf`）
+
+- `/wtf` 在 `TaskAPI.executeTaskStream` 统一处理（无需各渠道单独实现中断分支）。
+- 语义与 Web ESC 一致：仅调用 `abortConversation(conversationId)` 中断当前运行任务，不清除排队项。
+- `/wtf` 命令检查在 busy 判断之前执行，因此会话“正在运行”时也能即时中断，不会被先返回 busy。
+
 ## 飞书
 
 - 桥接使用 `channelId: 'feishu'` 与上述通用机制一致。

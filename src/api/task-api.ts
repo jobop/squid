@@ -1427,6 +1427,16 @@ user-invocable: true
       throw new Error(normalizedAttachmentResult.error);
     }
     const cid = this.resolveConversationIdForQueue(request);
+    const command = (request.instruction || '').trim();
+    if (/^\/wtf\b/i.test(command)) {
+      const aborted = this.abortConversation(cid);
+      appendAgentLog('task-stream', 'info', '执行 /wtf（中断当前运行）', {
+        conversationId: cid,
+        aborted,
+      });
+      onChunk(aborted ? '⛔ 已中断当前生成。' : 'ℹ️ 当前没有可中断的运行任务。');
+      return;
+    }
     if (this.runningConversations.has(cid)) {
       throw new TaskAPIConversationBusyError(cid);
     }

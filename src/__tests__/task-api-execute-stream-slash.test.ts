@@ -58,6 +58,47 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(chunks.join('')).toContain('长期记忆');
   });
 
+  it('/wtf 在无运行任务时应返回提示且不调用 executor', async () => {
+    const abortSpy = vi.spyOn(api, 'abortConversation');
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '/wtf',
+        conversationId: 'tid_wtf_idle',
+      },
+      (c) => chunks.push(c)
+    );
+    expect(abortSpy).toHaveBeenCalledWith('tid_wtf_idle');
+    expect(executeStreamSpy).not.toHaveBeenCalled();
+    expect(chunks.join('')).toContain('没有可中断');
+  });
+
+  it('会话忙时 /wtf 应即时中断且不抛 busy', async () => {
+    const conversationId = 'tid_wtf_busy';
+    const runAbortController = new AbortController();
+    (api as any).runningConversations.add(conversationId);
+    (api as any).runningConversationAbortControllers.set(conversationId, runAbortController);
+
+    const chunks: string[] = [];
+    await expect(
+      api.executeTaskStream(
+        {
+          mode: 'ask',
+          workspace: process.cwd(),
+          instruction: '/wtf',
+          conversationId,
+        },
+        (c) => chunks.push(c)
+      )
+    ).resolves.toBeUndefined();
+
+    expect(runAbortController.signal.aborted).toBe(true);
+    expect(executeStreamSpy).not.toHaveBeenCalled();
+    expect(chunks.join('')).toContain('已中断当前生成');
+  });
+
   it('mentions skill 存在时应构造显式技能前缀并传给 executor', async () => {
     vi.spyOn((api as any).skillLoader, 'listSkillSummaries').mockResolvedValue([
       {

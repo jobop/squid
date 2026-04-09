@@ -102,4 +102,27 @@ describe('Telegram squid bridge', () => {
       off();
     }
   });
+
+  it('收到 /wtf 时应透传给 TaskAPI 统一命令分支', async () => {
+    const off = registerTelegramSquidBridge(taskAPI as any, eventBridge);
+    try {
+      eventBridge.emitChannelInbound({
+        channelId: 'telegram',
+        text: '/wtf',
+        chatId: '999003',
+      });
+
+      await vi.waitFor(
+        () => {
+          expect(taskAPI.executeTaskStream).toHaveBeenCalled();
+        },
+        { timeout: 3000 }
+      );
+
+      const req = taskAPI.executeTaskStream.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(req.instruction).toBe('/wtf');
+    } finally {
+      off();
+    }
+  });
 });
