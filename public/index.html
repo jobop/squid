@@ -1866,7 +1866,6 @@
 
     function buildImageAttachmentKey(item) {
       if (item?.path) return `path:${item.path}`;
-      if (item?.name) return `name:${item.name}`;
       if (item?.dataUrl) return `data:${item.dataUrl.slice(0, 64)}`;
       return `id:${Math.random().toString(36).slice(2, 10)}`;
     }
@@ -1891,7 +1890,7 @@
       const mimeType = typeof item?.mimeType === 'string' ? item.mimeType.trim().toLowerCase() : '';
       if (!dataUrl || !mimeType || !mimeType.startsWith('image/')) return;
       const key = buildImageAttachmentKey(item);
-      if (selectedImageAttachments.some((x) => x.key === key || x.dataUrl === dataUrl)) return;
+      if (selectedImageAttachments.some((x) => x.dataUrl === dataUrl)) return;
       selectedImageAttachments.push({
         key,
         type: 'image',
@@ -2565,7 +2564,7 @@
             return;
           }
           const workspace = (document.getElementById('workspace')?.value || '').trim();
-          if (!workspace || !String(parsed.query || '').trim()) {
+          if (!workspace) {
             closeMentionSkillPanel();
             return;
           }
@@ -2632,12 +2631,14 @@
               if (!file) continue;
               const dataUrl = await readFileAsDataUrl(file);
               if (!dataUrl || !String(file.type || '').startsWith('image/')) continue;
+              const ext = (file.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png';
+              const uniqueName = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
               addImageAttachment({
                 type: 'image',
                 mimeType: file.type,
                 dataUrl,
                 source: 'paste',
-                name: file.name || 'clipboard-image',
+                name: uniqueName,
               });
               addedCount += 1;
             }
