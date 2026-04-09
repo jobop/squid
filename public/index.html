@@ -248,6 +248,33 @@
       gap: 6px;
       margin-top: 8px;
     }
+    .mention-file-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .mention-file-token {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      background: #f0fdf4;
+      line-height: 1.6;
+    }
+    .mention-file-token button {
+      border: none;
+      background: transparent;
+      color: #166534;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      line-height: 1;
+    }
     .mention-skill-token {
       display: inline-flex;
       align-items: center;
@@ -1272,6 +1299,7 @@
             placeholder="Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, % for skills"
             rows="1"
           ></textarea>
+          <div id="mentionFileTokens" class="mention-file-tokens"></div>
           <div id="mentionSkillTokens" class="mention-skill-tokens"></div>
           <div id="mentionSkillPanel" class="mention-skill-panel"></div>
 
@@ -1735,11 +1763,15 @@
     let experts = [];
     let selectedExpert = '';
     let selectedMentionSkills = [];
+    let selectedMentionFiles = [];
     let mentionSkillSuggestions = [];
+    let mentionFileSuggestions = [];
+    let mentionPanelType = null;
     let mentionPanelOpen = false;
     let mentionActiveIndex = 0;
     let skillsLoadingPromise = null;
     let skillsLoadedAt = 0;
+    let mentionSearchRequestSeq = 0;
     let startInNewThreadPending = false;
 
     function initCustomSelects() {
@@ -1780,9 +1812,13 @@
       return String(value || '').trim().toLowerCase();
     }
 
-    function parseMentionQuery(text, cursorIndex) {
+    function normalizeMentionFilePath(value) {
+      return String(value || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+    }
+
+    function parseMentionQueryByTrigger(text, cursorIndex, trigger) {
       const upToCursor = text.slice(0, cursorIndex);
-      const idx = upToCursor.lastIndexOf('%');
+      const idx = upToCursor.lastIndexOf(trigger);
       if (idx < 0) return null;
       if (idx > 0) {
         const prev = upToCursor[idx - 1];
@@ -1791,6 +1827,17 @@
       const raw = upToCursor.slice(idx + 1);
       if (/\s/.test(raw)) return null;
       return { start: idx, query: raw };
+    }
+
+    function parseMentionQuery(text, cursorIndex) {
+      const skillParsed = parseMentionQueryByTrigger(text, cursorIndex, '%');
+      const fileParsed = parseMentionQueryByTrigger(text, cursorIndex, '@');
+      if (!skillParsed && !fileParsed) return null;
+      if (!skillParsed) return { ...fileParsed, type: 'file' };
+      if (!fileParsed) return { ...skillParsed, type: 'skill' };
+      return skillParsed.start >= fileParsed.start
+        ? { ...skillParsed, type: 'skill' }
+        : { ...fileParsed, type: 'file' };
     }
 
     function getMentionCandidates(query) {
@@ -1808,6 +1855,8 @@
       mentionPanelOpen = false;
       mentionActiveIndex = 0;
       mentionSkillSuggestions = [];
+      mentionFileSuggestions = [];
+      mentionPanelType = null;
       const panel = document.getElementById('mentionSkillPanel');
       if (panel) {
         panel.classList.remove('open');
@@ -1815,25 +1864,55 @@
       }
     }
 
+    function getActiveMentionSuggestions() {
+      if (mentionPanelType === 'file') return mentionFileSuggestions;
+      return mentionSkillSuggestions;
+    }
+
     function renderMentionSkillPanel() {
       const panel = document.getElementById('mentionSkillPanel');
       if (!panel) return;
-      if (!mentionPanelOpen || mentionSkillSuggestions.length === 0) {
+      const suggestions = getActiveMentionSuggestions();
+      if (!mentionPanelOpen || suggestions.length === 0) {
         panel.classList.remove('open');
         panel.innerHTML = '';
         return;
       }
       panel.classList.add('open');
-      panel.innerHTML = mentionSkillSuggestions.map((skill, idx) => `
-        <div class="mention-skill-item ${idx === mentionActiveIndex ? 'active' : ''}" data-idx="${idx}" onclick="chooseMentionSkillByIndex(${idx})">
-          <div class="mention-skill-name">%${escapeHtml(skill.name)}</div>
-          <div class="mention-skill-desc">${escapeHtml(skill.description || '')}</div>
-        </div>
-      `).join('');
+      if (mentionPanelType === 'file') {
+        panel.innerHTML = suggestions.map((file, idx) => `
+          <div class="mention-skill-item ${idx === mentionActiveIndex ? 'active' : ''}" data-idx="${idx}" onclick="chooseMentionFileByIndex(${idx})">
+            <div class="mention-skill-name">@${escapeHtml(file.path)}</div>
+            <div class="mention-skill-desc">${escapeHtml(file.label || file.path)}</div>
+          </div>
+        `).join('');
+      } else {
+        panel.innerHTML = suggestions.map((skill, idx) => `
+          <div class="mention-skill-item ${idx === mentionActiveIndex ? 'active' : ''}" data-idx="${idx}" onclick="chooseMentionSkillByIndex(${idx})">
+            <div class="mention-skill-name">%${escapeHtml(skill.name)}</div>
+            <div class="mention-skill-desc">${escapeHtml(skill.description || '')}</div>
+          </div>
+        `).join('');
+      }
       const active = panel.querySelector('.mention-skill-item.active');
       if (active && typeof active.scrollIntoView === 'function') {
         active.scrollIntoView({ block: 'nearest' });
       }
+    }
+
+    function renderMentionFileTokens() {
+      const el = document.getElementById('mentionFileTokens');
+      if (!el) return;
+      if (!selectedMentionFiles.length) {
+        el.innerHTML = '';
+        return;
+      }
+      el.innerHTML = selectedMentionFiles.map((f) => `
+        <span class="mention-file-token">
+          @${escapeHtml(f.path)}
+          <button type="button" title="移除" onclick="removeMentionFile('${encodeURIComponent(f.path)}')">x</button>
+        </span>
+      `).join('');
     }
 
     function renderMentionSkillTokens() {
@@ -1868,6 +1947,21 @@
       renderMentionSkillTokens();
     }
 
+    function addMentionFile(file) {
+      const path = normalizeMentionFilePath(file?.path || file?.label || '');
+      if (!path) return;
+      if (!selectedMentionFiles.some((f) => f.path === path)) {
+        selectedMentionFiles.push({ type: 'file', path, label: file?.label || path });
+      }
+      renderMentionFileTokens();
+    }
+
+    function removeMentionFile(encodedPath) {
+      const path = normalizeMentionFilePath(decodeURIComponent(encodedPath || ''));
+      selectedMentionFiles = selectedMentionFiles.filter((f) => f.path !== path);
+      renderMentionFileTokens();
+    }
+
     function chooseMentionSkillByIndex(idx) {
       const skill = mentionSkillSuggestions[idx];
       if (!skill) return;
@@ -1875,7 +1969,7 @@
       if (!input) return;
       const cursor = input.selectionStart || 0;
       const parsed = parseMentionQuery(input.value || '', cursor);
-      if (!parsed) return;
+      if (!parsed || parsed.type !== 'skill') return;
       const before = input.value.slice(0, parsed.start);
       const after = input.value.slice(cursor);
       const insertText = `%${skill.name} `;
@@ -1885,6 +1979,43 @@
       addMentionSkill(skill);
       closeMentionSkillPanel();
       input.focus();
+    }
+
+    function chooseMentionFileByIndex(idx) {
+      const file = mentionFileSuggestions[idx];
+      if (!file) return;
+      const input = document.getElementById('instruction');
+      if (!input) return;
+      const cursor = input.selectionStart || 0;
+      const parsed = parseMentionQuery(input.value || '', cursor);
+      if (!parsed || parsed.type !== 'file') return;
+      const before = input.value.slice(0, parsed.start);
+      const after = input.value.slice(cursor);
+      const insertText = `@${file.path} `;
+      input.value = `${before}${insertText}${after}`;
+      const nextPos = before.length + insertText.length;
+      input.setSelectionRange(nextPos, nextPos);
+      addMentionFile(file);
+      closeMentionSkillPanel();
+      input.focus();
+    }
+
+    async function fetchMentionFileCandidates(workspace, query) {
+      const response = await fetch('http://localhost:50001/api/workspace/files/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace,
+          query: String(query || '').trim(),
+          limit: 20,
+        }),
+      });
+      if (!response.ok) return [];
+      const result = await response.json().catch(() => ({}));
+      if (!result.success || !Array.isArray(result.files)) return [];
+      return result.files
+        .filter((p) => typeof p === 'string' && p.trim())
+        .map((p) => ({ type: 'file', path: normalizeMentionFilePath(p), label: p }));
     }
 
     function collectMentionSkillsFromInstruction(instruction) {
@@ -1900,6 +2031,21 @@
         if (seen.has(k)) continue;
         seen.add(k);
         result.push({ name: matched.name });
+      }
+      return result;
+    }
+
+    function collectMentionFilesFromInstruction(instruction) {
+      const result = [];
+      const seen = new Set();
+      const re = /(^|\s)@([^\s@%]+)/g;
+      let m;
+      while ((m = re.exec(instruction || '')) !== null) {
+        const path = normalizeMentionFilePath(m[2]);
+        if (!path) continue;
+        if (seen.has(path)) continue;
+        seen.add(path);
+        result.push({ type: 'file', path, label: path });
       }
       return result;
     }
@@ -2302,33 +2448,57 @@
             closeMentionSkillPanel();
             return;
           }
-          // 输入 `%` 触发时尽量拿最新技能，避免“刚安装但候选没刷新”。
-          if (skills.length === 0 || Date.now() - skillsLoadedAt > 10000) {
-            await loadSkills(true);
+          if (parsed.type === 'skill') {
+            // 输入 `%` 触发时尽量拿最新技能，避免“刚安装但候选没刷新”。
+            if (skills.length === 0 || Date.now() - skillsLoadedAt > 10000) {
+              await loadSkills(true);
+            }
+            mentionPanelType = 'skill';
+            mentionSkillSuggestions = getMentionCandidates(parsed.query);
+            mentionFileSuggestions = [];
+            mentionActiveIndex = 0;
+            mentionPanelOpen = mentionSkillSuggestions.length > 0;
+            renderMentionSkillPanel();
+            return;
           }
-          mentionSkillSuggestions = getMentionCandidates(parsed.query);
+          const workspace = (document.getElementById('workspace')?.value || '').trim();
+          if (!workspace || !String(parsed.query || '').trim()) {
+            closeMentionSkillPanel();
+            return;
+          }
+          const reqSeq = ++mentionSearchRequestSeq;
+          const files = await fetchMentionFileCandidates(workspace, parsed.query);
+          if (reqSeq !== mentionSearchRequestSeq) return;
+          mentionPanelType = 'file';
+          mentionFileSuggestions = files;
+          mentionSkillSuggestions = [];
           mentionActiveIndex = 0;
-          mentionPanelOpen = mentionSkillSuggestions.length > 0;
+          mentionPanelOpen = mentionFileSuggestions.length > 0;
           renderMentionSkillPanel();
         });
         instructionInput.addEventListener('keydown', (e) => {
-          if (mentionPanelOpen && mentionSkillSuggestions.length > 0) {
+          const activeSuggestions = getActiveMentionSuggestions();
+          if (mentionPanelOpen && activeSuggestions.length > 0) {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
-              mentionActiveIndex = (mentionActiveIndex + 1) % mentionSkillSuggestions.length;
+              mentionActiveIndex = (mentionActiveIndex + 1) % activeSuggestions.length;
               renderMentionSkillPanel();
               return;
             }
             if (e.key === 'ArrowUp') {
               e.preventDefault();
               mentionActiveIndex =
-                (mentionActiveIndex - 1 + mentionSkillSuggestions.length) % mentionSkillSuggestions.length;
+                (mentionActiveIndex - 1 + activeSuggestions.length) % activeSuggestions.length;
               renderMentionSkillPanel();
               return;
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              chooseMentionSkillByIndex(mentionActiveIndex);
+              if (mentionPanelType === 'file') {
+                chooseMentionFileByIndex(mentionActiveIndex);
+              } else {
+                chooseMentionSkillByIndex(mentionActiveIndex);
+              }
               return;
             }
             if (e.key === 'Escape') {
@@ -3637,14 +3807,32 @@
       const startInNewThread = startInNewThreadPending;
       const expertId = selectedExpert;
       const mentionSkills = collectMentionSkillsFromInstruction(instruction);
-      const selectedSkillsMap = new Map();
+      const mentionFiles = collectMentionFilesFromInstruction(instruction);
+      const selectedMentionSkillsMap = new Map();
+      const mentionMap = new Map();
       selectedMentionSkills.forEach((s) => {
-        if (s?.name) selectedSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
+        if (s?.name) selectedMentionSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
       });
       mentionSkills.forEach((s) => {
-        if (s?.name) selectedSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
+        if (s?.name) selectedMentionSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
       });
-      const selectedSkills = Array.from(selectedSkillsMap.values());
+      selectedMentionSkillsMap.forEach((s, normalizedName) => {
+        mentionMap.set(`skill:${normalizedName}`, {
+          type: 'skill',
+          name: s.name,
+          args: s.args,
+          label: s.name,
+        });
+      });
+      selectedMentionFiles.forEach((f) => {
+        const p = normalizeMentionFilePath(f?.path || '');
+        if (p) mentionMap.set(`file:${p}`, { type: 'file', path: p, label: f?.label || p });
+      });
+      mentionFiles.forEach((f) => {
+        const p = normalizeMentionFilePath(f?.path || '');
+        if (p) mentionMap.set(`file:${p}`, { type: 'file', path: p, label: f?.label || p });
+      });
+      const mentions = Array.from(mentionMap.values());
 
       if (!instruction.trim()) {
         alert('请输入任务指令');
@@ -3654,7 +3842,9 @@
       if (/^\/reset\b/i.test(instruction.trim())) {
         document.getElementById('instruction').value = '';
         selectedMentionSkills = [];
+        selectedMentionFiles = [];
         renderMentionSkillTokens();
+        renderMentionFileTokens();
         closeMentionSkillPanel();
         await performSlashReset();
         return;
@@ -3663,7 +3853,9 @@
       if (/^\/new\b/i.test(instruction.trim())) {
         document.getElementById('instruction').value = '';
         selectedMentionSkills = [];
+        selectedMentionFiles = [];
         renderMentionSkillTokens();
+        renderMentionFileTokens();
         closeMentionSkillPanel();
         await performSlashNew();
         return;
@@ -3684,7 +3876,9 @@
       // 清空输入框
       document.getElementById('instruction').value = '';
       selectedMentionSkills = [];
+      selectedMentionFiles = [];
       renderMentionSkillTokens();
+      renderMentionFileTokens();
       closeMentionSkillPanel();
 
       // 禁用按钮
@@ -3710,7 +3904,7 @@
             workspace: workspace,
             instruction: instruction,
             startInNewThread: startInNewThread || undefined,
-            selectedSkills: selectedSkills.length > 0 ? selectedSkills : undefined,
+            mentions: mentions.length > 0 ? mentions : undefined,
             expertId: expertId || undefined,
             conversationId: currentThreadId || undefined
           })

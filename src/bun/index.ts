@@ -1,6 +1,6 @@
 // Electrobun backend entry point
 import { existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { BrowserWindow, ApplicationMenu } from 'electrobun/bun';
 import { ClawServer } from '../claw/server';
@@ -157,6 +157,75 @@ async function main() {
             success: false,
             error: error.message
           }), { status: 500, headers });
+        }
+      }
+
+      // List tasks
+      if (url.pathname === '/api/workspace/files/search' && req.method === 'POST') {
+        try {
+          const body = await req.json() as {
+            workspace?: string;
+            query?: string;
+            limit?: number;
+          };
+          const workspace = String(body.workspace || '').trim();
+          const query = String(body.query || '').trim().toLowerCase();
+          const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 50);
+          if (!workspace) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'workspace is required',
+              files: [],
+            }), { status: 400, headers });
+          }
+
+          const sandbox = new (await import('../workspace/sandbox')).WorkspaceSandbox(workspace);
+          await sandbox.validatePath(workspace);
+
+          const { readdir } = await import('fs/promises');
+          const root = resolve(workspace);
+          const queue: Array<{ abs: string; depth: number }> = [{ abs: root, depth: 0 }];
+          const ignoreDirNames = new Set([
+            '.git',
+            'node_modules',
+            '.idea',
+            '.vscode',
+            'dist',
+            'build',
+            'coverage',
+          ]);
+          const files: string[] = [];
+          while (queue.length > 0 && files.length < limit) {
+            const item = queue.shift()!;
+            const entries = await readdir(item.abs, { withFileTypes: true }).catch(() => []);
+            for (const entry of entries) {
+              if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
+              const absPath = join(item.abs, entry.name);
+              if (entry.isDirectory()) {
+                if (ignoreDirNames.has(entry.name) || item.depth >= 8) continue;
+                queue.push({ abs: absPath, depth: item.depth + 1 });
+                continue;
+              }
+              if (!entry.isFile()) continue;
+              const relPath = relative(root, absPath).replace(/\\/g, '/');
+              if (!relPath || relPath.startsWith('../') || relPath === '..') continue;
+              if (query && !relPath.toLowerCase().includes(query)) continue;
+              files.push(relPath);
+              if (files.length >= limit) break;
+            }
+          }
+
+          files.sort((a, b) => a.localeCompare(b));
+          return new Response(JSON.stringify({
+            success: true,
+            files,
+          }), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error?.message || String(error),
+            files: [],
+          }), { status: 400, headers });
         }
       }
 

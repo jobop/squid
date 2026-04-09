@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TaskExecutor } from '../tasks/executor';
 import { TaskAPI } from '../api/task-api';
 
@@ -55,14 +58,33 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(chunks.join('')).toContain('长期记忆');
   });
 
-  it('selectedSkills 存在时应构造显式技能前缀并传给 executor', async () => {
+  it('mentions skill 存在时应构造显式技能前缀并传给 executor', async () => {
+    vi.spyOn((api as any).skillLoader, 'listSkillSummaries').mockResolvedValue([
+      {
+        name: 'github',
+        description: 'GitHub skill',
+        userInvocable: true,
+        filePath: 'github/SKILL.md',
+        rootDir: '/tmp',
+      },
+      {
+        name: 'list-skills',
+        description: 'List skills',
+        userInvocable: true,
+        filePath: 'list/SKILL.md',
+        rootDir: '/tmp',
+      },
+    ]);
     const chunks: string[] = [];
     await api.executeTaskStream(
       {
         mode: 'ask',
         workspace: process.cwd(),
         instruction: '帮我检查这个仓库',
-        selectedSkills: [{ name: 'github' }, { name: 'list-skills', args: 'verbose' }],
+        mentions: [
+          { type: 'skill', name: 'github' },
+          { type: 'skill', name: 'list-skills', args: 'verbose' },
+        ],
       },
       (c) => chunks.push(c)
     );
@@ -74,6 +96,96 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(req.instruction).toContain('- list-skills (args: verbose)');
     expect(req.instruction).toContain('## User Instruction');
     expect(req.instruction).toContain('帮我检查这个仓库');
+  });
+
+  it('mentions 包含 skill 时应通过统一管线注入技能前缀', async () => {
+    vi.spyOn((api as any).skillLoader, 'listSkillSummaries').mockResolvedValue([
+      {
+        name: 'github',
+        description: 'GitHub skill',
+        userInvocable: true,
+        filePath: 'github/SKILL.md',
+        rootDir: '/tmp',
+      },
+    ]);
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '请调用技能处理',
+        mentions: [{ type: 'skill', name: 'github', args: 'verbose' }],
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+    expect(req.instruction).toContain('## User Selected Skills');
+    expect(req.instruction).toContain('- github (args: verbose)');
+    expect(req.instruction).toContain('请调用技能处理');
+  });
+
+  it('mentions 引用不存在 skill 时应报错且不调用 executor', async () => {
+    vi.spyOn((api as any).skillLoader, 'listSkillSummaries').mockResolvedValue([]);
+    await expect(
+      api.executeTaskStream(
+        {
+          mode: 'ask',
+          workspace: process.cwd(),
+          instruction: '尝试调用不存在技能',
+          mentions: [{ type: 'skill', name: 'missing-skill' }],
+        },
+        () => {}
+      )
+    ).rejects.toThrow(/技能引用不可用/);
+    expect(executeStreamSpy).not.toHaveBeenCalled();
+  });
+
+  it('mentions 文件有效时应注入文件前缀并传给 executor', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'squid-mention-test-'));
+    try {
+      await mkdir(join(ws, 'src'), { recursive: true });
+      await writeFile(join(ws, 'src', 'main.ts'), 'export const ok = true;\n', 'utf-8');
+      const chunks: string[] = [];
+      await api.executeTaskStream(
+        {
+          mode: 'ask',
+          workspace: ws,
+          instruction: '请阅读我提到的文件',
+          mentions: [{ type: 'file', path: 'src/main.ts' }],
+        },
+        (c) => chunks.push(c)
+      );
+
+      expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+      const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+      expect(req.instruction).toContain('## User Mentioned Files');
+      expect(req.instruction).toContain('- src/main.ts');
+      expect(req.instruction).toContain('请阅读我提到的文件');
+    } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('mentions 文件无效时应报错且不调用 executor', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'squid-mention-invalid-'));
+    try {
+      await expect(
+        api.executeTaskStream(
+          {
+            mode: 'ask',
+            workspace: ws,
+            instruction: '读取不存在文件',
+            mentions: [{ type: 'file', path: 'no/such/file.ts' }],
+          },
+          () => {}
+        )
+      ).rejects.toThrow(/不存在或不可访问/);
+      expect(executeStreamSpy).not.toHaveBeenCalled();
+    } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
   });
 
   it('expertId 有效时应注入专家前缀并传给 executor', async () => {
@@ -115,7 +227,16 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(req.instruction).toBe('帮我优化一个页面');
   });
 
-  it('expertId 与 selectedSkills 同时存在时，专家前缀应在技能前缀之前', async () => {
+  it('expertId 与 mentions skill 同时存在时，专家前缀应在技能前缀之前', async () => {
+    vi.spyOn((api as any).skillLoader, 'listSkillSummaries').mockResolvedValue([
+      {
+        name: 'github',
+        description: 'GitHub skill',
+        userInvocable: true,
+        filePath: 'github/SKILL.md',
+        rootDir: '/tmp',
+      },
+    ]);
     const chunks: string[] = [];
     await api.executeTaskStream(
       {
@@ -123,7 +244,7 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
         workspace: process.cwd(),
         instruction: '检查当前项目',
         expertId: 'software-engineer',
-        selectedSkills: [{ name: 'github' }],
+        mentions: [{ type: 'skill', name: 'github' }],
       },
       (c) => chunks.push(c)
     );

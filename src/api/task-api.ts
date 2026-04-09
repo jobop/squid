@@ -61,6 +61,21 @@ export interface SelectedSkillInput {
   args?: string;
 }
 
+export interface FileMentionInput {
+  type: 'file';
+  path: string;
+  label?: string;
+}
+
+export interface SkillMentionInput {
+  type: 'skill';
+  name: string;
+  args?: string;
+  label?: string;
+}
+
+export type MentionInput = FileMentionInput | SkillMentionInput;
+
 export interface TaskRequest {
   mode: TaskMode;
   workspace: string;
@@ -69,7 +84,7 @@ export interface TaskRequest {
   baseURL?: string;
   modelName?: string;
   skill?: string;
-  selectedSkills?: SelectedSkillInput[];
+  mentions?: MentionInput[];
   /** 一次性意图：当前请求即便无 conversationId，也应强制创建新线程 */
   startInNewThread?: boolean;
   expertId?: string;
@@ -122,37 +137,204 @@ function normalizeSyntheticConversationId(raw?: string): string | undefined {
   return id;
 }
 
-function normalizeSelectedSkills(input: unknown): SelectedSkillInput[] {
+function normalizeFilePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
+}
+
+function normalizeMentions(input: unknown): MentionInput[] {
   if (!Array.isArray(input)) return [];
-  const out: SelectedSkillInput[] = [];
-  const seen = new Set<string>();
+  const out: MentionInput[] = [];
+  const seenFile = new Set<string>();
+  const seenSkill = new Set<string>();
   for (const item of input) {
     if (!item || typeof item !== 'object') continue;
-    const nameRaw = (item as Record<string, unknown>).name;
-    const argsRaw = (item as Record<string, unknown>).args;
-    if (typeof nameRaw !== 'string') continue;
-    const name = nameRaw.trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const normalized: SelectedSkillInput = { name };
-    if (typeof argsRaw === 'string' && argsRaw.trim()) {
-      normalized.args = argsRaw.trim();
+    const typeRaw = (item as Record<string, unknown>).type;
+    if (typeRaw === 'file') {
+      const pathRaw = (item as Record<string, unknown>).path;
+      if (typeof pathRaw !== 'string') continue;
+      const normalizedPath = normalizeFilePath(pathRaw);
+      if (!normalizedPath || seenFile.has(normalizedPath)) continue;
+      seenFile.add(normalizedPath);
+      const labelRaw = (item as Record<string, unknown>).label;
+      out.push({
+        type: 'file',
+        path: normalizedPath,
+        label: typeof labelRaw === 'string' && labelRaw.trim() ? labelRaw.trim() : undefined,
+      });
+    } else if (typeRaw === 'skill') {
+      const nameRaw = (item as Record<string, unknown>).name;
+      if (typeof nameRaw !== 'string') continue;
+      const name = nameRaw.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seenSkill.has(key)) continue;
+      seenSkill.add(key);
+      const argsRaw = (item as Record<string, unknown>).args;
+      const labelRaw = (item as Record<string, unknown>).label;
+      out.push({
+        type: 'skill',
+        name,
+        args: typeof argsRaw === 'string' && argsRaw.trim() ? argsRaw.trim() : undefined,
+        label: typeof labelRaw === 'string' && labelRaw.trim() ? labelRaw.trim() : undefined,
+      });
+    } else {
+      continue;
     }
-    out.push(normalized);
+    if (out.length >= 20) break;
   }
   return out;
 }
 
+function splitMentions(mentions: MentionInput[]): {
+  fileMentions: FileMentionInput[];
+  skillMentions: SkillMentionInput[];
+} {
+  const fileMentions: FileMentionInput[] = [];
+  const skillMentions: SkillMentionInput[] = [];
+  for (const mention of mentions) {
+    if (mention.type === 'file') fileMentions.push(mention);
+    if (mention.type === 'skill') skillMentions.push(mention);
+  }
+  return { fileMentions, skillMentions };
+}
+
+function normalizeSkillMentionsFromMentions(mentions: unknown): SelectedSkillInput[] {
+  const out: SelectedSkillInput[] = [];
+  const seen = new Set<string>();
+  const normalized = normalizeMentions(mentions);
+  for (const mention of normalized) {
+    if (mention.type !== 'skill') continue;
+    const key = mention.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      name: mention.name,
+      args: mention.args,
+    });
+  }
+  return out;
+}
+
+async function validateMentionsForWorkspaceAndSkills(
+  workspace: string,
+  mentions: MentionInput[],
+  skillLoader: SkillLoader
+): Promise<{ ok: true; mentions: MentionInput[] } | { ok: false; error: string }> {
+  if (mentions.length === 0) return { ok: true, mentions: [] };
+  const { fileMentions, skillMentions } = splitMentions(mentions);
+  const { resolve, relative, sep } = await import('path');
+  const { access, stat } = await import('fs/promises');
+  const workspaceAbs = resolve(workspace || process.cwd());
+  const validatedFiles = new Map<string, FileMentionInput>();
+  for (const mention of fileMentions) {
+    const absolutePath = resolve(workspaceAbs, mention.path);
+    const rel = relative(workspaceAbs, absolutePath);
+    const outside = rel.startsWith('..') || rel.includes(`${sep}..${sep}`) || rel === '..';
+    if (outside || rel === '') {
+      return {
+        ok: false,
+        error: `文件引用非法（超出工作目录）: ${mention.path}`,
+      };
+    }
+    try {
+      await access(absolutePath);
+      const info = await stat(absolutePath);
+      if (!info.isFile()) {
+        return {
+          ok: false,
+          error: `文件引用不是普通文件: ${mention.path}`,
+        };
+      }
+      const normalizedPath = normalizeFilePath(rel);
+      validatedFiles.set(normalizedPath, {
+        type: 'file',
+        path: normalizedPath,
+        label: mention.label,
+      });
+    } catch {
+      return {
+        ok: false,
+        error: `文件引用不存在或不可访问: ${mention.path}`,
+      };
+    }
+  }
+  const validatedSkills = new Map<string, SkillMentionInput>();
+  if (skillMentions.length > 0) {
+    const summaries = await skillLoader.listSkillSummaries();
+    const invocableByLower = new Map(
+      summaries
+        .filter((item) => item.userInvocable)
+        .map((item) => [item.name.toLowerCase(), item.name] as const)
+    );
+    for (const mention of skillMentions) {
+      const canonical = invocableByLower.get(mention.name.toLowerCase());
+      if (!canonical) {
+        return {
+          ok: false,
+          error: `技能引用不可用: ${mention.name}`,
+        };
+      }
+      validatedSkills.set(canonical.toLowerCase(), {
+        type: 'skill',
+        name: canonical,
+        args: mention.args,
+        label: mention.label,
+      });
+    }
+  }
+  const merged: MentionInput[] = [];
+  const seen = new Set<string>();
+  for (const mention of mentions) {
+    if (mention.type === 'file') {
+      const key = normalizeFilePath(mention.path);
+      if (seen.has(`file:${key}`)) continue;
+      const validated = validatedFiles.get(key);
+      if (!validated) continue;
+      seen.add(`file:${key}`);
+      merged.push(validated);
+      continue;
+    }
+    const key = mention.name.toLowerCase();
+    if (seen.has(`skill:${key}`)) continue;
+    const validated = validatedSkills.get(key);
+    if (!validated) continue;
+    seen.add(`skill:${key}`);
+    merged.push(validated);
+  }
+  return { ok: true, mentions: merged };
+}
+
+function buildInstructionWithMentionedFiles(
+  instruction: string,
+  mentions?: unknown
+): string {
+  const { fileMentions: files } = splitMentions(normalizeMentions(mentions));
+  if (files.length === 0) return instruction;
+  const lines = files.map((item) =>
+    item.label && item.label !== item.path
+      ? `- ${item.path} (label: ${item.label})`
+      : `- ${item.path}`
+  );
+  const instructionBody = instruction.includes('## User Instruction')
+    ? instruction
+    : ['## User Instruction', instruction].join('\n');
+  return [
+    '## User Mentioned Files',
+    'User explicitly selected these workspace files. Use them as high-priority context when relevant.',
+    ...lines,
+    '',
+    instructionBody,
+  ].join('\n');
+}
+
 function buildInstructionWithSelectedSkills(
   instruction: string,
-  selectedSkills?: unknown,
+  mentions?: unknown,
   legacySkill?: string
 ): string {
-  const picked = normalizeSelectedSkills(selectedSkills);
-  const merged: SelectedSkillInput[] = [...picked];
-  const seen = new Set(picked.map((s) => s.name.toLowerCase()));
+  const mentionPicked = normalizeSkillMentionsFromMentions(mentions);
+  const merged: SelectedSkillInput[] = [...mentionPicked];
+  const seen = new Set(mentionPicked.map((s) => s.name.toLowerCase()));
   if (typeof legacySkill === 'string' && legacySkill.trim()) {
     const n = legacySkill.trim();
     const k = n.toLowerCase();
@@ -166,13 +348,15 @@ function buildInstructionWithSelectedSkills(
   const lines = merged.map((s) =>
     s.args ? `- ${s.name} (args: ${s.args})` : `- ${s.name}`
   );
+  const instructionBody = instruction.includes('## User Instruction')
+    ? instruction
+    : ['## User Instruction', instruction].join('\n');
   return [
     '## User Selected Skills',
     'User explicitly selected these skills. Prioritize these over implicit guessing.',
     ...lines,
     '',
-    '## User Instruction',
-    instruction,
+    instructionBody,
   ].join('\n');
 }
 
@@ -183,13 +367,17 @@ interface EffectiveInstructionBuildResult {
 
 function buildInstructionWithSelections(params: {
   instruction: string;
-  selectedSkills?: unknown;
+  mentions?: unknown;
   legacySkill?: string;
   expert?: Expert;
 }): EffectiveInstructionBuildResult {
-  const instructionWithSkills = buildInstructionWithSelectedSkills(
+  const instructionWithMentions = buildInstructionWithMentionedFiles(
     params.instruction,
-    params.selectedSkills,
+    params.mentions
+  );
+  const instructionWithSkills = buildInstructionWithSelectedSkills(
+    instructionWithMentions,
+    params.mentions,
     params.legacySkill
   );
   if (!params.expert) {
@@ -410,7 +598,7 @@ export class TaskAPI {
       startInNewThread: request.startInNewThread === true,
       expertId: request.expertId,
       skill: request.skill,
-      selectedSkills: normalizeSelectedSkills(request.selectedSkills),
+      mentions: normalizeMentions(request.mentions),
       source: meta.source,
       taskId: meta.taskId,
       isMeta: meta.isMeta,
@@ -459,7 +647,7 @@ export class TaskAPI {
           startInNewThread: cmd.startInNewThread,
           expertId: cmd.expertId,
           skill: cmd.skill,
-          selectedSkills: cmd.selectedSkills,
+          mentions: cmd.mentions,
         },
         (chunk) => {
           streamedAssistant += chunk;
@@ -884,7 +1072,8 @@ user-invocable: true
           mode: request.mode,
           workspace: request.workspace,
           instructionPreview: truncateText(request.instruction, 240),
-          selectedSkillsCount: normalizeSelectedSkills(request.selectedSkills).length,
+          fileMentionsCount: splitMentions(normalizeMentions(request.mentions)).fileMentions.length,
+          skillMentionsCount: splitMentions(normalizeMentions(request.mentions)).skillMentions.length,
           startInNewThread: request.startInNewThread === true,
           expertId: request.expertId || undefined,
         });
@@ -903,10 +1092,22 @@ user-invocable: true
 
         const sandbox = new WorkspaceSandbox(request.workspace);
         await sandbox.validatePath(request.workspace);
+        const normalizedMentions = normalizeMentions(request.mentions);
+        const mentionValidation = await validateMentionsForWorkspaceAndSkills(
+          request.workspace,
+          normalizedMentions,
+          this.skillLoader
+        );
+        if (!mentionValidation.ok) {
+          return {
+            success: false,
+            error: mentionValidation.error,
+          };
+        }
         const expert = request.expertId ? this.expertManager.get(request.expertId) : undefined;
         const effective = buildInstructionWithSelections({
           instruction: request.instruction,
-          selectedSkills: request.selectedSkills,
+          mentions: mentionValidation.mentions,
           legacySkill: request.skill,
           expert,
         });
@@ -914,7 +1115,8 @@ user-invocable: true
         appendAgentLog('task', 'debug', 'executeTask 指令构建', {
           expertId: request.expertId || undefined,
           expertApplied: effective.expertApplied,
-          selectedSkillsCount: normalizeSelectedSkills(request.selectedSkills).length,
+          fileMentionsCount: splitMentions(mentionValidation.mentions).fileMentions.length,
+          skillMentionsCount: splitMentions(mentionValidation.mentions).skillMentions.length,
           instructionPreview: truncateText(effectiveInstruction, 240),
         });
 
@@ -1034,12 +1236,22 @@ user-invocable: true
           return;
         }
 
+        const normalizedMentions = normalizeMentions(normalizedRequest.mentions);
+        const mentionValidation = await validateMentionsForWorkspaceAndSkills(
+          normalizedRequest.workspace,
+          normalizedMentions,
+          this.skillLoader
+        );
+        if (!mentionValidation.ok) {
+          throw new Error(mentionValidation.error);
+        }
+
         const expert = normalizedRequest.expertId
           ? this.expertManager.get(normalizedRequest.expertId)
           : undefined;
         const effective = buildInstructionWithSelections({
           instruction: normalizedRequest.instruction,
-          selectedSkills: normalizedRequest.selectedSkills,
+          mentions: mentionValidation.mentions,
           legacySkill: normalizedRequest.skill,
           expert,
         });
@@ -1065,7 +1277,8 @@ user-invocable: true
           provider: modelConfig.provider || '',
           instructionPreview: truncateText(normalizedRequest.instruction, 240),
           startInNewThread: normalizedRequest.startInNewThread === true,
-          selectedSkillsCount: normalizeSelectedSkills(normalizedRequest.selectedSkills).length,
+          fileMentionsCount: splitMentions(mentionValidation.mentions).fileMentions.length,
+          skillMentionsCount: splitMentions(mentionValidation.mentions).skillMentions.length,
           expertId: normalizedRequest.expertId || undefined,
           expertApplied: effective.expertApplied,
           effectiveInstructionPreview: truncateText(effectiveInstruction, 240),

@@ -32,7 +32,10 @@ export interface QueuedCommand {
   startInNewThread?: boolean;
   expertId?: string;
   skill?: string;
-  selectedSkills?: Array<{ name: string; args?: string }>;
+  mentions?: Array<
+    | { type: 'file'; path: string; label?: string }
+    | { type: 'skill'; name: string; args?: string; label?: string }
+  >;
   /** 若设置，队列执行完成后由 TaskAPI 向已注册的 channel 完成回调广播（见 addChannelQueuedCompleteHandler） */
   channelReply?: ChannelQueueReply;
 }
