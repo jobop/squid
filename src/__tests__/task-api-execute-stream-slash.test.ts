@@ -54,4 +54,87 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     expect(executeStreamSpy).not.toHaveBeenCalled();
     expect(chunks.join('')).toContain('长期记忆');
   });
+
+  it('selectedSkills 存在时应构造显式技能前缀并传给 executor', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '帮我检查这个仓库',
+        selectedSkills: [{ name: 'github' }, { name: 'list-skills', args: 'verbose' }],
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+    expect(req.instruction).toContain('## User Selected Skills');
+    expect(req.instruction).toContain('- github');
+    expect(req.instruction).toContain('- list-skills (args: verbose)');
+    expect(req.instruction).toContain('## User Instruction');
+    expect(req.instruction).toContain('帮我检查这个仓库');
+  });
+
+  it('expertId 有效时应注入专家前缀并传给 executor', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '帮我优化一个页面',
+        expertId: 'software-engineer',
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+    expect(req.instruction).toContain('## User Selected Expert');
+    expect(req.instruction).toContain('- name: 软件工程师');
+    expect(req.instruction).toContain('- role: 全栈开发专家');
+    expect(req.instruction).toContain('## User Instruction');
+    expect(req.instruction).toContain('帮我优化一个页面');
+  });
+
+  it('expertId 无效时不应注入专家前缀', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '帮我优化一个页面',
+        expertId: 'expert-not-exists',
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+    expect(req.instruction).not.toContain('## User Selected Expert');
+    expect(req.instruction).toBe('帮我优化一个页面');
+  });
+
+  it('expertId 与 selectedSkills 同时存在时，专家前缀应在技能前缀之前', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '检查当前项目',
+        expertId: 'software-engineer',
+        selectedSkills: [{ name: 'github' }],
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { instruction: string };
+    const expertIdx = req.instruction.indexOf('## User Selected Expert');
+    const skillsIdx = req.instruction.indexOf('## User Selected Skills');
+    expect(expertIdx).toBeGreaterThanOrEqual(0);
+    expect(skillsIdx).toBeGreaterThan(expertIdx);
+    expect(req.instruction).toContain('- github');
+    expect(req.instruction).toContain('## User Instruction');
+  });
 });

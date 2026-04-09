@@ -242,6 +242,67 @@
     .input-main::placeholder {
       color: #999;
     }
+    .mention-skill-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .mention-skill-token {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #dbeafe;
+      color: #1e40af;
+      background: #eff6ff;
+      line-height: 1.6;
+    }
+    .mention-skill-token button {
+      border: none;
+      background: transparent;
+      color: #1e40af;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      line-height: 1;
+    }
+    .mention-skill-panel {
+      margin-top: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #ffffff;
+      max-height: 220px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      display: none;
+    }
+    .mention-skill-panel.open {
+      display: block;
+    }
+    .mention-skill-item {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f3f4f6;
+      cursor: pointer;
+    }
+    .mention-skill-item:last-child {
+      border-bottom: none;
+    }
+    .mention-skill-item.active {
+      background: #f3f4f6;
+    }
+    .mention-skill-name {
+      font-size: 13px;
+      color: #111827;
+      font-weight: 600;
+    }
+    .mention-skill-desc {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
     .input-toolbar {
       display: flex;
       align-items: center;
@@ -1190,18 +1251,6 @@
             </div>
           </div>
 
-          <div class="custom-select" id="skillSelect">
-            <div class="custom-select-trigger">
-              <span id="skillSelectText">选择技能</span>
-              <i data-lucide="chevron-down" class="custom-select-arrow"></i>
-            </div>
-            <div class="custom-select-dropdown" id="skillDropdown">
-              <div class="custom-select-option" data-value="" onclick="selectSkill('')">
-                <span>无 - 通用模式</span>
-                <i data-lucide="check" class="custom-select-option-check"></i>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1220,9 +1269,11 @@
           <textarea
             id="instruction"
             class="input-main"
-            placeholder="Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, $ for skills"
+            placeholder="Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, % for skills"
             rows="1"
           ></textarea>
+          <div id="mentionSkillTokens" class="mention-skill-tokens"></div>
+          <div id="mentionSkillPanel" class="mention-skill-panel"></div>
 
           <div class="input-toolbar">
             <div class="input-options">
@@ -1683,28 +1734,22 @@
     const skillhubActionLocks = new Set();
     let experts = [];
     let selectedExpert = '';
-    let selectedSkill = '';
+    let selectedMentionSkills = [];
+    let mentionSkillSuggestions = [];
+    let mentionPanelOpen = false;
+    let mentionActiveIndex = 0;
+    let skillsLoadingPromise = null;
+    let skillsLoadedAt = 0;
 
     function initCustomSelects() {
       // Toggle dropdown
       const expertSelect = document.getElementById('expertSelect');
-      const skillSelect = document.getElementById('skillSelect');
 
       if (expertSelect) {
         expertSelect.addEventListener('click', function(e) {
           if (e.target.closest('.custom-select-option')) return;
           e.stopPropagation();
           this.classList.toggle('open');
-          if (skillSelect) skillSelect.classList.remove('open');
-        });
-      }
-
-      if (skillSelect) {
-        skillSelect.addEventListener('click', function(e) {
-          if (e.target.closest('.custom-select-option')) return;
-          e.stopPropagation();
-          this.classList.toggle('open');
-          if (expertSelect) expertSelect.classList.remove('open');
         });
       }
 
@@ -1730,31 +1775,153 @@
       lucide.createIcons();
     }
 
-    function selectSkill(value) {
-      selectedSkill = value;
-      const text = value ? skills.find(s => s.name === value)?.name || '选择技能' : '选择技能';
-      document.getElementById('skillSelectText').textContent = text;
+    function normalizeSkillName(value) {
+      return String(value || '').trim().toLowerCase();
+    }
 
-      // Update selected state
-      document.querySelectorAll('#skillDropdown .custom-select-option').forEach(opt => {
-        opt.classList.toggle('selected', opt.dataset.value === value);
-      });
+    function parseMentionQuery(text, cursorIndex) {
+      const upToCursor = text.slice(0, cursorIndex);
+      const idx = upToCursor.lastIndexOf('%');
+      if (idx < 0) return null;
+      if (idx > 0) {
+        const prev = upToCursor[idx - 1];
+        if (prev && !/\s/.test(prev)) return null;
+      }
+      const raw = upToCursor.slice(idx + 1);
+      if (/\s/.test(raw)) return null;
+      return { start: idx, query: raw };
+    }
 
-      document.getElementById('skillSelect').classList.remove('open');
-      lucide.createIcons();
+    function getMentionCandidates(query) {
+      const q = normalizeSkillName(query);
+      const all = (skills || []).filter((s) => s && typeof s.name === 'string');
+      if (!q) return all.slice(0, 20);
+      return all.filter((s) => {
+        const n = normalizeSkillName(s.name);
+        const d = normalizeSkillName(s.description || '');
+        return n.includes(q) || d.includes(q);
+      }).slice(0, 20);
+    }
+
+    function closeMentionSkillPanel() {
+      mentionPanelOpen = false;
+      mentionActiveIndex = 0;
+      mentionSkillSuggestions = [];
+      const panel = document.getElementById('mentionSkillPanel');
+      if (panel) {
+        panel.classList.remove('open');
+        panel.innerHTML = '';
+      }
+    }
+
+    function renderMentionSkillPanel() {
+      const panel = document.getElementById('mentionSkillPanel');
+      if (!panel) return;
+      if (!mentionPanelOpen || mentionSkillSuggestions.length === 0) {
+        panel.classList.remove('open');
+        panel.innerHTML = '';
+        return;
+      }
+      panel.classList.add('open');
+      panel.innerHTML = mentionSkillSuggestions.map((skill, idx) => `
+        <div class="mention-skill-item ${idx === mentionActiveIndex ? 'active' : ''}" data-idx="${idx}" onclick="chooseMentionSkillByIndex(${idx})">
+          <div class="mention-skill-name">%${escapeHtml(skill.name)}</div>
+          <div class="mention-skill-desc">${escapeHtml(skill.description || '')}</div>
+        </div>
+      `).join('');
+      const active = panel.querySelector('.mention-skill-item.active');
+      if (active && typeof active.scrollIntoView === 'function') {
+        active.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function renderMentionSkillTokens() {
+      const el = document.getElementById('mentionSkillTokens');
+      if (!el) return;
+      if (!selectedMentionSkills.length) {
+        el.innerHTML = '';
+        return;
+      }
+      el.innerHTML = selectedMentionSkills.map((s) => `
+        <span class="mention-skill-token">
+          %${escapeHtml(s.name)}
+          <button type="button" title="移除" onclick="removeMentionSkill('${encodeURIComponent(s.name)}')">x</button>
+        </span>
+      `).join('');
+    }
+
+    function addMentionSkill(skill) {
+      const name = String(skill?.name || '').trim();
+      if (!name) return;
+      const lower = normalizeSkillName(name);
+      if (!selectedMentionSkills.some((s) => normalizeSkillName(s.name) === lower)) {
+        selectedMentionSkills.push({ name });
+      }
+      renderMentionSkillTokens();
+    }
+
+    function removeMentionSkill(encodedName) {
+      const name = decodeURIComponent(encodedName || '');
+      const lower = normalizeSkillName(name);
+      selectedMentionSkills = selectedMentionSkills.filter((s) => normalizeSkillName(s.name) !== lower);
+      renderMentionSkillTokens();
+    }
+
+    function chooseMentionSkillByIndex(idx) {
+      const skill = mentionSkillSuggestions[idx];
+      if (!skill) return;
+      const input = document.getElementById('instruction');
+      if (!input) return;
+      const cursor = input.selectionStart || 0;
+      const parsed = parseMentionQuery(input.value || '', cursor);
+      if (!parsed) return;
+      const before = input.value.slice(0, parsed.start);
+      const after = input.value.slice(cursor);
+      const insertText = `%${skill.name} `;
+      input.value = `${before}${insertText}${after}`;
+      const nextPos = before.length + insertText.length;
+      input.setSelectionRange(nextPos, nextPos);
+      addMentionSkill(skill);
+      closeMentionSkillPanel();
+      input.focus();
+    }
+
+    function collectMentionSkillsFromInstruction(instruction) {
+      const result = [];
+      const seen = new Set();
+      const re = /(^|\s)%([a-zA-Z0-9._-]+)/g;
+      let m;
+      while ((m = re.exec(instruction || '')) !== null) {
+        const raw = m[2];
+        const matched = skills.find((s) => normalizeSkillName(s.name) === normalizeSkillName(raw));
+        if (!matched) continue;
+        const k = normalizeSkillName(matched.name);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        result.push({ name: matched.name });
+      }
+      return result;
     }
 
     // Load skills on page load
-    async function loadSkills() {
+    async function loadSkills(force = false) {
+      if (!force && skillsLoadingPromise) {
+        return skillsLoadingPromise;
+      }
+      skillsLoadingPromise = (async () => {
       try {
         const response = await fetch('http://localhost:50001/api/skills');
         if (response.ok) {
           skills = await response.json();
-          renderSkillSelector();
+          skillsLoadedAt = Date.now();
         }
       } catch (error) {
         console.error('Failed to load skills:', error);
+      } finally {
+        skillsLoadingPromise = null;
       }
+      })();
+      return skillsLoadingPromise;
     }
 
     async function loadTencentSkillHubSkills() {
@@ -2041,32 +2208,6 @@
       }
     }
 
-    // Render skill selector
-    function renderSkillSelector() {
-      const dropdown = document.getElementById('skillDropdown');
-
-      dropdown.innerHTML = `
-        <div class="custom-select-option ${selectedSkill === '' ? 'selected' : ''}" data-value="" onclick="selectSkill('')">
-          <span>无 - 通用模式</span>
-          <i data-lucide="check" class="custom-select-option-check"></i>
-        </div>
-      `;
-
-      skills.forEach(skill => {
-        const option = document.createElement('div');
-        option.className = `custom-select-option ${selectedSkill === skill.name ? 'selected' : ''}`;
-        option.dataset.value = skill.name;
-        option.onclick = () => selectSkill(skill.name);
-        option.innerHTML = `
-          <span>${escapeHtml(skill.name)}</span>
-          <i data-lucide="check" class="custom-select-option-check"></i>
-        `;
-        dropdown.appendChild(option);
-      });
-
-      lucide.createIcons();
-    }
-
     // Load experts on page load
     async function loadExperts() {
       try {
@@ -2153,13 +2294,59 @@
       // 添加回车发送功能
       const instructionInput = document.getElementById('instruction');
       if (instructionInput) {
+        instructionInput.addEventListener('input', async () => {
+          const cursor = instructionInput.selectionStart || 0;
+          const parsed = parseMentionQuery(instructionInput.value || '', cursor);
+          if (!parsed) {
+            closeMentionSkillPanel();
+            return;
+          }
+          // 输入 `%` 触发时尽量拿最新技能，避免“刚安装但候选没刷新”。
+          if (skills.length === 0 || Date.now() - skillsLoadedAt > 10000) {
+            await loadSkills(true);
+          }
+          mentionSkillSuggestions = getMentionCandidates(parsed.query);
+          mentionActiveIndex = 0;
+          mentionPanelOpen = mentionSkillSuggestions.length > 0;
+          renderMentionSkillPanel();
+        });
         instructionInput.addEventListener('keydown', (e) => {
+          if (mentionPanelOpen && mentionSkillSuggestions.length > 0) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              mentionActiveIndex = (mentionActiveIndex + 1) % mentionSkillSuggestions.length;
+              renderMentionSkillPanel();
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              mentionActiveIndex =
+                (mentionActiveIndex - 1 + mentionSkillSuggestions.length) % mentionSkillSuggestions.length;
+              renderMentionSkillPanel();
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              chooseMentionSkillByIndex(mentionActiveIndex);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              closeMentionSkillPanel();
+              return;
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             runTask();
           }
         });
       }
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#instruction') && !e.target.closest('#mentionSkillPanel')) {
+          closeMentionSkillPanel();
+        }
+      });
 
       // 绑定 API 提供商选择器
       const apiProvider = document.getElementById('apiProvider');
@@ -3444,8 +3631,16 @@
       const mode = document.getElementById('mode').value;
       const workspace = document.getElementById('workspace').value;
       const instruction = document.getElementById('instruction').value;
-      const skill = selectedSkill;
       const expertId = selectedExpert;
+      const mentionSkills = collectMentionSkillsFromInstruction(instruction);
+      const selectedSkillsMap = new Map();
+      selectedMentionSkills.forEach((s) => {
+        if (s?.name) selectedSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
+      });
+      mentionSkills.forEach((s) => {
+        if (s?.name) selectedSkillsMap.set(normalizeSkillName(s.name), { name: s.name, args: s.args });
+      });
+      const selectedSkills = Array.from(selectedSkillsMap.values());
 
       if (!instruction.trim()) {
         alert('请输入任务指令');
@@ -3454,12 +3649,18 @@
 
       if (/^\/reset\b/i.test(instruction.trim())) {
         document.getElementById('instruction').value = '';
+        selectedMentionSkills = [];
+        renderMentionSkillTokens();
+        closeMentionSkillPanel();
         await performSlashReset();
         return;
       }
 
       if (/^\/new\b/i.test(instruction.trim())) {
         document.getElementById('instruction').value = '';
+        selectedMentionSkills = [];
+        renderMentionSkillTokens();
+        closeMentionSkillPanel();
         await performSlashNew();
         return;
       }
@@ -3478,6 +3679,9 @@
 
       // 清空输入框
       document.getElementById('instruction').value = '';
+      selectedMentionSkills = [];
+      renderMentionSkillTokens();
+      closeMentionSkillPanel();
 
       // 禁用按钮
       runBtn.disabled = true;
@@ -3499,7 +3703,7 @@
             mode: mode,
             workspace: workspace,
             instruction: instruction,
-            skill: skill || undefined,
+            selectedSkills: selectedSkills.length > 0 ? selectedSkills : undefined,
             expertId: expertId || undefined,
             conversationId: currentThreadId || undefined
           })

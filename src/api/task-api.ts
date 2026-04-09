@@ -5,6 +5,7 @@ import { WorkspaceSandbox } from '../workspace/sandbox';
 import { SkillLoader } from '../skills/loader';
 import { ToolRegistry } from '../tools/registry';
 import { ExpertManager } from '../experts/manager';
+import type { Expert } from '../experts/types';
 import { ConversationManager } from '../conversation/manager';
 import type { Message as ConversationMessage } from '../conversation/manager';
 import { MemoryManager } from '../memory/manager';
@@ -55,6 +56,11 @@ export {
   isTaskAPIConversationBusyError,
 } from './task-api-channel-errors';
 
+export interface SelectedSkillInput {
+  name: string;
+  args?: string;
+}
+
 export interface TaskRequest {
   mode: TaskMode;
   workspace: string;
@@ -63,6 +69,7 @@ export interface TaskRequest {
   baseURL?: string;
   modelName?: string;
   skill?: string;
+  selectedSkills?: SelectedSkillInput[];
   expertId?: string;
   conversationId?: string;
 }
@@ -96,6 +103,113 @@ export interface ThreadListItem {
   updatedAt: string;
   messageCount: number;
   workspace?: string;
+}
+
+function normalizeSelectedSkills(input: unknown): SelectedSkillInput[] {
+  if (!Array.isArray(input)) return [];
+  const out: SelectedSkillInput[] = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const nameRaw = (item as Record<string, unknown>).name;
+    const argsRaw = (item as Record<string, unknown>).args;
+    if (typeof nameRaw !== 'string') continue;
+    const name = nameRaw.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const normalized: SelectedSkillInput = { name };
+    if (typeof argsRaw === 'string' && argsRaw.trim()) {
+      normalized.args = argsRaw.trim();
+    }
+    out.push(normalized);
+  }
+  return out;
+}
+
+function buildInstructionWithSelectedSkills(
+  instruction: string,
+  selectedSkills?: unknown,
+  legacySkill?: string
+): string {
+  const picked = normalizeSelectedSkills(selectedSkills);
+  const merged: SelectedSkillInput[] = [...picked];
+  const seen = new Set(picked.map((s) => s.name.toLowerCase()));
+  if (typeof legacySkill === 'string' && legacySkill.trim()) {
+    const n = legacySkill.trim();
+    const k = n.toLowerCase();
+    if (!seen.has(k)) {
+      merged.unshift({ name: n });
+      seen.add(k);
+    }
+  }
+  if (merged.length === 0) return instruction;
+
+  const lines = merged.map((s) =>
+    s.args ? `- ${s.name} (args: ${s.args})` : `- ${s.name}`
+  );
+  return [
+    '## User Selected Skills',
+    'User explicitly selected these skills. Prioritize these over implicit guessing.',
+    ...lines,
+    '',
+    '## User Instruction',
+    instruction,
+  ].join('\n');
+}
+
+interface EffectiveInstructionBuildResult {
+  instruction: string;
+  expertApplied: boolean;
+}
+
+function buildInstructionWithSelections(params: {
+  instruction: string;
+  selectedSkills?: unknown;
+  legacySkill?: string;
+  expert?: Expert;
+}): EffectiveInstructionBuildResult {
+  const instructionWithSkills = buildInstructionWithSelectedSkills(
+    params.instruction,
+    params.selectedSkills,
+    params.legacySkill
+  );
+  if (!params.expert) {
+    return {
+      instruction: instructionWithSkills,
+      expertApplied: false,
+    };
+  }
+
+  const expertLines = [
+    `- name: ${params.expert.name}`,
+    `- role: ${params.expert.role}`,
+  ];
+  if (Array.isArray(params.expert.expertise) && params.expert.expertise.length > 0) {
+    expertLines.push(`- expertise: ${params.expert.expertise.join(', ')}`);
+  }
+  if (params.expert.promptTemplate?.trim()) {
+    expertLines.push(`- instruction: ${params.expert.promptTemplate.trim()}`);
+  }
+
+  const instructionBody = instructionWithSkills.includes('## User Instruction')
+    ? instructionWithSkills
+    : ['## User Instruction', params.instruction].join('\n');
+
+  const finalInstruction = [
+    '## User Selected Expert',
+    'User explicitly selected this expert. Apply this expert perspective as a high-priority instruction.',
+    'If there is a direct conflict, follow the user instruction.',
+    ...expertLines,
+    '',
+    instructionBody,
+  ].join('\n');
+
+  return {
+    instruction: finalInstruction,
+    expertApplied: true,
+  };
 }
 
 export class TaskAPI {
@@ -277,6 +391,7 @@ export class TaskAPI {
       workspace: request.workspace,
       expertId: request.expertId,
       skill: request.skill,
+      selectedSkills: normalizeSelectedSkills(request.selectedSkills),
       source: meta.source,
       taskId: meta.taskId,
       isMeta: meta.isMeta,
@@ -324,6 +439,7 @@ export class TaskAPI {
           conversationId: cmd.conversationId,
           expertId: cmd.expertId,
           skill: cmd.skill,
+          selectedSkills: cmd.selectedSkills,
         },
         (chunk) => {
           streamedAssistant += chunk;
@@ -748,6 +864,8 @@ user-invocable: true
           mode: request.mode,
           workspace: request.workspace,
           instructionPreview: truncateText(request.instruction, 240),
+          selectedSkillsCount: normalizeSelectedSkills(request.selectedSkills).length,
+          expertId: request.expertId || undefined,
         });
 
         const taskId = Date.now().toString();
@@ -764,12 +882,26 @@ user-invocable: true
 
         const sandbox = new WorkspaceSandbox(request.workspace);
         await sandbox.validatePath(request.workspace);
+        const expert = request.expertId ? this.expertManager.get(request.expertId) : undefined;
+        const effective = buildInstructionWithSelections({
+          instruction: request.instruction,
+          selectedSkills: request.selectedSkills,
+          legacySkill: request.skill,
+          expert,
+        });
+        const effectiveInstruction = effective.instruction;
+        appendAgentLog('task', 'debug', 'executeTask 指令构建', {
+          expertId: request.expertId || undefined,
+          expertApplied: effective.expertApplied,
+          selectedSkillsCount: normalizeSelectedSkills(request.selectedSkills).length,
+          instructionPreview: truncateText(effectiveInstruction, 240),
+        });
 
         const planConversationId =
           cid === '__squid_default_conversation__' ? undefined : cid;
         const result = await this.executor.execute({
           mode: request.mode,
-          instruction: request.instruction,
+          instruction: effectiveInstruction,
           workspace: request.workspace,
           conversationId: planConversationId,
         });
@@ -875,6 +1007,16 @@ user-invocable: true
           return;
         }
 
+        const expert = normalizedRequest.expertId
+          ? this.expertManager.get(normalizedRequest.expertId)
+          : undefined;
+        const effective = buildInstructionWithSelections({
+          instruction: normalizedRequest.instruction,
+          selectedSkills: normalizedRequest.selectedSkills,
+          legacySkill: normalizedRequest.skill,
+          expert,
+        });
+        const effectiveInstruction = effective.instruction;
         const modelConfig = await this.getModelConfig();
         const apiKey = (modelConfig.apiKey || '').trim();
         const baseURL = normalizedRequest.baseURL || modelConfig.apiEndpoint;
@@ -895,6 +1037,10 @@ user-invocable: true
           mode: normalizedRequest.mode,
           provider: modelConfig.provider || '',
           instructionPreview: truncateText(normalizedRequest.instruction, 240),
+          selectedSkillsCount: normalizeSelectedSkills(normalizedRequest.selectedSkills).length,
+          expertId: normalizedRequest.expertId || undefined,
+          expertApplied: effective.expertApplied,
+          effectiveInstructionPreview: truncateText(effectiveInstruction, 240),
         });
 
         if (apiKey) {
@@ -931,7 +1077,7 @@ user-invocable: true
         await this.executor.executeStream(
           {
             mode: normalizedRequest.mode,
-            instruction: normalizedRequest.instruction,
+            instruction: effectiveInstruction,
             workspace: normalizedRequest.workspace,
             conversationHistory,
             conversationId: executorConversationId,
