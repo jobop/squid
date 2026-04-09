@@ -1,6 +1,6 @@
 // Task executor
 import { randomUUID } from 'node:crypto';
-import { TaskMode } from './types';
+import { type ImageAttachment, TaskMode } from './types';
 import { SkillLoader } from '../skills/loader';
 import { ToolRegistry } from '../tools/registry';
 import type { Message } from '../conversation/manager';
@@ -40,6 +40,7 @@ export interface ExecuteRequest {
   instruction: string;
   workspace: string;
   conversationHistory?: Message[];
+  attachments?: ImageAttachment[];
   /** 用于 Plan 模式计划文件路径：`.squid/plan-<id>.md` */
   conversationId?: string;
 }
@@ -58,6 +59,20 @@ interface ModelConfig {
   apiProtocol?: string;
   temperature?: number;
   maxTokens?: number;
+}
+
+function buildOpenAIUserContent(instruction: string, attachments: ImageAttachment[]): string | Array<Record<string, unknown>> {
+  if (!attachments.length) return instruction;
+  const blocks: Array<Record<string, unknown>> = [{ type: 'text', text: instruction }];
+  for (const item of attachments) {
+    blocks.push({
+      type: 'image_url',
+      image_url: {
+        url: item.dataUrl,
+      },
+    });
+  }
+  return blocks;
 }
 
 export class TaskExecutor {
@@ -187,6 +202,7 @@ export class TaskExecutor {
     workspace: string,
     history: Message[] | undefined,
     mode: TaskMode,
+    attachments: ImageAttachment[] = [],
     conversationId?: string
   ) {
     // 加载记忆并注入到 system prompt
@@ -238,7 +254,7 @@ export class TaskExecutor {
       systemContent += getPlanModeSystemAppendix(workspace, conversationId);
     }
 
-    const messages: Array<{ role: string; content: string }> = [
+    const messages: Array<{ role: string; content: unknown }> = [
       {
         role: 'system',
         content: systemContent
@@ -260,7 +276,7 @@ export class TaskExecutor {
 
     messages.push({
       role: 'user',
-      content: instruction,
+      content: buildOpenAIUserContent(instruction, attachments),
     });
 
     return messages;
@@ -272,6 +288,7 @@ export class TaskExecutor {
     workspace: string,
     history: Message[] | undefined,
     mode: TaskMode,
+    attachments: ImageAttachment[] = [],
     conversationId?: string
   ): Promise<string> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
@@ -280,6 +297,7 @@ export class TaskExecutor {
       workspace,
       history,
       mode,
+      attachments,
       conversationId
     );
 
@@ -351,7 +369,7 @@ export class TaskExecutor {
 
       const batches = this.buildToolExecutionBatches(toolMetas, workspace);
 
-      const runOne = async (m: (typeof toolMetas)[0]) => {
+      const runOne = async (m: ToolCallPartitionItem) => {
         const toolResult = await this.executeToolAndFormatResult({
           toolName: m.toolName,
           rawArguments: m.rawArguments,
@@ -360,7 +378,7 @@ export class TaskExecutor {
           conversationId,
         });
         return {
-          tool_call_id: m.toolCallId!,
+          tool_call_id: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           content: toolResult.content,
         };
       };
@@ -386,6 +404,7 @@ export class TaskExecutor {
     workspace: string,
     onChunk: (chunk: string) => void,
     mode: TaskMode,
+    attachments: ImageAttachment[] = [],
     conversationId?: string
   ): Promise<void> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
@@ -394,6 +413,7 @@ export class TaskExecutor {
       workspace,
       history,
       mode,
+      attachments,
       conversationId
     );
     const messages: Array<Record<string, any>> = [...initialMessages];
@@ -553,7 +573,7 @@ export class TaskExecutor {
 
       const streamBatches = this.buildToolExecutionBatches(streamMetas, workspace);
 
-      const runStreamOne = async (m: (typeof streamMetas)[0]) => {
+      const runStreamOne = async (m: ToolCallPartitionItem) => {
         console.log('Tool call arguments:', m.rawArguments);
         const filePath = filePathFromRawToolArgs(m.rawArguments);
         appendAgentLog('executor', 'info', `工具调用: ${m.toolName}`, {
@@ -585,7 +605,7 @@ export class TaskExecutor {
         }
 
         return {
-          tool_call_id: m.toolCallId!,
+          tool_call_id: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           content: toolResult.content,
         };
       };
@@ -778,9 +798,13 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           request.workspace,
           request.conversationHistory,
           request.mode,
+          request.attachments || [],
           request.conversationId
         );
       } else if (config.provider === 'anthropic') {
+        if ((request.attachments || []).length > 0) {
+          throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
+        }
         response = await this.callAnthropicAPI(
           config,
           request.instruction,
@@ -792,6 +816,9 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
       } else if (config.provider === 'custom') {
         // 自定义端点，根据协议类型选择
         if (config.apiProtocol === 'anthropic') {
+          if ((request.attachments || []).length > 0) {
+            throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
+          }
           response = await this.callAnthropicAPI(
             config,
             request.instruction,
@@ -808,6 +835,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
             request.workspace,
             request.conversationHistory,
             request.mode,
+            request.attachments || [],
             request.conversationId
           );
         }
@@ -894,9 +922,13 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
           request.workspace,
           onChunk,
           request.mode,
+          request.attachments || [],
           request.conversationId
         );
       } else if (config.provider === 'anthropic') {
+        if ((request.attachments || []).length > 0) {
+          throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
+        }
         // Anthropic 使用非流式但支持工具调用
         const response = await this.callAnthropicAPI(
           config,
@@ -910,6 +942,9 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
       } else if (config.provider === 'custom') {
         // 自定义端点，根据协议类型选择
         if (config.apiProtocol === 'anthropic') {
+          if ((request.attachments || []).length > 0) {
+            throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
+          }
           const response = await this.callAnthropicAPI(
             config,
             request.instruction,
@@ -928,6 +963,7 @@ read_file / write_file / file_edit 的 file_path 须为相对该目录的路径�
             request.workspace,
             onChunk,
             request.mode,
+            request.attachments || [],
             request.conversationId
           );
         }

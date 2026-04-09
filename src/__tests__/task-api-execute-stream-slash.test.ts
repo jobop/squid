@@ -168,6 +168,83 @@ describe('TaskAPI.executeTaskStream slash commands', () => {
     }
   });
 
+  it('粘贴图片 attachments 应传递给 executor', async () => {
+    const chunks: string[] = [];
+    await api.executeTaskStream(
+      {
+        mode: 'ask',
+        workspace: process.cwd(),
+        instruction: '请描述这张图',
+        attachments: [
+          {
+            type: 'image',
+            mimeType: 'image/png',
+            dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAJUb9JkAAAAASUVORK5CYII=',
+            source: 'paste',
+            name: 'clipboard.png',
+          },
+        ],
+      },
+      (c) => chunks.push(c)
+    );
+
+    expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+    const req = executeStreamSpy.mock.calls[0]?.[0] as { attachments?: Array<{ source?: string; mimeType?: string }> };
+    expect(Array.isArray(req.attachments)).toBe(true);
+    expect(req.attachments?.length).toBe(1);
+    expect(req.attachments?.[0]?.mimeType).toBe('image/png');
+    expect(req.attachments?.[0]?.source).toBe('paste');
+  });
+
+  it('mentions 中的图片文件应自动转为 image attachment', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'squid-mention-image-'));
+    try {
+      await mkdir(join(ws, 'assets'), { recursive: true });
+      await writeFile(
+        join(ws, 'assets', 'icon.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
+      );
+      await api.executeTaskStream(
+        {
+          mode: 'ask',
+          workspace: ws,
+          instruction: '请结合图片分析',
+          mentions: [{ type: 'file', path: 'assets/icon.png' }],
+        },
+        () => {}
+      );
+
+      expect(executeStreamSpy).toHaveBeenCalledTimes(1);
+      const req = executeStreamSpy.mock.calls[0]?.[0] as { attachments?: Array<{ source?: string; path?: string }> };
+      expect(req.attachments?.length).toBe(1);
+      expect(req.attachments?.[0]?.source).toBe('mention');
+      expect(req.attachments?.[0]?.path).toBe('assets/icon.png');
+    } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('attachments dataUrl 非法时应报错且不调用 executor', async () => {
+    await expect(
+      api.executeTaskStream(
+        {
+          mode: 'ask',
+          workspace: process.cwd(),
+          instruction: '请分析图片',
+          attachments: [
+            {
+              type: 'image',
+              mimeType: 'image/png',
+              dataUrl: 'invalid-data-url',
+            },
+          ],
+        },
+        () => {}
+      )
+    ).rejects.toThrow(/dataUrl 格式非法/);
+    expect(executeStreamSpy).not.toHaveBeenCalled();
+  });
+
   it('mentions 文件无效时应报错且不调用 executor', async () => {
     const ws = await mkdtemp(join(tmpdir(), 'squid-mention-invalid-'));
     try {

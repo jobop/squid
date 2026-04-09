@@ -2,7 +2,7 @@
  * 按 conversationId 分桶的命令队列（与 claude-code-main 的「忙则入队、空闲 drain」对齐）
  */
 
-import type { TaskMode } from '../tasks/types';
+import type { ImageAttachment, TaskMode } from '../tasks/types';
 
 export type QueuePriority = 'now' | 'next' | 'later';
 
@@ -36,6 +36,7 @@ export interface QueuedCommand {
     | { type: 'file'; path: string; label?: string }
     | { type: 'skill'; name: string; args?: string; label?: string }
   >;
+  attachments?: ImageAttachment[];
   /** 若设置，队列执行完成后由 TaskAPI 向已注册的 channel 完成回调广播（见 addChannelQueuedCompleteHandler） */
   channelReply?: ChannelQueueReply;
 }

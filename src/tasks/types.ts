@@ -3,6 +3,15 @@ export interface Message {
   content: string;
 }
 
+export interface ImageAttachment {
+  type: 'image';
+  mimeType: string;
+  dataUrl: string;
+  source?: 'paste' | 'mention';
+  name?: string;
+  path?: string;
+}
+
 export type TaskMode = 'ask' | 'craft' | 'plan';
 
 export interface Task {

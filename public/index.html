@@ -296,6 +296,33 @@
       padding: 0;
       line-height: 1;
     }
+    .image-attachment-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .image-attachment-token {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      background: #fffbeb;
+      line-height: 1.6;
+    }
+    .image-attachment-token button {
+      border: none;
+      background: transparent;
+      color: #92400e;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      line-height: 1;
+    }
     .mention-skill-panel {
       margin-top: 8px;
       border: 1px solid #e5e7eb;
@@ -1301,6 +1328,7 @@
           ></textarea>
           <div id="mentionFileTokens" class="mention-file-tokens"></div>
           <div id="mentionSkillTokens" class="mention-skill-tokens"></div>
+          <div id="imageAttachmentTokens" class="image-attachment-tokens"></div>
           <div id="mentionSkillPanel" class="mention-skill-panel"></div>
 
           <div class="input-toolbar">
@@ -1764,6 +1792,7 @@
     let selectedExpert = '';
     let selectedMentionSkills = [];
     let selectedMentionFiles = [];
+    let selectedImageAttachments = [];
     let mentionSkillSuggestions = [];
     let mentionFileSuggestions = [];
     let mentionPanelType = null;
@@ -1773,6 +1802,19 @@
     let skillsLoadedAt = 0;
     let mentionSearchRequestSeq = 0;
     let startInNewThreadPending = false;
+    const IMAGE_MIME_BY_EXT = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      bmp: 'image/bmp',
+      tif: 'image/tiff',
+      tiff: 'image/tiff',
+      heic: 'image/heic',
+      heif: 'image/heif',
+      avif: 'image/avif',
+    };
 
     function initCustomSelects() {
       // Toggle dropdown
@@ -1814,6 +1856,67 @@
 
     function normalizeMentionFilePath(value) {
       return String(value || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+    }
+
+    function inferImageMimeFromPath(path) {
+      const m = /\.([a-z0-9]+)$/i.exec(String(path || '').trim());
+      if (!m) return null;
+      return IMAGE_MIME_BY_EXT[m[1].toLowerCase()] || null;
+    }
+
+    function buildImageAttachmentKey(item) {
+      if (item?.path) return `path:${item.path}`;
+      if (item?.name) return `name:${item.name}`;
+      if (item?.dataUrl) return `data:${item.dataUrl.slice(0, 64)}`;
+      return `id:${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function renderImageAttachmentTokens() {
+      const el = document.getElementById('imageAttachmentTokens');
+      if (!el) return;
+      if (!selectedImageAttachments.length) {
+        el.innerHTML = '';
+        return;
+      }
+      el.innerHTML = selectedImageAttachments.map((item) => `
+        <span class="image-attachment-token">
+          🖼 ${escapeHtml(item.name || item.path || 'image')}
+          <button type="button" title="移除" onclick="removeImageAttachmentByKey('${encodeURIComponent(item.key)}')">x</button>
+        </span>
+      `).join('');
+    }
+
+    function addImageAttachment(item) {
+      const dataUrl = typeof item?.dataUrl === 'string' ? item.dataUrl.trim() : '';
+      const mimeType = typeof item?.mimeType === 'string' ? item.mimeType.trim().toLowerCase() : '';
+      if (!dataUrl || !mimeType || !mimeType.startsWith('image/')) return;
+      const key = buildImageAttachmentKey(item);
+      if (selectedImageAttachments.some((x) => x.key === key || x.dataUrl === dataUrl)) return;
+      selectedImageAttachments.push({
+        key,
+        type: 'image',
+        mimeType,
+        dataUrl,
+        source: item.source === 'mention' ? 'mention' : 'paste',
+        name: item.name || undefined,
+        path: item.path || undefined,
+      });
+      renderImageAttachmentTokens();
+    }
+
+    function removeImageAttachmentByKey(encodedKey) {
+      const key = decodeURIComponent(encodedKey || '');
+      selectedImageAttachments = selectedImageAttachments.filter((item) => item.key !== key);
+      renderImageAttachmentTokens();
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
     }
 
     function parseMentionQueryByTrigger(text, cursorIndex, trigger) {
@@ -2510,6 +2613,39 @@
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             runTask();
+          }
+        });
+        instructionInput.addEventListener('paste', async (e) => {
+          try {
+            const clipboard = e.clipboardData;
+            if (!clipboard || !clipboard.items) return;
+            const items = Array.from(clipboard.items);
+            const imageItems = items.filter((item) => String(item.type || '').startsWith('image/'));
+            if (imageItems.length === 0) return;
+            const hasText = items.some((item) => item.kind === 'string' && String(item.type || '').includes('text'));
+            if (!hasText) {
+              e.preventDefault();
+            }
+            let addedCount = 0;
+            for (const item of imageItems) {
+              const file = item.getAsFile();
+              if (!file) continue;
+              const dataUrl = await readFileAsDataUrl(file);
+              if (!dataUrl || !String(file.type || '').startsWith('image/')) continue;
+              addImageAttachment({
+                type: 'image',
+                mimeType: file.type,
+                dataUrl,
+                source: 'paste',
+                name: file.name || 'clipboard-image',
+              });
+              addedCount += 1;
+            }
+            if (addedCount > 0) {
+              showNotification(`已添加 ${addedCount} 张图片`, 'success');
+            }
+          } catch (error) {
+            console.error('Failed to parse pasted image:', error);
           }
         });
       }
@@ -3833,6 +3969,14 @@
         if (p) mentionMap.set(`file:${p}`, { type: 'file', path: p, label: f?.label || p });
       });
       const mentions = Array.from(mentionMap.values());
+      const attachments = selectedImageAttachments.map((item) => ({
+        type: 'image',
+        mimeType: item.mimeType,
+        dataUrl: item.dataUrl,
+        source: item.source || 'paste',
+        name: item.name,
+        path: item.path,
+      }));
 
       if (!instruction.trim()) {
         alert('请输入任务指令');
@@ -3843,8 +3987,10 @@
         document.getElementById('instruction').value = '';
         selectedMentionSkills = [];
         selectedMentionFiles = [];
+        selectedImageAttachments = [];
         renderMentionSkillTokens();
         renderMentionFileTokens();
+        renderImageAttachmentTokens();
         closeMentionSkillPanel();
         await performSlashReset();
         return;
@@ -3854,8 +4000,10 @@
         document.getElementById('instruction').value = '';
         selectedMentionSkills = [];
         selectedMentionFiles = [];
+        selectedImageAttachments = [];
         renderMentionSkillTokens();
         renderMentionFileTokens();
+        renderImageAttachmentTokens();
         closeMentionSkillPanel();
         await performSlashNew();
         return;
@@ -3877,8 +4025,10 @@
       document.getElementById('instruction').value = '';
       selectedMentionSkills = [];
       selectedMentionFiles = [];
+      selectedImageAttachments = [];
       renderMentionSkillTokens();
       renderMentionFileTokens();
+      renderImageAttachmentTokens();
       closeMentionSkillPanel();
 
       // 禁用按钮
@@ -3905,6 +4055,7 @@
             instruction: instruction,
             startInNewThread: startInNewThread || undefined,
             mentions: mentions.length > 0 ? mentions : undefined,
+            attachments: attachments.length > 0 ? attachments : undefined,
             expertId: expertId || undefined,
             conversationId: currentThreadId || undefined
           })

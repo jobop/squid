@@ -1,6 +1,6 @@
 // Task execution API
 import { TaskExecutor } from '../tasks/executor';
-import { TaskMode } from '../tasks/types';
+import { type ImageAttachment, TaskMode } from '../tasks/types';
 import { WorkspaceSandbox } from '../workspace/sandbox';
 import { SkillLoader } from '../skills/loader';
 import { ToolRegistry } from '../tools/registry';
@@ -76,6 +76,16 @@ export interface SkillMentionInput {
 
 export type MentionInput = FileMentionInput | SkillMentionInput;
 
+export interface ImageAttachmentInput {
+  type?: 'image';
+  mimeType?: string;
+  dataUrl?: string;
+  base64?: string;
+  source?: 'paste' | 'mention';
+  name?: string;
+  path?: string;
+}
+
 export interface TaskRequest {
   mode: TaskMode;
   workspace: string;
@@ -85,6 +95,7 @@ export interface TaskRequest {
   modelName?: string;
   skill?: string;
   mentions?: MentionInput[];
+  attachments?: ImageAttachmentInput[];
   /** 一次性意图：当前请求即便无 conversationId，也应强制创建新线程 */
   startInNewThread?: boolean;
   expertId?: string;
@@ -124,6 +135,22 @@ export interface ThreadListItem {
 
 const DEFAULT_CONVERSATION_ID = '__squid_default_conversation__';
 const NEW_THREAD_PLACEHOLDER_PREFIX = '__squid_new_thread__:';
+const MAX_IMAGE_ATTACHMENTS = 6;
+const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGE_TOTAL_BYTES = 24 * 1024 * 1024;
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.tif': 'image/tiff',
+  '.tiff': 'image/tiff',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.avif': 'image/avif',
+};
 
 function buildNewThreadPlaceholderConversationId(): string {
   return `${NEW_THREAD_PLACEHOLDER_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -183,6 +210,175 @@ function normalizeMentions(input: unknown): MentionInput[] {
     if (out.length >= 20) break;
   }
   return out;
+}
+
+function estimateBase64Bytes(base64: string): number {
+  const sanitized = base64.replace(/\s+/g, '');
+  if (!sanitized) return 0;
+  const padding = sanitized.endsWith('==') ? 2 : sanitized.endsWith('=') ? 1 : 0;
+  return Math.floor((sanitized.length * 3) / 4) - padding;
+}
+
+function normalizeMimeType(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized.startsWith('image/')) return undefined;
+  return normalized;
+}
+
+function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } | null {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl.trim());
+  if (!match) return null;
+  const mimeType = normalizeMimeType(match[1]);
+  if (!mimeType) return null;
+  const base64 = match[2].replace(/\s+/g, '');
+  return { mimeType, base64 };
+}
+
+function buildImageDataUrl(mimeType: string, base64: string): string {
+  return `data:${mimeType};base64,${base64}`;
+}
+
+function normalizeImageAttachments(
+  input: unknown
+): { ok: true; attachments: ImageAttachment[] } | { ok: false; error: string } {
+  if (!Array.isArray(input) || input.length === 0) {
+    return { ok: true, attachments: [] };
+  }
+  if (input.length > MAX_IMAGE_ATTACHMENTS) {
+    return { ok: false, error: `图片数量超限，最多允许 ${MAX_IMAGE_ATTACHMENTS} 张` };
+  }
+  const attachments: ImageAttachment[] = [];
+  const seen = new Set<string>();
+  let totalBytes = 0;
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const type = record.type;
+    if (typeof type === 'string' && type !== 'image') continue;
+
+    let mimeType = normalizeMimeType(record.mimeType);
+    let base64 = '';
+    const rawDataUrl = typeof record.dataUrl === 'string' ? record.dataUrl : '';
+    if (rawDataUrl) {
+      const parsed = parseDataUrl(rawDataUrl);
+      if (!parsed) {
+        return { ok: false, error: '图片附件 dataUrl 格式非法，需为 data:image/*;base64,...' };
+      }
+      if (mimeType && mimeType !== parsed.mimeType) {
+        return { ok: false, error: '图片附件 mimeType 与 dataUrl 不一致' };
+      }
+      mimeType = parsed.mimeType;
+      base64 = parsed.base64;
+    } else if (typeof record.base64 === 'string' && record.base64.trim()) {
+      if (!mimeType) {
+        return { ok: false, error: '图片附件缺少 mimeType' };
+      }
+      base64 = record.base64.replace(/\s+/g, '');
+    } else {
+      return { ok: false, error: '图片附件缺少 dataUrl/base64 数据' };
+    }
+
+    if (!mimeType) {
+      return { ok: false, error: '图片附件 mimeType 非法' };
+    }
+    const bytes = estimateBase64Bytes(base64);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return { ok: false, error: '图片附件内容为空或无效' };
+    }
+    if (bytes > MAX_IMAGE_ATTACHMENT_BYTES) {
+      return {
+        ok: false,
+        error: `单张图片过大（${Math.round(bytes / 1024)}KB），请控制在 ${Math.round(MAX_IMAGE_ATTACHMENT_BYTES / 1024)}KB 以内`,
+      };
+    }
+    totalBytes += bytes;
+    if (totalBytes > MAX_IMAGE_TOTAL_BYTES) {
+      return {
+        ok: false,
+        error: `图片总大小超限，请控制在 ${Math.round(MAX_IMAGE_TOTAL_BYTES / 1024)}KB 以内`,
+      };
+    }
+    const dataUrl = buildImageDataUrl(mimeType, base64);
+    if (seen.has(dataUrl)) continue;
+    seen.add(dataUrl);
+    attachments.push({
+      type: 'image',
+      mimeType,
+      dataUrl,
+      source: record.source === 'mention' ? 'mention' : 'paste',
+      name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : undefined,
+      path: typeof record.path === 'string' && record.path.trim() ? normalizeFilePath(record.path) : undefined,
+    });
+    if (attachments.length > MAX_IMAGE_ATTACHMENTS) {
+      return { ok: false, error: `图片数量超限，最多允许 ${MAX_IMAGE_ATTACHMENTS} 张` };
+    }
+  }
+  return { ok: true, attachments };
+}
+
+function mergeImageAttachments(primary: ImageAttachment[], secondary: ImageAttachment[]): ImageAttachment[] {
+  if (primary.length === 0) return [...secondary];
+  if (secondary.length === 0) return [...primary];
+  const out: ImageAttachment[] = [];
+  const seen = new Set<string>();
+  for (const item of [...primary, ...secondary]) {
+    if (seen.has(item.dataUrl)) continue;
+    seen.add(item.dataUrl);
+    out.push(item);
+  }
+  return out;
+}
+
+async function resolveImageAttachmentsFromMentionedFiles(
+  workspace: string,
+  mentions: MentionInput[]
+): Promise<{ ok: true; attachments: ImageAttachment[] } | { ok: false; error: string }> {
+  const { fileMentions } = splitMentions(mentions);
+  if (fileMentions.length === 0) return { ok: true, attachments: [] };
+  const { resolve, extname, basename } = await import('path');
+  const { readFile, stat } = await import('fs/promises');
+  const workspaceAbs = resolve(workspace || process.cwd());
+  const attachments: ImageAttachment[] = [];
+  let totalBytes = 0;
+  for (const mention of fileMentions) {
+    const ext = extname(mention.path).toLowerCase();
+    const mimeType = IMAGE_MIME_BY_EXT[ext];
+    if (!mimeType) continue;
+    const absolutePath = resolve(workspaceAbs, mention.path);
+    try {
+      const fileStat = await stat(absolutePath);
+      if (!fileStat.isFile()) continue;
+      if (fileStat.size > MAX_IMAGE_ATTACHMENT_BYTES) {
+        return {
+          ok: false,
+          error: `图片文件过大: ${mention.path}（${Math.round(fileStat.size / 1024)}KB）`,
+        };
+      }
+      totalBytes += fileStat.size;
+      if (totalBytes > MAX_IMAGE_TOTAL_BYTES) {
+        return {
+          ok: false,
+          error: `图片总大小超限，请控制在 ${Math.round(MAX_IMAGE_TOTAL_BYTES / 1024)}KB 以内`,
+        };
+      }
+      const base64 = await readFile(absolutePath, 'base64');
+      attachments.push({
+        type: 'image',
+        mimeType,
+        dataUrl: buildImageDataUrl(mimeType, base64),
+        source: 'mention',
+        name: basename(mention.path),
+        path: mention.path,
+      });
+      if (attachments.length > MAX_IMAGE_ATTACHMENTS) {
+        return { ok: false, error: `图片数量超限，最多允许 ${MAX_IMAGE_ATTACHMENTS} 张` };
+      }
+    } catch {
+      return { ok: false, error: `读取图片文件失败: ${mention.path}` };
+    }
+  }
+  return { ok: true, attachments };
 }
 
 function splitMentions(mentions: MentionInput[]): {
@@ -589,6 +785,7 @@ export class TaskAPI {
     }
   ): number {
     const cid = this.resolveConversationIdForQueue(request);
+    const normalizedAttachments = normalizeImageAttachments(request.attachments);
     const channelReply = TaskAPI.resolveChannelReplyMeta(meta);
     const cmd: QueuedCommand = {
       conversationId: cid,
@@ -599,6 +796,7 @@ export class TaskAPI {
       expertId: request.expertId,
       skill: request.skill,
       mentions: normalizeMentions(request.mentions),
+      attachments: normalizedAttachments.ok ? normalizedAttachments.attachments : [],
       source: meta.source,
       taskId: meta.taskId,
       isMeta: meta.isMeta,
@@ -648,6 +846,7 @@ export class TaskAPI {
           expertId: cmd.expertId,
           skill: cmd.skill,
           mentions: cmd.mentions,
+          attachments: cmd.attachments,
         },
         (chunk) => {
           streamedAssistant += chunk;
@@ -1054,6 +1253,13 @@ user-invocable: true
   }
 
   async executeTask(request: TaskRequest): Promise<TaskResponse> {
+    const normalizedAttachmentResult = normalizeImageAttachments(request.attachments);
+    if (!normalizedAttachmentResult.ok) {
+      return {
+        success: false,
+        error: normalizedAttachmentResult.error,
+      };
+    }
     const cid = this.resolveConversationIdForQueue(request);
     if (this.runningConversations.has(cid)) {
       const pos = this.enqueueFromRequest(request, { source: 'user', priority: 'next' });
@@ -1104,6 +1310,20 @@ user-invocable: true
             error: mentionValidation.error,
           };
         }
+        const mentionImageAttachmentsResult = await resolveImageAttachmentsFromMentionedFiles(
+          request.workspace,
+          mentionValidation.mentions
+        );
+        if (!mentionImageAttachmentsResult.ok) {
+          return {
+            success: false,
+            error: mentionImageAttachmentsResult.error,
+          };
+        }
+        const mergedAttachments = mergeImageAttachments(
+          normalizedAttachmentResult.attachments,
+          mentionImageAttachmentsResult.attachments
+        );
         const expert = request.expertId ? this.expertManager.get(request.expertId) : undefined;
         const effective = buildInstructionWithSelections({
           instruction: request.instruction,
@@ -1127,6 +1347,7 @@ user-invocable: true
           instruction: effectiveInstruction,
           workspace: request.workspace,
           conversationId: planConversationId,
+          attachments: mergedAttachments,
         });
 
         const task = this.tasks.get(taskId);
@@ -1180,6 +1401,10 @@ user-invocable: true
   }
 
   async executeTaskStream(request: TaskRequest, onChunk: (chunk: string) => void): Promise<void> {
+    const normalizedAttachmentResult = normalizeImageAttachments(request.attachments);
+    if (!normalizedAttachmentResult.ok) {
+      throw new Error(normalizedAttachmentResult.error);
+    }
     const cid = this.resolveConversationIdForQueue(request);
     if (this.runningConversations.has(cid)) {
       throw new TaskAPIConversationBusyError(cid);
@@ -1187,6 +1412,7 @@ user-invocable: true
     this.runningConversations.add(cid);
     const normalizedRequest = {
       ...request,
+      attachments: normalizedAttachmentResult.attachments,
       conversationId: normalizeSyntheticConversationId(request.conversationId),
     };
     try {
@@ -1245,6 +1471,17 @@ user-invocable: true
         if (!mentionValidation.ok) {
           throw new Error(mentionValidation.error);
         }
+        const mentionImageAttachmentsResult = await resolveImageAttachmentsFromMentionedFiles(
+          normalizedRequest.workspace,
+          mentionValidation.mentions
+        );
+        if (!mentionImageAttachmentsResult.ok) {
+          throw new Error(mentionImageAttachmentsResult.error);
+        }
+        const mergedAttachments = mergeImageAttachments(
+          normalizedAttachmentResult.attachments,
+          mentionImageAttachmentsResult.attachments
+        );
 
         const expert = normalizedRequest.expertId
           ? this.expertManager.get(normalizedRequest.expertId)
@@ -1282,6 +1519,7 @@ user-invocable: true
           expertId: normalizedRequest.expertId || undefined,
           expertApplied: effective.expertApplied,
           effectiveInstructionPreview: truncateText(effectiveInstruction, 240),
+          imageAttachmentsCount: mergedAttachments.length,
         });
 
         if (apiKey) {
@@ -1320,6 +1558,7 @@ user-invocable: true
             workspace: normalizedRequest.workspace,
             conversationHistory,
             conversationId: executorConversationId,
+            attachments: mergedAttachments,
           },
           (chunk: string) => {
             fullResponse += chunk;
