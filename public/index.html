@@ -3309,6 +3309,8 @@
     }
 
     function filterTasks() {
+      // Keep behavior explicit until filter UI/state is implemented.
+      console.info('[TaskList] Filter action is not configured yet.');
       renderTaskList();
     }
 
@@ -3395,8 +3397,9 @@
 
     // Utility functions
     function escapeHtml(text) {
+      if (text == null || text === '') return '';
       const div = document.createElement('div');
-      div.textContent = text;
+      div.textContent = String(text);
       return div.innerHTML;
     }
 
@@ -3497,13 +3500,6 @@
 
     let channelsListCache = [];
 
-    function escapeHtmlChannels(s) {
-      if (s == null || s === '') return '';
-      const d = document.createElement('div');
-      d.textContent = String(s);
-      return d.innerHTML;
-    }
-
     async function loadChannelsList() {
       const errEl = document.getElementById('channelsLoadError');
       const extErrEl = document.getElementById('channelsExtensionErrors');
@@ -3566,14 +3562,14 @@
       let html =
         '<div style="display:flex;flex-direction:column;gap:10px;">';
       for (const row of catalog) {
-        const id = escapeHtmlChannels(row.id);
+        const id = escapeHtml(row.id);
         const checked = row.configEnabled ? ' checked' : '';
         const loaded = row.loaded
           ? ` <span style="color:#059669;font-size:12px;">${getUiText('loaded')}</span>`
           : ` <span style="font-size:12px;color:#94a3b8;">${getUiText('notLoaded')}</span>`;
-        const namePart = row.name ? ' — ' + escapeHtmlChannels(row.name) : '';
+        const namePart = row.name ? ' — ' + escapeHtml(row.name) : '';
         const verPart = row.version
-          ? ' <code style="font-size:11px;">' + escapeHtmlChannels(row.version) + '</code>'
+          ? ' <code style="font-size:11px;">' + escapeHtml(row.version) + '</code>'
           : '';
         html +=
           '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex-wrap:wrap;"><input type="checkbox" class="channels-ext-enable-cb" value="' +
@@ -3654,18 +3650,18 @@
             : `<span style="font-size:12px;color:#64748b;">${getUiText('sourceBuiltin')}</span>`;
         html +=
           '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;">' +
-          escapeHtmlChannels(c.name) +
+          escapeHtml(c.name) +
           reg +
           '</td><td style="padding:8px;">' +
           src +
           '</td><td style="padding:8px;"><code>' +
-          escapeHtmlChannels(c.id) +
+          escapeHtml(c.id) +
           '</code></td><td style="padding:8px;">' +
           badge +
           '</td><td style="padding:8px;color:#555;">' +
-          escapeHtmlChannels(c.statusMessage) +
+          escapeHtml(c.statusMessage) +
           '</td><td style="padding:8px;"><button type="button" class="btn btn-secondary channels-open-detail" data-channel-id="' +
-          escapeHtmlChannels(c.id) +
+          escapeHtml(c.id) +
           '">' + getUiText('channelDetail') + '</button></td></tr>';
       }
       html += '</tbody></table>';
@@ -3729,21 +3725,21 @@
             : `<p><strong>${getUiText('channelTableHeaderSource')}:</strong> ${getUiText('sourceBuiltin')}</p>`;
         ro.innerHTML =
           '<h3>' +
-          escapeHtmlChannels(ch.name) +
+          escapeHtml(ch.name) +
           '</h3><p style="color:#666;font-size:14px;">' +
-          escapeHtmlChannels(ch.description) +
+          escapeHtml(ch.description) +
           '</p>' +
           srcLine +
           '<p><strong>ID:</strong> <code>' +
-          escapeHtmlChannels(ch.id) +
+          escapeHtml(ch.id) +
           '</code></p><p><strong>Category:</strong> ' +
-          escapeHtmlChannels(ch.category) +
+          escapeHtml(ch.category) +
           '</p><p><strong>Registered:</strong> ' +
           (ch.registered ? getUiText('yes') : getUiText('no')) +
           '</p><p><strong>Healthy:</strong> ' +
           (ch.healthy ? getUiText('yes') : getUiText('no')) +
           '</p><p><strong>' + getUiText('channelTableHeaderStatus') + ':</strong> ' +
-          escapeHtmlChannels(ch.statusMessage) +
+          escapeHtml(ch.statusMessage) +
           '</p><p style="font-size:13px;color:#888;margin-top:16px;">' + getUiText('noWebConfigHint') + '</p>';
       }
     }
@@ -6342,12 +6338,19 @@
     // Notification system
     function showNotification(message, type = 'success') {
       const notification = document.createElement('div');
+      const backgrounds = {
+        success: '#10b981',
+        error: '#ef4444',
+        warning: '#f59e0b',
+        info: '#3b82f6',
+      };
+      const backgroundColor = backgrounds[type] || backgrounds.error;
       notification.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
         padding: 12px 20px;
-        background: ${type === 'success' ? '#10b981' : '#ef4444'};
+        background: ${backgroundColor};
         color: white;
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
