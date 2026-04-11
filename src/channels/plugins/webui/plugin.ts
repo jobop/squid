@@ -107,8 +107,8 @@ export class WebUIChannelPlugin implements ChannelPlugin {
       return {
         healthy: isHealthy,
         message: isHealthy
-          ? `WebSocket service running, ${this.clients.size} client(s) connected`
-          : 'WebSocket service is not started',
+          ? `WebSocket 服务运行中，已连接 ${this.clients.size} 个客户端`
+          : 'WebSocket 服务未启动',
       };
     },
   };

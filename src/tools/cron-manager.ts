@@ -497,7 +497,7 @@ class CronManager {
     if (!cron.validate(expression)) {
       return {
         success: false,
-        error: `Invalid cron expression: ${expression}`,
+        error: `无效的 cron 表达式: ${expression}`,
       };
     }
 
@@ -528,7 +528,7 @@ class CronManager {
     if (!taskEntry) {
       return {
         success: false,
-        error: `Task does not exist: ${taskId}`,
+        error: `任务不存在: ${taskId}`,
       };
     }
 

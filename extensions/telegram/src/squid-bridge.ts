@@ -133,7 +133,7 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
     console.warn('[TelegramBridge] Both text and recognizable images are empty, skipping');
     return;
   }
-  const instruction = text || 'Please identify and describe the image content sent by the user.';
+  const instruction = text || '请识别并描述用户发送的图片内容。';
 
   try {
     await taskAPI.prepareExternalConversation(conversationId, workspace);

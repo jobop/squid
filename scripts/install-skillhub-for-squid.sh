@@ -88,6 +88,7 @@ METADATA_TARGET="${INSTALL_BASE}/metadata.json"
 CONFIG_TARGET="${INSTALL_BASE}/config.json"
 INDEX_TARGET="${INSTALL_BASE}/skills_index.local.json"
 WRAPPER_TARGET="${BIN_DIR}/skillhub"
+INSTALL_WRAPPER_TARGET="${INSTALL_BASE}/skillhub"
 LEGACY_WRAPPER_TARGET="${BIN_DIR}/oc-skills"
 
 SQUID_SKILLS_DIR="${HOME}/.squid/skills"
@@ -126,6 +127,19 @@ fi
 exec python3 "${CLI}" "$@"
 WRAPPER
   chmod +x "$WRAPPER_TARGET"
+
+  cat > "$INSTALL_WRAPPER_TARGET" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+BASE="${HOME}/.skillhub"
+CLI="${BASE}/skills_store_cli.py"
+if [[ ! -f "${CLI}" ]]; then
+  echo "Error: CLI not found at ${CLI}" >&2
+  exit 1
+fi
+exec python3 "${CLI}" "$@"
+WRAPPER
+  chmod +x "$INSTALL_WRAPPER_TARGET"
 
   cat > "$LEGACY_WRAPPER_TARGET" <<'WRAPPER'
 #!/usr/bin/env bash
@@ -181,6 +195,7 @@ echo "Install complete."
 echo "  mode: $MODE"
 if [[ "$MODE" == "all" || "$MODE" == "cli" ]]; then
   echo "  cli: $WRAPPER_TARGET"
+  echo "  cli: $INSTALL_WRAPPER_TARGET"
 fi
 if [[ "$MODE" == "all" || "$MODE" == "skill" ]]; then
   if [[ "$INSTALL_SKILLS" -eq 1 ]]; then
@@ -196,6 +211,7 @@ echo
 echo "Quick check:"
 if [[ "$MODE" == "all" || "$MODE" == "cli" ]]; then
   echo "  command -v skillhub && skillhub --help"
+  echo "  test -x $INSTALL_WRAPPER_TARGET && $INSTALL_WRAPPER_TARGET --help"
 fi
 if [[ "$MODE" == "all" || "$MODE" == "skill" ]]; then
   if [[ "$INSTALL_SKILLS" -eq 1 ]]; then

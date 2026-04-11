@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { MemoryManager } from '../memory/manager';
+import type { Memory } from '../memory/types';
 
 const SaveMemoryInputSchema = z.object({
   type: z.enum(['user', 'feedback', 'project', 'reference']).describe('Memory type: user (user info), feedback (suggestions/preferences), project (project info), reference (reference materials)'),
@@ -13,6 +14,38 @@ const SaveMemoryInputSchema = z.object({
 
 type SaveMemoryInput = z.infer<typeof SaveMemoryInputSchema>;
 type SaveMemoryOutput = { id: string; message: string };
+type SaveMemoryType = SaveMemoryInput['type'];
+
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function tokenizeText(value: string): string[] {
+  return normalizeText(value)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function isDescriptionNear(source: string, target: string): boolean {
+  const a = normalizeText(source);
+  const b = normalizeText(target);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 16 && b.length >= 16 && (a.includes(b) || b.includes(a))) return true;
+
+  const tokensA = new Set(tokenizeText(a));
+  const tokensB = new Set(tokenizeText(b));
+  if (tokensA.size === 0 || tokensB.size === 0) return false;
+  let intersection = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) intersection++;
+  }
+  const union = new Set([...tokensA, ...tokensB]).size;
+  const score = union === 0 ? 0 : intersection / union;
+  return score >= 0.72;
+}
 
 export class SaveMemoryTool implements Tool<typeof SaveMemoryInputSchema, SaveMemoryOutput> {
   name = 'save_memory';
@@ -48,10 +81,43 @@ export class SaveMemoryTool implements Tool<typeof SaveMemoryInputSchema, SaveMe
       const name = String(input.name);
       const description = String(input.description);
       const content = String(input.content);
+      const typedType = type as SaveMemoryType;
+      const normalizedName = normalizeText(name);
+
+      const sameTypeMemories = await this.memoryManager.list(typedType);
+
+      const exactByTypeAndName = sameTypeMemories.find(
+        (memory: Memory) => normalizeText(memory.metadata.name) === normalizedName
+      );
+      if (exactByTypeAndName) {
+        const updated = await this.memoryManager.update(exactByTypeAndName.id, {
+          description,
+          content,
+        });
+        const resolvedId = updated?.id || exactByTypeAndName.id;
+        return {
+          data: {
+            id: resolvedId,
+            message: `Memory deduplicated by type+name. Updated existing memory ID: ${resolvedId}. Type: ${type}, Name: ${name}`
+          }
+        };
+      }
+
+      const nearByDescription = sameTypeMemories.find((memory: Memory) =>
+        isDescriptionNear(memory.metadata.description, description)
+      );
+      if (nearByDescription) {
+        return {
+          data: {
+            id: nearByDescription.id,
+            message: `Memory deduplicated by similar description. Reusing memory ID: ${nearByDescription.id}. Type: ${type}, Name: ${nearByDescription.metadata.name}`
+          }
+        };
+      }
 
       // Create memory
       const memory = await this.memoryManager.create({
-        type: type as 'user' | 'feedback' | 'project' | 'reference',
+        type: typedType,
         name: name,
         description: description,
         content: content

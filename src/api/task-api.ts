@@ -803,11 +803,13 @@ export class TaskAPI {
     const { homedir } = await import('os');
     const { join } = await import('path');
     const wrapperPath = join(homedir(), '.local', 'bin', 'skillhub');
-    const [fromPath, wrapperExists] = await Promise.all([
+    const installBaseWrapperPath = join(homedir(), '.skillhub', 'skillhub');
+    const [fromPath, wrapperExists, installBaseWrapperExists] = await Promise.all([
       this.commandExists('skillhub'),
       this.fileExists(wrapperPath),
+      this.fileExists(installBaseWrapperPath),
     ]);
-    return fromPath || wrapperExists;
+    return fromPath || wrapperExists || installBaseWrapperExists;
   }
 
   private async ensureSkillHubInstalledForSquid(): Promise<void> {

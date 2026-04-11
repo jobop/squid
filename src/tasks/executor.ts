@@ -32,6 +32,12 @@ import {
   mergeOpenAIStreamToolCallDelta,
   normalizeOpenAIMessageToolCalls,
 } from './openai-tool-call-normalizer';
+import {
+  RoundContextCompactor,
+  classifyToolRetention,
+  loadRoundCompactOptionsFromEnv,
+  type RoundToolRecord,
+} from './round-context-compactor';
 import { contentCharLength } from '../tools/tool-output-format';
 import { appendLlmIoFileLog } from '../utils/llm-io-file-log';
 
@@ -464,6 +470,9 @@ export class TaskExecutor {
       attachments,
       conversationId
     );
+    const roundCompactor = new RoundContextCompactor();
+    const roundCompactOptions = loadRoundCompactOptionsFromEnv();
+    const roundToolRecords: RoundToolRecord[] = [];
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
     const toolsParam = tools.length > 0 ? tools.map(t => ({
@@ -658,10 +667,18 @@ export class TaskExecutor {
       }
 
       for (const row of toolOut) {
-        messages.push({
+        const toolMessage: Record<string, unknown> = {
           role: 'tool',
           tool_call_id: row.tool_call_id,
           content: row.content,
+        };
+        messages.push(toolMessage);
+        const selected = selectedTools.find((item) => item.toolCallId === row.tool_call_id);
+        roundToolRecords.push({
+          round: round + 1,
+          toolName: selected?.toolName || '',
+          retention: classifyToolRetention(selected?.toolName || ''),
+          messageRef: toolMessage,
         });
       }
 
@@ -672,6 +689,8 @@ export class TaskExecutor {
           content: remediation,
         });
       }
+
+      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
     }
 
     return `${finalText}\n\n⚠️ 工具调用轮次达到上限，已停止自动继续。`.trim();
@@ -698,6 +717,9 @@ export class TaskExecutor {
       conversationId
     );
     const messages: Array<Record<string, any>> = [...initialMessages];
+    const roundCompactor = new RoundContextCompactor();
+    const roundCompactOptions = loadRoundCompactOptionsFromEnv();
+    const roundToolRecords: RoundToolRecord[] = [];
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
     console.log(
@@ -1012,10 +1034,18 @@ export class TaskExecutor {
       }
 
       for (const row of streamOut) {
-        messages.push({
+        const toolMessage: Record<string, unknown> = {
           role: 'tool',
           tool_call_id: row.tool_call_id,
           content: row.content,
+        };
+        messages.push(toolMessage);
+        const selected = selectedTools.find((item) => item.toolCallId === row.tool_call_id);
+        roundToolRecords.push({
+          round: round + 1,
+          toolName: selected?.toolName || '',
+          retention: classifyToolRetention(selected?.toolName || ''),
+          messageRef: toolMessage,
         });
       }
 
@@ -1027,6 +1057,8 @@ export class TaskExecutor {
         });
         onChunk('\n\n[Detected tool execution inconsistency, asking model to retry tool call...]\n');
       }
+
+      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
 
       console.log(`[Executor] Tool calls completed in round ${round + 1}, requesting next output`);
       onChunk('\n\n[Tool calls completed, continuing generation...]\n');
@@ -1048,6 +1080,9 @@ export class TaskExecutor {
 
     // Anthropic API 不支持 system role 在 messages 中，需要单独传递
     const messages: Array<Record<string, any>> = [];
+    const roundCompactor = new RoundContextCompactor();
+    const roundCompactOptions = loadRoundCompactOptionsFromEnv();
+    const roundToolRecords: RoundToolRecord[] = [];
 
     // 添加历史消息
     if (history && history.length > 0) {
@@ -1354,10 +1389,23 @@ When running git clone without a user-specified destination, explicitly clone in
         );
       }
 
-      messages.push({
+      const toolResultsMessage: Record<string, unknown> = {
         role: 'user',
         content: toolResults
-      });
+      };
+      messages.push(toolResultsMessage);
+      for (let i = 0; i < toolResults.length; i++) {
+        const item = toolResults[i];
+        if (!item || item.type !== 'tool_result') continue;
+        const selected = selectedTools.find((s) => s.toolCallId === item.tool_use_id);
+        roundToolRecords.push({
+          round: round + 1,
+          toolName: selected?.toolName || '',
+          retention: classifyToolRetention(selected?.toolName || ''),
+          messageRef: toolResultsMessage,
+          blockIndex: i,
+        });
+      }
       if (consistency.status === 'warning' && remediation && remediationAttempts < 2) {
         remediationAttempts += 1;
         messages.push({
@@ -1365,6 +1413,8 @@ When running git clone without a user-specified destination, explicitly clone in
           content: remediation,
         });
       }
+
+      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
     }
 
     return `${finalText}\n\n⚠️ Tool-call round limit reached, auto-continue stopped.`.trim();
@@ -1415,7 +1465,7 @@ When running git clone without a user-specified destination, explicitly clone in
         );
       } else if (config.provider === 'anthropic') {
         if ((request.attachments || []).length > 0) {
-          throw new Error('Current provider does not support image input. Switch to an OpenAI-compatible model.');
+          throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
         }
         response = await this.callAnthropicAPI(
           config,
@@ -1429,7 +1479,7 @@ When running git clone without a user-specified destination, explicitly clone in
         // Custom endpoint, route by protocol type
         if (config.apiProtocol === 'anthropic') {
           if ((request.attachments || []).length > 0) {
-            throw new Error('Current provider does not support image input. Switch to an OpenAI-compatible model.');
+            throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
           }
           response = await this.callAnthropicAPI(
             config,
@@ -1540,7 +1590,7 @@ When running git clone without a user-specified destination, explicitly clone in
         );
       } else if (config.provider === 'anthropic') {
         if ((request.attachments || []).length > 0) {
-          throw new Error('Current provider does not support image input. Switch to an OpenAI-compatible model.');
+          throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
         }
         // Anthropic uses non-stream mode with tool calls
         const response = await this.callAnthropicAPI(
@@ -1557,7 +1607,7 @@ When running git clone without a user-specified destination, explicitly clone in
         // Custom endpoint, route by protocol type
         if (config.apiProtocol === 'anthropic') {
           if ((request.attachments || []).length > 0) {
-            throw new Error('Current provider does not support image input. Switch to an OpenAI-compatible model.');
+            throw new Error('当前 provider 暂不支持图片输入，请切换到 OpenAI 兼容模型。');
           }
           const response = await this.callAnthropicAPI(
             config,
