@@ -68,7 +68,13 @@ function buildToolInvocationHardBlockMessage(reason?: string): string {
   ].join('\n');
 }
 
+function isLlmIoLogEnabled(): boolean {
+  const raw = (process.env.SQUID_LOG_LLM_IO || '').trim().toLowerCase();
+  return ['1', 'true', 'on', 'yes'].includes(raw);
+}
+
 function isLlmIoFullLogEnabled(): boolean {
+  if (!isLlmIoLogEnabled()) return false;
   const raw = (process.env.SQUID_LOG_LLM_IO_FULL || '').trim().toLowerCase();
   if (!raw) return true;
   return !['0', 'false', 'off', 'no'].includes(raw);
@@ -479,11 +485,13 @@ export class TaskExecutor {
         max_tokens: config.maxTokens || 4096,
         tools: toolsParam,
       };
-      console.debug(
-        '[LLM-IO] OpenAI request payload | round=%d payload=%s',
-        round + 1,
-        formatJsonForLog(requestPayload)
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] OpenAI request payload | round=%d payload=%s',
+          round + 1,
+          formatJsonForLog(requestPayload)
+        );
+      }
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -499,11 +507,13 @@ export class TaskExecutor {
       }
 
       const result = await response.json();
-      console.debug(
-        '[LLM-IO] OpenAI response payload | round=%d payload=%s',
-        round + 1,
-        formatJsonForLog(result)
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] OpenAI response payload | round=%d payload=%s',
+          round + 1,
+          formatJsonForLog(result)
+        );
+      }
       const message = result.choices?.[0]?.message || {};
       const assistantContent = typeof message.content === 'string' ? message.content : '';
       const assistantReasoning =
@@ -720,11 +730,13 @@ export class TaskExecutor {
         tools: toolsParam,
         stream: true,
       };
-      console.debug(
-        '[LLM-IO] OpenAI stream request payload | round=%d payload=%s',
-        round + 1,
-        formatJsonForLog(requestPayload)
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] OpenAI stream request payload | round=%d payload=%s',
+          round + 1,
+          formatJsonForLog(requestPayload)
+        );
+      }
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -768,9 +780,9 @@ export class TaskExecutor {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') continue;
-          if (isLlmIoFullLogEnabled()) {
+          if (isLlmIoLogEnabled() && isLlmIoFullLogEnabled()) {
             streamResponseRaw += `${data}\n`;
-          } else if (streamResponseRaw.length < llmIoLogMaxChars() * 2) {
+          } else if (isLlmIoLogEnabled() && streamResponseRaw.length < llmIoLogMaxChars() * 2) {
             streamResponseRaw += `${data}\n`;
           }
 
@@ -805,16 +817,18 @@ export class TaskExecutor {
       }
 
       const resolvedToolCalls = toolCalls.filter(Boolean);
-      console.debug(
-        '[LLM-IO] OpenAI stream response payload | round=%d resolvedToolCallCount=%d payload=%s',
-        round + 1,
-        resolvedToolCalls.length,
-        streamResponseRaw.length > 0
-          ? (isLlmIoFullLogEnabled()
-              ? streamResponseRaw
-              : truncateMiddleText(streamResponseRaw, llmIoLogMaxChars()))
-          : '(empty stream payload)'
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] OpenAI stream response payload | round=%d resolvedToolCallCount=%d payload=%s',
+          round + 1,
+          resolvedToolCalls.length,
+          streamResponseRaw.length > 0
+            ? (isLlmIoFullLogEnabled()
+                ? streamResponseRaw
+                : truncateMiddleText(streamResponseRaw, llmIoLogMaxChars()))
+            : '(empty stream payload)'
+        );
+      }
       const selectedTools: ToolSelectionRecord[] = resolvedToolCalls.map((toolCall) =>
         makeToolSelectionRecord(
           toolCall.function?.name || '',
@@ -1129,11 +1143,13 @@ When running git clone without a user-specified destination, explicitly clone in
         messages,
         tools: toolsParam,
       };
-      console.debug(
-        '[LLM-IO] Anthropic request payload | round=%d payload=%s',
-        round + 1,
-        formatJsonForLog(requestPayload)
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] Anthropic request payload | round=%d payload=%s',
+          round + 1,
+          formatJsonForLog(requestPayload)
+        );
+      }
       const response = await fetch(`${endpoint}/messages`, {
         method: 'POST',
         headers: {
@@ -1151,11 +1167,13 @@ When running git clone without a user-specified destination, explicitly clone in
       }
 
       const result = await response.json();
-      console.debug(
-        '[LLM-IO] Anthropic response payload | round=%d payload=%s',
-        round + 1,
-        formatJsonForLog(result)
-      );
+      if (isLlmIoLogEnabled()) {
+        console.debug(
+          '[LLM-IO] Anthropic response payload | round=%d payload=%s',
+          round + 1,
+          formatJsonForLog(result)
+        );
+      }
       const contents = Array.isArray(result.content) ? result.content : [];
       const toolUses: Array<{ id: string; name?: string; input?: unknown }> = contents
         .filter((content: any) => content.type === 'tool_use')
