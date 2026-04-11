@@ -22,6 +22,13 @@ import {
   type ToolCallPartitionItem,
   type ToolExecutionBatch,
 } from './tool-call-partition';
+import {
+  buildToolConsistencyRemediationMessage,
+  checkToolInvocationConsistency,
+  type ToolExecutionRecord,
+  type ToolSelectionRecord,
+} from './tool-invocation-consistency';
+import { contentCharLength } from '../tools/tool-output-format';
 
 /** 从工具 raw JSON 参数中提取 file_path，便于并发场景下对照日志与 tool_call 顺序 */
 function filePathFromRawToolArgs(raw: string): string | undefined {
@@ -56,6 +63,36 @@ function parseSkillSelection(rawArgs: string): { skillName: string; skillArgs?: 
   return {
     skillName,
     skillArgs: skillArgs && skillArgs.length > 0 ? skillArgs : undefined,
+  };
+}
+
+function makeSkillSelectionRecord(
+  selected: { skillName: string; skillArgs?: string },
+  toolCallId: string
+): ToolSelectionRecord {
+  return {
+    toolName: 'skill',
+    toolCallId,
+    argsPreview: selected.skillArgs,
+  };
+}
+
+function makeToolSelectionRecord(
+  toolName: string,
+  toolCallId: string,
+  rawArguments: string
+): ToolSelectionRecord {
+  if (toolName === 'skill') {
+    const selected = parseSkillSelection(rawArguments);
+    if (selected) {
+      return makeSkillSelectionRecord(selected, toolCallId);
+    }
+  }
+
+  return {
+    toolName,
+    toolCallId,
+    argsPreview: rawArguments.trim().length > 0 ? truncateMiddleText(rawArguments, 120) : undefined,
   };
 }
 
@@ -204,19 +241,33 @@ export class TaskExecutor {
       const { processToolResultBlock } = await import('../tools/tool-result-storage');
       const toolUseId = `tool_${randomUUID()}`;
       const sessionId = randomUUID();
+      const rawToolResultBlock = tool.mapToolResultToToolResultBlockParam(
+        result.data,
+        toolUseId
+      );
+      const rawChars = contentCharLength(rawToolResultBlock.content);
       const processedResult = await processToolResultBlock(
         tool,
         result.data,
         toolUseId,
         sessionId
       );
+      const processedChars = contentCharLength(processedResult.content);
       const content = typeof processedResult.content === 'string'
         ? processedResult.content
         : JSON.stringify(processedResult.content);
+      const isError = processedResult.is_error === true;
+
+      appendAgentLog('executor', 'debug', 'Tool result sizing', {
+        toolName: params.toolName,
+        toolResultCharsBefore: rawChars,
+        toolResultCharsAfter: processedChars,
+        reducedChars: Math.max(rawChars - processedChars, 0),
+      });
 
       return {
         content: content || '',
-        isError: false,
+        isError,
       };
     } catch (error: any) {
       return {
@@ -279,6 +330,9 @@ export class TaskExecutor {
           systemContent +=
             '\n\nWhen users ask to list currently available skills, you must call the `skill` tool with `skill_name` set to `list-skills` and return local installed skills from the list above. ' +
             'Do not use `find-skills-in-tencent-skillhub` or other SkillHub/skillhub CLI skills for this purpose (those are only for searching/installing remote marketplace skills and depend on local skillhub/jq).';
+          systemContent +=
+            '\n\nIf a user request clearly matches one of the available skills, invoking the `skill` tool is mandatory before giving final conclusions. ' +
+            'Never claim a skill was used unless there is an actual `skill` tool call in this turn.';
         } else {
           systemContent += '\n\n# Available Skills\nThere are currently no invocable installed skills.';
         }
@@ -372,6 +426,7 @@ export class TaskExecutor {
 
     const maxToolRounds = 20;
     let finalText = '';
+    let remediationAttempts = 0;
 
     for (let round = 0; round < maxToolRounds; round++) {
       const response = await fetch(`${endpoint}/chat/completions`, {
@@ -414,21 +469,67 @@ export class TaskExecutor {
       }
       messages.push(assistantMsg);
 
-      if (rawToolCalls.length === 0) {
-        return finalText || '';
-      }
-
-      const toolMetas = rawToolCalls.map((toolCall: Record<string, unknown>) => ({
+      const toolMetas: Array<{ toolName: string; rawArguments: string; toolCallId: string }> = rawToolCalls.map(
+        (toolCall: Record<string, unknown>) => ({
         toolName: (toolCall?.function as { name?: string } | undefined)?.name || '',
         rawArguments: (toolCall?.function as { arguments?: string } | undefined)?.arguments || '',
         toolCallId:
           (toolCall?.id as string | undefined) ||
           `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      }));
+      })
+      );
+      const selectedTools: ToolSelectionRecord[] = toolMetas.map(
+        (m: { toolName: string; rawArguments: string; toolCallId: string }) =>
+          makeToolSelectionRecord(
+            m.toolName,
+            m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            m.rawArguments
+          )
+      );
+      const executedTools: ToolExecutionRecord[] = [];
+
+      if (rawToolCalls.length === 0) {
+        const consistency = checkToolInvocationConsistency({
+          assistantText: assistantContent,
+          selectedTools,
+          executedTools,
+        });
+        const remediation = buildToolConsistencyRemediationMessage(consistency);
+        if (consistency.status === 'warning') {
+          appendAgentLog('executor', 'warn', 'Tool invocation consistency warning', {
+            provider: 'openai',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+          });
+          if (remediation && remediationAttempts < 2) {
+            remediationAttempts += 1;
+            messages.push({
+              role: 'user',
+              content: remediation,
+            });
+            continue;
+          }
+        }
+        return finalText || '';
+      }
 
       const batches = this.buildToolExecutionBatches(toolMetas, workspace);
 
       const runOne = async (m: ToolCallPartitionItem) => {
+        const selectedSkill = m.toolName === 'skill' ? parseSkillSelection(m.rawArguments) : null;
+        const toolCallId = m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        if (selectedSkill) {
+          appendAgentLog('executor', 'info', 'Skill selected', {
+            provider: 'openai',
+            round: round + 1,
+            skillName: selectedSkill.skillName,
+            skillArgsPreview: selectedSkill.skillArgs,
+            toolCallId,
+          });
+        }
         const toolResult = await this.executeToolAndFormatResult({
           toolName: m.toolName,
           rawArguments: m.rawArguments,
@@ -436,19 +537,67 @@ export class TaskExecutor {
           mode,
           conversationId,
         });
+        if (selectedSkill) {
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId,
+            argsPreview: selectedSkill.skillArgs,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
+        } else {
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
+        }
         return {
-          tool_call_id: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          tool_call_id: toolCallId,
           content: toolResult.content,
         };
       };
 
       const toolOut = await executePartitionedBatches(batches, runOne);
 
+      const consistency = checkToolInvocationConsistency({
+        assistantText: assistantContent,
+        selectedTools,
+        executedTools,
+      });
+      const remediation = buildToolConsistencyRemediationMessage(consistency);
+      if (selectedTools.length > 0 || consistency.status === 'warning') {
+        appendAgentLog(
+          'executor',
+          consistency.status === 'warning' ? 'warn' : 'info',
+          'Tool invocation consistency',
+          {
+            provider: 'openai',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+            failedToolNames: consistency.failedToolNames,
+            records: executedTools,
+          }
+        );
+      }
+
       for (const row of toolOut) {
         messages.push({
           role: 'tool',
           tool_call_id: row.tool_call_id,
           content: row.content,
+        });
+      }
+
+      if (consistency.status === 'warning' && remediation && remediationAttempts < 2) {
+        remediationAttempts += 1;
+        messages.push({
+          role: 'user',
+          content: remediation,
         });
       }
     }
@@ -495,6 +644,7 @@ export class TaskExecutor {
     })) : undefined;
 
     const maxToolRounds = 20;
+    let remediationAttempts = 0;
     for (let round = 0; round < maxToolRounds; round++) {
       appendAgentLog('executor', 'debug', `OpenAI stream round ${round + 1} request`, {
         toolCount: tools.length,
@@ -596,9 +746,41 @@ export class TaskExecutor {
       }
 
       const resolvedToolCalls = toolCalls.filter(Boolean);
+      const selectedTools: ToolSelectionRecord[] = resolvedToolCalls.map((toolCall) =>
+        makeToolSelectionRecord(
+          toolCall.function?.name || '',
+          toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          toolCall.function?.arguments || ''
+        )
+      );
+      const executedTools: ToolExecutionRecord[] = [];
 
       // No tool calls in this round means final answer is ready.
       if (resolvedToolCalls.length === 0) {
+        const consistency = checkToolInvocationConsistency({
+          assistantText: assistantContent,
+          selectedTools,
+          executedTools,
+        });
+        const remediation = buildToolConsistencyRemediationMessage(consistency);
+        if (consistency.status === 'warning') {
+          appendAgentLog('executor', 'warn', 'Tool invocation consistency warning', {
+            provider: 'openai-stream',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+          });
+          if (remediation && remediationAttempts < 2) {
+            remediationAttempts += 1;
+            messages.push({
+              role: 'user',
+              content: remediation,
+            });
+            onChunk('\n\n[Detected tool-claim inconsistency, requesting tool invocation...]\n');
+            continue;
+          }
+        }
         console.log(`[Executor] No tool calls detected in round ${round + 1}, stream completed`);
         appendAgentLog('executor', 'info', `OpenAI stream round ${round + 1} finished (no tool calls)`, {
           assistantChars: assistantContent.length,
@@ -697,6 +879,23 @@ export class TaskExecutor {
           onChunk(`\n✅ Tool executed: ${m.toolName}\n`);
         }
 
+        if (selectedSkill) {
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            argsPreview: selectedSkill.skillArgs,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
+        } else {
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
+        }
+
         return {
           tool_call_id: m.toolCallId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           content: toolResult.content,
@@ -704,6 +903,29 @@ export class TaskExecutor {
       };
 
       const streamOut = await executePartitionedBatches(streamBatches, runStreamOne);
+      const consistency = checkToolInvocationConsistency({
+        assistantText: assistantContent,
+        selectedTools,
+        executedTools,
+      });
+      const remediation = buildToolConsistencyRemediationMessage(consistency);
+      if (selectedTools.length > 0 || consistency.status === 'warning') {
+        appendAgentLog(
+          'executor',
+          consistency.status === 'warning' ? 'warn' : 'info',
+          'Tool invocation consistency',
+          {
+            provider: 'openai-stream',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+            failedToolNames: consistency.failedToolNames,
+            records: executedTools,
+          }
+        );
+      }
 
       for (const row of streamOut) {
         messages.push({
@@ -711,6 +933,15 @@ export class TaskExecutor {
           tool_call_id: row.tool_call_id,
           content: row.content,
         });
+      }
+
+      if (consistency.status === 'warning' && remediation && remediationAttempts < 2) {
+        remediationAttempts += 1;
+        messages.push({
+          role: 'user',
+          content: remediation,
+        });
+        onChunk('\n\n[Detected tool execution inconsistency, asking model to retry tool call...]\n');
       }
 
       console.log(`[Executor] Tool calls completed in round ${round + 1}, requesting next output`);
@@ -761,6 +992,7 @@ export class TaskExecutor {
 
     const maxToolRounds = 20;
     let finalText = '';
+    let remediationAttempts = 0;
 
     let anthropicSystem = `You are a professional AI assistant that helps users complete tasks accurately. You can remember relevant prior conversation context.
 Current working directory (must be respected): ${workspace || process.cwd()}
@@ -775,10 +1007,21 @@ When running git clone without a user-specified destination, explicitly clone in
     let invocableSkillNames: string[] = [];
     if (this.toolRegistry.get('skill')) {
       try {
-        invocableSkillNames = (await this.skillLoader.listSkillSummaries(workspace || process.cwd()))
+        const invocableSkills = (await this.skillLoader.listSkillSummaries(workspace || process.cwd()))
           .filter((skill) => skill.userInvocable)
-          .map((skill) => skill.name)
-          .sort();
+          .sort((a, b) => a.name.localeCompare(b.name));
+        invocableSkillNames = invocableSkills.map((skill) => skill.name);
+        if (invocableSkills.length > 0) {
+          anthropicSystem += '\n\n# Available Skills\n';
+          anthropicSystem += 'Installed and invocable local skills:\n';
+          anthropicSystem += invocableSkills
+            .map((skill) => `- ${skill.name}: ${skill.description}`)
+            .join('\n');
+          anthropicSystem +=
+            '\n\nIf a request matches an available skill, you MUST call the `skill` tool before giving final conclusions. ' +
+            'Never claim a skill was used unless there is an actual `skill` tool call in this turn. ' +
+            'When users ask to list local installed skills, call `skill` with `skill_name` set to `list-skills`.';
+        }
       } catch {
         invocableSkillNames = [];
       }
@@ -828,7 +1071,23 @@ When running git clone without a user-specified destination, explicitly clone in
 
       const result = await response.json();
       const contents = Array.isArray(result.content) ? result.content : [];
-      const toolUses = contents.filter((content: any) => content.type === 'tool_use');
+      const toolUses: Array<{ id: string; name?: string; input?: unknown }> = contents
+        .filter((content: any) => content.type === 'tool_use')
+        .map((content: any) => ({
+          id: typeof content.id === 'string' ? content.id : '',
+          name: typeof content.name === 'string' ? content.name : undefined,
+          input: content.input,
+        }))
+        .filter((content: { id: string }) => content.id.length > 0);
+      const selectedTools: ToolSelectionRecord[] = toolUses.map(
+        (toolUse: { id: string; name?: string; input?: unknown }) =>
+          makeToolSelectionRecord(
+            toolUse.name || '',
+            toolUse.id,
+            JSON.stringify(toolUse.input || {})
+          )
+      );
+      const executedTools: ToolExecutionRecord[] = [];
       const text = contents
         .filter((content: any) => content.type === 'text')
         .map((content: any) => content.text || '')
@@ -844,6 +1103,29 @@ When running git clone without a user-specified destination, explicitly clone in
       });
 
       if (toolUses.length === 0) {
+        const consistency = checkToolInvocationConsistency({
+          assistantText: text,
+          selectedTools,
+          executedTools,
+        });
+        const remediation = buildToolConsistencyRemediationMessage(consistency);
+        if (consistency.status === 'warning') {
+          appendAgentLog('executor', 'warn', 'Tool invocation consistency warning', {
+            provider: 'anthropic',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+          });
+          if (remediation && remediationAttempts < 2) {
+            remediationAttempts += 1;
+            messages.push({
+              role: 'user',
+              content: remediation,
+            });
+            continue;
+          }
+        }
         return finalText || '';
       }
 
@@ -871,8 +1153,9 @@ When running git clone without a user-specified destination, explicitly clone in
       const ws = workspace || process.cwd();
       const anthropicBatches = this.buildToolExecutionBatches(anthropicMetas, ws);
 
-      const runAnthropicOne = async (m: (typeof anthropicMetas)[0]) => {
+      const runAnthropicOne = async (m: ToolCallPartitionItem) => {
         const selectedSkill = m.toolName === 'skill' ? parseSkillSelection(m.rawArguments) : null;
+        const toolUseId = m.toolUseId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         appendAgentLog('executor', 'info', `Tool call: ${m.toolName}`, {
           argsPreview: truncateMiddleText(m.rawArguments, 200),
         });
@@ -919,21 +1202,65 @@ When running git clone without a user-specified destination, explicitly clone in
           } else {
             console.log('[LLM] Skill execution | skill=%s status=ok', selectedSkill.skillName);
           }
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId: toolUseId,
+            argsPreview: selectedSkill.skillArgs,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
+        } else {
+          executedTools.push({
+            toolName: m.toolName,
+            toolCallId: toolUseId,
+            status: toolResult.isError ? 'failed' : 'ok',
+            errorPreview: toolResult.isError ? truncateMiddleText(toolResult.content, 200) : undefined,
+          });
         }
         return {
           type: 'tool_result' as const,
-          tool_use_id: m.toolUseId,
+          tool_use_id: toolUseId,
           content: toolResult.content,
           is_error: toolResult.isError,
         };
       };
 
       const toolResults = await executePartitionedBatches(anthropicBatches, runAnthropicOne);
+      const consistency = checkToolInvocationConsistency({
+        assistantText: text,
+        selectedTools,
+        executedTools,
+      });
+      const remediation = buildToolConsistencyRemediationMessage(consistency);
+      if (selectedTools.length > 0 || consistency.status === 'warning') {
+        appendAgentLog(
+          'executor',
+          consistency.status === 'warning' ? 'warn' : 'info',
+          'Tool invocation consistency',
+          {
+            provider: 'anthropic',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+            failedToolNames: consistency.failedToolNames,
+            records: executedTools,
+          }
+        );
+      }
 
       messages.push({
         role: 'user',
         content: toolResults
       });
+      if (consistency.status === 'warning' && remediation && remediationAttempts < 2) {
+        remediationAttempts += 1;
+        messages.push({
+          role: 'user',
+          content: remediation,
+        });
+      }
     }
 
     return `${finalText}\n\n⚠️ Tool-call round limit reached, auto-continue stopped.`.trim();
