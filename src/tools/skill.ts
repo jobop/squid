@@ -50,6 +50,7 @@ function commandAvailable(cmd: string): boolean {
   }
 }
 
+
 export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
   name: 'skill',
   description:

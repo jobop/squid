@@ -6,6 +6,107 @@
 set -e
 
 JSON_INPUT="$1"
+SKILLHUB_INSTALL_SCRIPT_URL="https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh"
+
+run_best_effort() {
+    # Run command without breaking outer set -e flow.
+    set +e
+    "$@"
+    local code=$?
+    set -e
+    return $code
+}
+
+try_install_skillhub() {
+    if command -v skillhub >/dev/null 2>&1; then
+        return 0
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Error: skillhub missing and curl is not available for auto-install"
+        return 1
+    fi
+    if ! command -v bash >/dev/null 2>&1; then
+        echo "Error: skillhub missing and bash is not available for auto-install"
+        return 1
+    fi
+    echo "[bootstrap] Installing skillhub CLI..."
+    if ! run_best_effort bash -c "curl -fsSL \"$SKILLHUB_INSTALL_SCRIPT_URL\" | bash -s -- --cli-only"; then
+        echo "Error: failed to auto-install skillhub CLI"
+        return 1
+    fi
+    if ! command -v skillhub >/dev/null 2>&1; then
+        echo "Error: skillhub install finished but command is still unavailable in PATH"
+        return 1
+    fi
+    echo "[bootstrap] skillhub installed"
+}
+
+try_install_jq() {
+    if command -v jq >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "[bootstrap] jq not found, trying package manager install..."
+
+    if [ "$(uname -s)" = "Darwin" ]; then
+        if command -v brew >/dev/null 2>&1 && run_best_effort brew install jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+    else
+        if command -v apt-get >/dev/null 2>&1; then
+            if run_best_effort apt-get update && run_best_effort apt-get install -y jq; then
+                command -v jq >/dev/null 2>&1 && return 0
+            fi
+            if command -v sudo >/dev/null 2>&1; then
+                if run_best_effort sudo apt-get update && run_best_effort sudo apt-get install -y jq; then
+                    command -v jq >/dev/null 2>&1 && return 0
+                fi
+            fi
+        fi
+        if command -v dnf >/dev/null 2>&1 && run_best_effort dnf install -y jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+        if command -v yum >/dev/null 2>&1 && run_best_effort yum install -y jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+        if command -v apk >/dev/null 2>&1 && run_best_effort apk add --no-cache jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+        if command -v pacman >/dev/null 2>&1 && run_best_effort pacman -Sy --noconfirm jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+        if command -v zypper >/dev/null 2>&1 && run_best_effort zypper --non-interactive install jq; then
+            command -v jq >/dev/null 2>&1 && return 0
+        fi
+    fi
+
+    if command -v choco >/dev/null 2>&1 && run_best_effort choco install jq -y; then
+        command -v jq >/dev/null 2>&1 && return 0
+    fi
+    if command -v scoop >/dev/null 2>&1 && run_best_effort scoop install jq; then
+        command -v jq >/dev/null 2>&1 && return 0
+    fi
+
+    echo "Error: failed to auto-install jq with available package managers"
+    return 1
+}
+
+ensure_dependencies() {
+    if ! command -v skillhub >/dev/null 2>&1; then
+        try_install_skillhub || return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        try_install_jq || return 1
+    fi
+
+    if ! command -v skillhub >/dev/null 2>&1; then
+        echo "Error: skillhub is still unavailable after bootstrap"
+        return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "Error: jq is still unavailable after bootstrap"
+        return 1
+    fi
+}
 
 if [ -z "$JSON_INPUT" ]; then
     echo "Usage: ./usage.sh '<json>'"
@@ -24,6 +125,8 @@ if [ -z "$JSON_INPUT" ]; then
     echo "  ./usage.sh '{\"action\": \"list\"}'"
     exit 1
 fi
+
+ensure_dependencies
 
 # Validate JSON
 if ! echo "$JSON_INPUT" | jq empty 2>/dev/null; then

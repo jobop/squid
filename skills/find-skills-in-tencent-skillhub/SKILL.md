@@ -11,13 +11,20 @@ Manage agent skills using the skillhub CLI — search the skill store, install n
 
 ## Pre-Requirements
 
-### Install skillhub CLI
+### Automatic dependency bootstrap
 
-Follow [skillhub.md](https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/skillhub.md) to install Skillhub CLI.
+Always execute this skill through `./scripts/usage.sh '<json>'`.
+The script bootstraps missing dependencies before running the action:
+
+- Auto-installs `skillhub` CLI using the official install script with `--cli-only`
+- Auto-installs `jq` via available package managers (best effort)
+- Re-checks both binaries and fails fast with actionable error output when bootstrap cannot complete
+
+If you want to install manually, follow [skillhub.md](https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/skillhub.md).
 
 ## Quick Start
 
-### Using the Script
+### Using the Script (required entrypoint)
 
 ```bash
 ./scripts/usage.sh '<json>'
@@ -93,3 +100,4 @@ Follow [skillhub.md](https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/i
 - Skills are installed to `~/.openclaw/skills/` by default
 - The CLI auto-checks for self-upgrades on startup unless `--skip-self-upgrade` is used
 - Use `check_only: true` to preview upgrades before applying
+- First run may take longer because dependency bootstrap can install `skillhub` / `jq`
