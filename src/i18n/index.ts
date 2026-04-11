@@ -41,10 +41,6 @@ export function translate(locale: Locale, key: TranslationKey): string {
   return resources[locale][key] ?? resources[DEFAULT_LOCALE][key];
 }
 
-export function resolveLocale(input: string | null | undefined): Locale {
-  return normalizeLocale(input);
-}
-
 export function applyDocumentLanguage(locale: Locale): void {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = locale;

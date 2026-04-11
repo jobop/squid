@@ -1,5 +1,0 @@
-{
-  "defaultLocale": "en",
-  "supportedLocales": ["en", "zh", "ja", "ru", "it", "fr", "de"],
-  "fallbackLocale": "en"
-}

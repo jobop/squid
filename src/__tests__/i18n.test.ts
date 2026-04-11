@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LOCALE,
   getStoredLocale,
-  resolveLocale,
   setStoredLocale,
   translate,
   type StorageLike,
@@ -30,7 +29,6 @@ describe('i18n locale handling', () => {
     const storage = new MemoryStorage();
     storage.setItem('squid.locale', 'es');
     expect(getStoredLocale(storage)).toBe(DEFAULT_LOCALE);
-    expect(resolveLocale('es')).toBe(DEFAULT_LOCALE);
   });
 
   it('persists and restores supported locale values', () => {
