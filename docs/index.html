@@ -7,46 +7,100 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 40px;
+      margin: 32px;
       line-height: 1.6;
       color: #1f2937;
       background: #ffffff;
     }
-    .container { max-width: 860px; margin: 0 auto; }
-    label, select { font-size: 14px; }
-    h1 { margin-bottom: 8px; }
-    .muted { color: #6b7280; }
+    .container { max-width: 960px; margin: 0 auto; }
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    h1 { margin: 0; }
+    .muted { color: #6b7280; margin: 8px 0 20px; }
+    .doc-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+      padding: 0;
+      list-style: none;
+    }
+    .doc-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fafafa;
+    }
+    .doc-card a {
+      color: #111827;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .doc-card a:hover { text-decoration: underline; }
+    .doc-file {
+      color: #6b7280;
+      font-size: 12px;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
   <main class="container">
-    <h1>squid documentation</h1>
-    <p class="muted">Select a documentation locale. Missing localized pages fall back to English source docs.</p>
-    <label for="locale">Language:</label>
-    <select id="locale" aria-label="Language">
-      <option value="en">English</option>
-      <option value="zh">中文</option>
-      <option value="ja">日本語</option>
-      <option value="ru">Русский</option>
-      <option value="it">Italiano</option>
-      <option value="fr">Français</option>
-      <option value="de">Deutsch</option>
-    </select>
-    <ul id="doc-links"></ul>
+    <div class="topbar">
+      <h1>squid documentation</h1>
+      <label for="locale">Language:</label>
+      <select id="locale" aria-label="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="ja">日本語</option>
+        <option value="ru">Русский</option>
+        <option value="it">Italiano</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+      </select>
+    </div>
+    <p class="muted">
+      All docs are language-switchable from one viewer. Missing locale pages automatically fall back to English and then source docs.
+    </p>
+    <ul id="doc-links" class="doc-list"></ul>
   </main>
   <script>
     const supported = ["en", "zh", "ja", "ru", "it", "fr", "de"];
     const defaultLocale = "en";
-    const fallbackLocale = "en";
     const key = "squid.docs.locale";
 
-    const pageMap = [
-      { title: "Locale overview", path: (l) => `locales/${l}/index.md` },
-      { title: "User guide (source)", path: () => "user-guide.md" },
-      { title: "Developer guide (source)", path: () => "developer-guide.md" }
+    const docs = [
+      { file: "README.md", title: "README" },
+      { file: "QUICK_START.md", title: "Quick Start" },
+      { file: "user-guide.md", title: "User Guide" },
+      { file: "developer-guide.md", title: "Developer Guide" },
+      { file: "tool-development-guide.md", title: "Tool Development Guide" },
+      { file: "channel-extensions.md", title: "Channel Extensions" },
+      { file: "webui-channel.md", title: "WebUI Channel" },
+      { file: "event-bridge-api.md", title: "Event Bridge API" },
+      { file: "openclaw-adapter.md", title: "OpenClaw Adapter" },
+      { file: "feishu-interfaces.md", title: "Feishu Interfaces" },
+      { file: "core-tools-guide.md", title: "Core Tools Guide" },
+      { file: "tencent-skillhub.md", title: "Tencent SkillHub" },
+      { file: "integration-testing.md", title: "Integration Testing" },
+      { file: "command-queue.md", title: "Command Queue" },
+      { file: "COMPATIBILITY.md", title: "Compatibility" },
+      { file: "RELEASE_NOTES.md", title: "Release Notes" },
+      { file: "CHANGELOG-openclaw-channels.md", title: "OpenClaw Channels Changelog" },
+      { file: "UPDATE_LOG.md", title: "Update Log" },
+      { file: "PROJECT_SUMMARY.md", title: "Project Summary" },
+      { file: "IMPLEMENTATION-REPORT.md", title: "Implementation Report" },
+      { file: "TEST_REPORT.md", title: "Test Report" },
+      { file: "channel-plugin-sandbox-p1.md", title: "Channel Plugin Sandbox P1" }
     ];
 
-    const normalize = (value) => (supported.includes(value) ? value : defaultLocale);
+    function normalize(value) {
+      return supported.includes(value) ? value : defaultLocale;
+    }
 
     const searchLocale = new URLSearchParams(window.location.search).get("lang");
     const stored = window.localStorage.getItem(key);
@@ -60,12 +114,20 @@
 
     function render(locale) {
       links.innerHTML = "";
-      for (const page of pageMap) {
+      for (const doc of docs) {
         const li = document.createElement("li");
+        li.className = "doc-card";
         const a = document.createElement("a");
-        a.textContent = page.title;
-        a.href = page.path(locale) || page.path(fallbackLocale);
+        a.textContent = doc.title;
+        const url = new URL("view.html", window.location.href);
+        url.searchParams.set("doc", doc.file);
+        url.searchParams.set("lang", locale);
+        a.href = url.pathname + url.search;
+        const meta = document.createElement("div");
+        meta.className = "doc-file";
+        meta.textContent = doc.file;
         li.appendChild(a);
+        li.appendChild(meta);
         links.appendChild(li);
       }
     }

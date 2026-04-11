@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>squid docs viewer</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 20px;
+      color: #1f2937;
+      background: #ffffff;
+    }
+    .container { max-width: 980px; margin: 0 auto; }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .pill {
+      font-size: 12px;
+      color: #374151;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+    .path { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
+    .error { color: #b91c1c; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <div class="topbar">
+      <a href="index.html" id="back-link">&larr; Back to docs index</a>
+      <label for="locale">Language:</label>
+      <select id="locale" aria-label="Language">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="ja">日本語</option>
+        <option value="ru">Русский</option>
+        <option value="it">Italiano</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+      </select>
+      <span id="source-pill" class="pill"></span>
+    </div>
+    <div id="doc-path" class="path"></div>
+    <pre id="content">Loading...</pre>
+  </main>
+  <script>
+    const supported = ["en", "zh", "ja", "ru", "it", "fr", "de"];
+    const defaultLocale = "en";
+    const key = "squid.docs.locale";
+    const params = new URLSearchParams(window.location.search);
+    const doc = params.get("doc") || "QUICK_START.md";
+
+    function normalize(value) {
+      return supported.includes(value) ? value : defaultLocale;
+    }
+
+    const stored = window.localStorage.getItem(key);
+    const lang = normalize(params.get("lang") || stored || defaultLocale);
+    const localeSelect = document.getElementById("locale");
+    const content = document.getElementById("content");
+    const sourcePill = document.getElementById("source-pill");
+    const docPath = document.getElementById("doc-path");
+    const backLink = document.getElementById("back-link");
+    localeSelect.value = lang;
+    document.documentElement.lang = lang;
+    window.localStorage.setItem(key, lang);
+    backLink.href = "index.html?lang=" + encodeURIComponent(lang);
+    docPath.textContent = "Document: " + doc;
+
+    function candidates(locale) {
+      const cleanDoc = doc.replace(/^\.\/+/, "");
+      if (cleanDoc === "README.md") {
+        return [
+          `locales/${locale}/README.md`,
+          "locales/en/README.md",
+          "../README.md",
+        ];
+      }
+      if (cleanDoc.startsWith("../")) {
+        return [cleanDoc];
+      }
+      return [
+        `locales/${locale}/${cleanDoc}`,
+        `locales/en/${cleanDoc}`,
+        cleanDoc,
+      ];
+    }
+
+    async function fetchFirst(paths) {
+      for (const p of paths) {
+        try {
+          const res = await fetch(p);
+          if (res.ok) {
+            const text = await res.text();
+            return { path: p, text };
+          }
+        } catch {}
+      }
+      return null;
+    }
+
+    async function render(locale) {
+      content.textContent = "Loading...";
+      const hit = await fetchFirst(candidates(locale));
+      if (!hit) {
+        sourcePill.textContent = "missing";
+        content.innerHTML = '<span class="error">Failed to load document in locale or fallback paths.</span>';
+        return;
+      }
+      const sourceKind = hit.path.startsWith(`locales/${locale}/`)
+        ? `locale: ${locale}`
+        : hit.path.startsWith("locales/en/")
+          ? "fallback: en"
+          : "source";
+      sourcePill.textContent = sourceKind;
+      content.textContent = hit.text;
+    }
+
+    localeSelect.addEventListener("change", async (event) => {
+      const locale = normalize(event.target.value);
+      window.localStorage.setItem(key, locale);
+      params.set("lang", locale);
+      history.replaceState(null, "", window.location.pathname + "?" + params.toString());
+      document.documentElement.lang = locale;
+      backLink.href = "index.html?lang=" + encodeURIComponent(locale);
+      await render(locale);
+    });
+
+    render(lang);
+  </script>
+</body>
+</html>
