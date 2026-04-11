@@ -40,10 +40,15 @@ export const WriteFileTool: Tool<typeof WriteFileInputSchema, string> = {
     content: string,
     toolUseID: string
   ): ToolResultBlockParam {
+    const normalized = (content || '').trim();
+    const concise = normalized.startsWith('File written:')
+      ? normalized.replace(/^File written:\s*/i, 'OK: wrote ')
+      : (normalized || '(write_file completed with no output)');
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseID,
-      content: content || '(write_file completed with no output)',
+      content: concise,
     };
   },
 

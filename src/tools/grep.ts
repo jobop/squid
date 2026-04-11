@@ -3,6 +3,12 @@ import { join } from 'path';
 import type { Tool, ToolResult } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { z } from 'zod';
+import {
+  GREP_LINE_CHARS,
+  GREP_TOP_K,
+  READ_TOOL_RESULT_MAX_CHARS,
+  truncateWithEllipsis,
+} from './tool-output-format';
 
 const GrepInputSchema = z.object({
   pattern: z.string(),
@@ -20,7 +26,7 @@ export const GrepTool: Tool<typeof GrepInputSchema, GrepMatch[]> = {
   name: 'grep',
   description: '文件内容搜索',
   inputSchema: GrepInputSchema,
-  maxResultSizeChars: 100000,
+  maxResultSizeChars: READ_TOOL_RESULT_MAX_CHARS,
 
   async call(input, context): Promise<ToolResult<GrepMatch[]>> {
     try {
@@ -76,10 +82,14 @@ export const GrepTool: Tool<typeof GrepInputSchema, GrepMatch[]> = {
       };
     }
 
+    const shown = content.slice(0, GREP_TOP_K);
     const formatted = [
-      `Found ${content.length} matches:`,
+      `Found ${content.length} matches (showing ${shown.length}):`,
       '',
-      ...content.map(m => `${m.file}:${m.line}: ${m.content}`),
+      ...shown.map(m => `${m.file}:${m.line}: ${truncateWithEllipsis(m.content, GREP_LINE_CHARS)}`),
+      ...(content.length > shown.length
+        ? ['', `... ${content.length - shown.length} more matches omitted`]
+        : []),
     ].join('\n');
 
     return {

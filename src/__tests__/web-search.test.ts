@@ -150,7 +150,7 @@ describe('WebSearchTool', () => {
     expect(result.type).toBe('tool_result');
     expect(result.tool_use_id).toBe('test-id');
     expect(result.content).toContain('搜索查询: test query');
-    expect(result.content).toContain('找到 1 条结果');
+    expect(result.content).toContain('总结果: 1 条');
     expect(result.content).toContain('1. Example');
     expect(result.content).toContain('链接: https://example.com');
   });

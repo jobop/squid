@@ -122,7 +122,7 @@ describe('FileEditTool', () => {
 
     expect(result.type).toBe('tool_result');
     expect(result.tool_use_id).toBe('test-id');
-    expect(result.content).toContain('"success": true');
+    expect(result.content).toContain('OK: replacements=1 file=test.txt');
   });
 
   it('应该正确标记并发安全（依路径）与破坏性操作', () => {

@@ -2,6 +2,11 @@ import { z } from 'zod';
 import type { Tool, ToolResult, ToolContext } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { fetchURL } from './web-fetch-utils';
+import {
+  READ_TOOL_RESULT_MAX_CHARS,
+  WEB_FETCH_PREVIEW_CHARS,
+  truncateWithEllipsis,
+} from './tool-output-format';
 
 // 输入 schema
 const WebFetchInputSchema = z.object({
@@ -39,7 +44,7 @@ export const WebFetchTool: Tool<typeof WebFetchInputSchema, WebFetchOutput> = {
 - 不支持二进制内容（PDF、图片等）`,
 
   inputSchema: WebFetchInputSchema,
-  maxResultSizeChars: 100_000, // 100K 字符
+  maxResultSizeChars: READ_TOOL_RESULT_MAX_CHARS,
 
   async call(input, context): Promise<ToolResult<WebFetchOutput>> {
     const startTime = Date.now();
@@ -94,25 +99,27 @@ export const WebFetchTool: Tool<typeof WebFetchInputSchema, WebFetchOutput> = {
       };
     }
 
-    // 构建结果消息
-    const header = `# Web Fetch Result
-
-**URL:** ${output.url}
-**Status:** ${output.code} ${output.codeText}
-**Content-Type:** ${output.contentType}
-**Size:** ${formatBytes(output.bytes)}
-**Duration:** ${output.durationMs}ms
-
----
-
-`;
-
-    const fullContent = header + output.content;
+    const preview = truncateWithEllipsis(output.content, WEB_FETCH_PREVIEW_CHARS);
+    const truncated = output.content.length > preview.length;
+    const summary = [
+      '# Web Fetch Result',
+      '',
+      `URL: ${output.url}`,
+      `Status: ${output.code} ${output.codeText}`,
+      `Content-Type: ${output.contentType}`,
+      `Size: ${formatBytes(output.bytes)}`,
+      `Duration: ${output.durationMs}ms`,
+      `Content chars: ${output.content.length}${truncated ? ' (truncated)' : ''}`,
+      '',
+      'Preview:',
+      preview,
+      truncated ? '\n...[truncated, use more specific URL or follow-up fetch if needed]' : '',
+    ].join('\n');
 
     return {
       type: 'tool_result',
       tool_use_id: toolUseID,
-      content: fullContent,
+      content: summary,
     };
   },
 

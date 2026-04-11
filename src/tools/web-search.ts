@@ -9,6 +9,12 @@ import {
   type WebSearchProviderId,
   normalizeWebSearchProvider,
 } from './web-search-providers';
+import {
+  READ_TOOL_RESULT_MAX_CHARS,
+  WEB_SEARCH_SNIPPET_CHARS,
+  WEB_SEARCH_TOP_K,
+  truncateWithEllipsis,
+} from './tool-output-format';
 
 const WebSearchInputSchema = z.object({
   query: z.string().describe('搜索查询'),
@@ -72,7 +78,7 @@ export const WebSearchTool: Tool<typeof WebSearchInputSchema, WebSearchOutput> =
   description:
     '联网搜索网页（设置 → 工具设置 → 联网搜索；配置存于 config.json 的 tools.webSearch.provider）。可选 DuckDuckGo 或必应中国站；仅 HTML 抓取，无官方 API。',
   inputSchema: WebSearchInputSchema,
-  maxResultSizeChars: 50000,
+  maxResultSizeChars: READ_TOOL_RESULT_MAX_CHARS,
 
   async call(
     input: WebSearchInput,
@@ -166,15 +172,19 @@ export const WebSearchTool: Tool<typeof WebSearchInputSchema, WebSearchOutput> =
       };
     }
 
-    const src =
-      content.provider === 'bing' ? '必应（cn.bing.com）' : 'DuckDuckGo';
-    let output = `搜索源: ${src}\n搜索查询: ${content.query}\n找到 ${content.count} 条结果\n\n`;
+    const src = content.provider === 'bing' ? '必应（cn.bing.com）' : 'DuckDuckGo';
+    const shown = content.results.slice(0, WEB_SEARCH_TOP_K);
+    let output = `搜索源: ${src}\n搜索查询: ${content.query}\n总结果: ${content.count} 条（展示前 ${shown.length} 条）\n\n`;
 
-    content.results.forEach((result, index) => {
-      output += `${index + 1}. ${result.title}\n`;
+    shown.forEach((result, index) => {
+      output += `${index + 1}. ${truncateWithEllipsis(result.title, 90)}\n`;
       output += `   链接: ${result.link}\n`;
-      output += `   摘要: ${result.snippet}\n\n`;
+      output += `   摘要: ${truncateWithEllipsis(result.snippet || '', WEB_SEARCH_SNIPPET_CHARS)}\n\n`;
     });
+
+    if (content.results.length > shown.length) {
+      output += `... 其余 ${content.results.length - shown.length} 条已省略（可改写更精准 query 继续搜索）`;
+    }
 
     return {
       type: 'tool_result',

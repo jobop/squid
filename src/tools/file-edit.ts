@@ -111,10 +111,15 @@ export const FileEditTool: Tool<typeof FileEditInputSchema, FileEditOutput> = {
     content: FileEditOutput,
     toolUseID: string
   ): ToolResultBlockParam {
+    const formatted = content.success
+      ? `OK: replacements=${content.replacements} file=${content.filePath}`
+      : `FAILED: ${content.message} (file=${content.filePath})`;
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseID,
-      content: JSON.stringify(content, null, 2)
+      content: formatted,
+      is_error: !content.success,
     };
   },
 
