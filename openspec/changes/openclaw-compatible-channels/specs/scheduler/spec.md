@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: 调度器应在任务完成时发送事件
+### Requirement: Cron 管理器应在任务完成时发送事件
 系统 SHALL 在定时任务完成时通过 EventBridge 发送事件。
 
 #### Scenario: 任务成功完成

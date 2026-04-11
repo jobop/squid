@@ -4,7 +4,6 @@ import { dirname, join, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { BrowserWindow, ApplicationMenu } from 'electrobun/bun';
 import { ClawServer } from '../claw/server';
-import { CronScheduler } from '../scheduler/cron-scheduler';
 import { TaskAPI, isTaskAPIConversationBusyError } from '../api/task-api';
 import {
   channelRegistry,
@@ -1293,9 +1292,6 @@ async function main() {
     enabled: false
   } as any);
 
-  // Initialize scheduler
-  const scheduler = new CronScheduler();
-
   await initializeBuiltinChannels(taskAPI);
   console.log('Channel system initialized（扩展在 setup 内自行注册 squid-bridge）');
 
@@ -1314,6 +1310,14 @@ async function main() {
   cronManager.setEnqueueDrainNotifier((conversationId) => {
     taskAPI.kickConversationQueueDrain(conversationId);
   });
+  const restoreResult = await cronManager.restoreTasks();
+  console.log(
+    '[CronManager] restored=%d failed=%d replayScheduled=%d total=%d',
+    restoreResult.restored,
+    restoreResult.failed,
+    restoreResult.replayScheduled,
+    cronManager.getStatus().totalTasks
+  );
 
   console.log('CronManager enqueue drain notifier + TaskAPI cron completion handler set');
 

@@ -138,12 +138,12 @@ eventBridge.onCommand((event) => {
 
 ## 使用场景
 
-### 场景 1: 调度器集成
+### 场景 1: Cron 管理器集成
 
 ```typescript
 import { eventBridge } from '../channels/bridge/event-bridge';
 
-async function executeScheduledTask(task: Task) {
+async function executeCronTask(task: Task) {
   const startTime = Date.now();
   
   try {

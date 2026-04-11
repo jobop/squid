@@ -15,7 +15,7 @@
 | state-machine.test.ts | Ask / Craft / Plan 转换与非法转换 |
 | sandbox.test.ts | 工作区内/外路径、遍历与绝对路径 |
 | skill-loader.test.ts | 从 Markdown 加载技能、错误格式 |
-| scheduler.test.ts | 调度、启停、取消 |
+| cron-tools.test.ts | 定时任务创建、删除、状态与运行记录 |
 | e2e.test.ts | 读写、Glob、Grep 等文件工作流 |
 | claw-integration.test.ts | POST /task、GET /task/:id、404 |
 | integration.test.ts | 工具结构 |
@@ -29,7 +29,7 @@
 - 技能：YAML 解析与加载  
 - 专家：内置列表与查询  
 - Claw：HTTP 接口与错误响应（以测试用例为准）  
-- 调度：Cron 启停与取消  
+- 定时任务：创建、删除、状态与运行记录  
 - 系统集成：端到端与多模块协同  
 
 ## 性能（参考）
@@ -45,7 +45,7 @@
 | 状态机 | 5 |
 | 沙箱 | 5 |
 | 技能 | 2 |
-| 调度器 | 3 |
+| 定时任务工具 | 16 |
 | 工具 | 3 |
 | Claw API | 3 |
 | 系统集成 | 4 |

@@ -147,9 +147,9 @@ export class OpenClawPluginAdapter implements ChannelPlugin {
 }
 ```
 
-### 决策 4: 调度器和任务执行集成事件总线
+### 决策 4: Cron 管理器和任务执行集成事件总线
 
-**选择：** 在任务完成时调用 `eventBridge.notifyTaskComplete()`
+**选择：** 在 cron 入队成功/失败时调用 `eventBridge.notifyTaskComplete()`
 
 **理由：**
 - 最小化改动
@@ -158,12 +158,12 @@ export class OpenClawPluginAdapter implements ChannelPlugin {
 
 **实现：**
 ```typescript
-// src/scheduler/task-runner.ts
+// src/tools/cron-manager.ts
 import { eventBridge } from '../channels/bridge/event-bridge';
 
-async function runTask(task: Task) {
+async function executeCronTask(task: Task) {
   try {
-    const result = await executeTask(task);
+    const result = await enqueueTask(task);
     
     // 发送任务完成事件
     eventBridge.notifyTaskComplete(task.id, result);
@@ -215,8 +215,8 @@ async function runTask(task: Task) {
 3. 前端 WebSocket 客户端
 4. 集成到聊天界面
 
-**阶段 3: 集成调度器和任务执行（1-2小时）**
-1. 在调度器中添加事件发送
+**阶段 3: 集成 Cron 管理器和任务执行（1-2小时）**
+1. 在 cron 管理器中添加事件发送
 2. 在任务执行中添加事件发送
 3. 测试端到端流程
 

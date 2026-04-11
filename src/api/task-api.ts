@@ -25,6 +25,8 @@ import { normalizeWebSearchProvider } from '../tools/web-search-providers';
 import { CronCreateTool } from '../tools/cron-create';
 import { CronDeleteTool } from '../tools/cron-delete';
 import { CronListTool } from '../tools/cron-list';
+import { CronStatusTool } from '../tools/cron-status';
+import { CronRunsTool } from '../tools/cron-runs';
 import { SkillTool } from '../tools/skill';
 import { BriefTool } from '../tools/brief';
 import { AgentTool } from '../tools/agent';
@@ -658,6 +660,8 @@ export class TaskAPI {
     this.toolRegistry.register(CronCreateTool);
     this.toolRegistry.register(CronDeleteTool);
     this.toolRegistry.register(CronListTool);
+    this.toolRegistry.register(CronStatusTool);
+    this.toolRegistry.register(CronRunsTool);
     this.toolRegistry.register(SkillTool);
     this.toolRegistry.register(BriefTool);
     this.toolRegistry.register(AgentTool);

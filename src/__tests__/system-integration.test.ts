@@ -6,8 +6,6 @@ import { SkillLoader } from '../skills/loader';
 import { ExpertManager } from '../experts/manager';
 import { ClawServer } from '../claw/server';
 import { ClawTaskHandler } from '../claw/task-handler';
-import { TaskScheduler } from '../scheduler/task-scheduler';
-import { CronScheduler } from '../scheduler/cron-scheduler';
 
 describe('System Integration Test', () => {
   it('should initialize all core modules', () => {
@@ -31,9 +29,6 @@ describe('System Integration Test', () => {
     const expertManager = new ExpertManager();
     expect(expertManager).toBeDefined();
 
-    // Cron scheduler
-    const cronScheduler = new CronScheduler();
-    expect(cronScheduler).toBeDefined();
   });
 
   it('should create and manage Claw server', async () => {

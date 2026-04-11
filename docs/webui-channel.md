@@ -26,7 +26,7 @@ WebUI Channel 是一个内置的 channel 插件，将聊天界面作为一个标
                                                     ▼
                                           ┌──────────────────┐
                                           │   执行引擎       │
-                                          │ (Scheduler/Tasks)│
+                                          │(CronManager/Tasks)│
                                           └──────────────────┘
 ```
 

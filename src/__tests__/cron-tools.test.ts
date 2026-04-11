@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CronCreateTool } from '../tools/cron-create';
 import { CronDeleteTool } from '../tools/cron-delete';
 import { CronListTool } from '../tools/cron-list';
+import { CronStatusTool } from '../tools/cron-status';
+import { CronRunsTool } from '../tools/cron-runs';
 import { cronManager } from '../tools/cron-manager';
 import type { ToolContext } from '../tools/base';
 
@@ -147,7 +149,12 @@ describe('Cron Tools', () => {
       const output = {
         success: true,
         tasks: [],
-        count: 0
+        count: 0,
+        status: {
+          enabled: false,
+          totalTasks: 0,
+          runningTasks: 0
+        }
       };
 
       const result = CronListTool.mapToolResultToToolResultBlockParam(output, 'tool-id');
@@ -168,7 +175,14 @@ describe('Cron Tools', () => {
             isRunning: false
           }
         ],
-        count: 1
+        count: 1,
+        status: {
+          enabled: true,
+          totalTasks: 1,
+          runningTasks: 0,
+          storagePath: '/tmp/cron-jobs.json',
+          lastRestoreAt: new Date('2024-01-01')
+        }
       };
 
       const result = CronListTool.mapToolResultToToolResultBlockParam(output, 'tool-id');
@@ -177,6 +191,24 @@ describe('Cron Tools', () => {
       expect(result.content).toContain('共有 1 个定时任务');
       expect(result.content).toContain('task-1');
       expect(result.content).toContain('0 * * * *');
+    });
+  });
+
+  describe('CronStatusTool', () => {
+    it('应该返回调度器状态', async () => {
+      const result = await CronStatusTool.call({}, mockContext);
+      expect(result.data.success).toBe(true);
+      expect(typeof result.data.status.totalTasks).toBe('number');
+      expect(typeof result.data.status.runningTasks).toBe('number');
+    });
+  });
+
+  describe('CronRunsTool', () => {
+    it('没有记录时返回空分页', async () => {
+      const result = await CronRunsTool.call({}, mockContext);
+      expect(result.data.success).toBe(true);
+      expect(result.data.page.total).toBe(0);
+      expect(result.data.page.entries).toHaveLength(0);
     });
   });
 
@@ -197,6 +229,18 @@ describe('Cron Tools', () => {
       expect(CronListTool.isConcurrencySafe()).toBe(true);
       expect(CronListTool.isReadOnly()).toBe(true);
       expect(CronListTool.isDestructive?.()).toBe(false);
+    });
+
+    it('CronStatusTool 应该正确标记属性', () => {
+      expect(CronStatusTool.isConcurrencySafe()).toBe(true);
+      expect(CronStatusTool.isReadOnly()).toBe(true);
+      expect(CronStatusTool.isDestructive?.()).toBe(false);
+    });
+
+    it('CronRunsTool 应该正确标记属性', () => {
+      expect(CronRunsTool.isConcurrencySafe()).toBe(true);
+      expect(CronRunsTool.isReadOnly()).toBe(true);
+      expect(CronRunsTool.isDestructive?.()).toBe(false);
     });
   });
 });

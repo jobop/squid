@@ -6,6 +6,8 @@ import { WebSearchTool } from '../tools/web-search';
 import { CronCreateTool } from '../tools/cron-create';
 import { CronDeleteTool } from '../tools/cron-delete';
 import { CronListTool } from '../tools/cron-list';
+import { CronStatusTool } from '../tools/cron-status';
+import { CronRunsTool } from '../tools/cron-runs';
 import { SkillTool } from '../tools/skill';
 import { BriefTool } from '../tools/brief';
 import { AgentTool } from '../tools/agent';
@@ -20,6 +22,8 @@ describe('Tool Interface Compliance', () => {
     { name: 'CronCreateTool', tool: CronCreateTool },
     { name: 'CronDeleteTool', tool: CronDeleteTool },
     { name: 'CronListTool', tool: CronListTool },
+    { name: 'CronStatusTool', tool: CronStatusTool },
+    { name: 'CronRunsTool', tool: CronRunsTool },
     { name: 'SkillTool', tool: SkillTool },
     { name: 'BriefTool', tool: BriefTool },
     { name: 'AgentTool', tool: AgentTool }

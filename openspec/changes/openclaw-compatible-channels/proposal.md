@@ -23,7 +23,7 @@
 
 ### Modified Capabilities
 
-- `scheduler`: 扩展调度器，任务完成时发送事件到 EventBridge
+- `cron-notification`: 扩展 cron 管理器，任务完成时发送事件到 EventBridge
 - `task-execution`: 扩展任务执行，完成时发送事件到 EventBridge
 
 ## Impact
@@ -36,7 +36,7 @@
 **修改模块：**
 - `src/channels/types.ts` - 添加事件类型定义
 - `src/channels/registry.ts` - 支持插件注册和事件订阅
-- `src/scheduler/` - 集成事件总线，发送任务完成事件
+- `src/tools/cron-manager.ts` - 集成事件总线，发送任务完成事件
 - `src/tasks/` - 集成事件总线，发送任务完成事件
 
 **依赖变更：**

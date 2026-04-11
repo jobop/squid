@@ -40,12 +40,12 @@
 - `public/websocket-client.js`
 - `public/index.html`（集成代码）
 
-### 4. 调度器集成
+### 4. Cron 管理集成
 - 任务完成时发送 EventBridge 通知
 - 包含任务信息、结果、耗时、状态
 
 **文件：**
-- `src/scheduler/task-scheduler.ts`
+- `src/tools/cron-manager.ts`
 
 ### 5. 任务执行集成
 - 后台任务完成时发送 EventBridge 通知
@@ -93,7 +93,7 @@
 ┌─────────────────────────────────────────────────────────┐
 │                    执行引擎                              │
 │  ┌──────────────┐         ┌──────────────┐             │
-│  │  Scheduler   │         │ Task Executor│             │
+│  │ CronManager  │         │ Task Executor│             │
 │  └──────┬───────┘         └──────┬───────┘             │
 │         │                        │                      │
 │         └────────────┬───────────┘                      │

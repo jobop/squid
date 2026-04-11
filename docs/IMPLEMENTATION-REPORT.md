@@ -30,7 +30,7 @@
 - `src/channels/plugins/webui/plugin.ts`：WebUI Channel（含 WebSocket）  
 - `src/channels/registry.ts`、`src/channels/index.ts`：注册与初始化  
 - `public/websocket-client.js`、`public/index.html`：前端连接与集成  
-- `src/scheduler/task-scheduler.ts`、`src/tasks/executor.ts`、`src/bun/index.ts`：调度与启动集成  
+- `src/tools/cron-manager.ts`、`src/utils/messageQueueManager.ts`、`src/tasks/executor.ts`、`src/bun/index.ts`：调度、队列与启动集成  
 - `src/channels/openclaw-adapter/adapter.ts`：OpenClaw 形态适配器  
 
 ### 配置与文档
@@ -46,7 +46,7 @@
 ## 架构设计
 
 ```
-执行引擎 (Scheduler / Tasks)
+执行引擎 (CronManager / Tasks)
         ↓
    EventBridge
         ↓
@@ -68,7 +68,7 @@
 | 1 | EventBridge 目录与类接口 |
 | 2 | WebUI Channel 插件与注册 |
 | 3 | 前端 WebSocket 客户端与聊天集成 |
-| 4–5 | 调度器与任务执行侧 EventBridge 集成 |
+| 4–5 | Cron 管理器与任务执行侧 EventBridge 集成 |
 | 6 | OpenClaw 适配器与验证说明 |
 | 7 | 配置与文档 |
 | 8 | 单元测试与集成测试指南 |

@@ -12,6 +12,8 @@ export const PLAN_MODE_READONLY_TOOL_NAMES = new Set<string>([
   'web_search',
   'brief',
   'cron_list',
+  'cron_status',
+  'cron_runs',
 ]);
 
 /** 仅允许指向 canonical 计划文件路径时执行 */

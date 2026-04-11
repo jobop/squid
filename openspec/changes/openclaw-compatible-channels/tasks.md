@@ -33,9 +33,9 @@
 - [x] 3.7 集成到现有聊天界面
 - [x] 3.8 实现任务完成通知的 UI 显示
 
-## 4. 集成调度器
+## 4. 集成 Cron 管理器
 
-- [x] 4.1 在 `src/scheduler/` 中导入 eventBridge
+- [x] 4.1 在 `src/tools/cron-manager.ts` 中导入 eventBridge
 - [x] 4.2 在任务完成时调用 eventBridge.notifyTaskComplete
 - [x] 4.3 在任务失败时调用 eventBridge.notifyTaskComplete（包含错误信息）
 - [x] 4.4 添加任务 ID 和结果信息

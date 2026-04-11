@@ -31,13 +31,8 @@
 4. 创建一个定时任务（使用 cron 工具）
    ```typescript
    // 在代码中或通过 API 创建
-   scheduler.register({
-     id: 'test-task',
-     name: '测试任务',
-     cron: '*/1 * * * *', // 每分钟执行
-     prompt: '输出当前时间',
-     enabled: true,
-   });
+   const result = cronManager.createTask('*/1 * * * *', '输出当前时间'); // 每分钟执行
+   console.log(result);
    ```
 
 5. 等待任务执行（1 分钟内）

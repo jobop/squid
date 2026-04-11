@@ -38,9 +38,14 @@ src/
 ├── claw/            # 远程控制
 │   ├── server.ts            # HTTP 服务器
 │   └── task-handler.ts      # 任务处理
-├── scheduler/       # 定时任务
-│   ├── cron-scheduler.ts    # Cron 调度
-│   └── task-scheduler.ts    # 任务调度
+├── utils/           # 队列与通用工具
+│   └── messageQueueManager.ts # 会话分桶队列（含 cron 入队）
+├── tools/           # 工具系统（含定时任务工具）
+│   ├── cron-manager.ts      # 定时任务调度与持久化
+│   ├── cron-create.ts       # 创建定时任务工具
+│   ├── cron-list.ts         # 列出定时任务工具
+│   ├── cron-status.ts       # 调度器状态工具
+│   └── cron-runs.ts         # 运行日志查询工具
 └── ui/              # 用户界面
     ├── main-layout.tsx      # 主布局
     └── task-wizard.tsx      # 任务向导

@@ -15,6 +15,8 @@ import { WebSearchTool } from './web-search';
 import { CronCreateTool } from './cron-create';
 import { CronDeleteTool } from './cron-delete';
 import { CronListTool } from './cron-list';
+import { CronStatusTool } from './cron-status';
+import { CronRunsTool } from './cron-runs';
 import { BriefTool } from './brief';
 
 export type UnifiedExecutionErrorType = 'timeout' | 'config' | 'execution';
@@ -56,6 +58,8 @@ function createRegistry(): ToolRegistry {
   registry.register(CronCreateTool);
   registry.register(CronDeleteTool);
   registry.register(CronListTool);
+  registry.register(CronStatusTool);
+  registry.register(CronRunsTool);
   registry.register(BriefTool);
   return registry;
 }
