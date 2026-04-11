@@ -135,4 +135,29 @@ Fallback description line.`;
     expect(summary?.description).toContain('Fallback description line');
     expect(summary?.userInvocable).toBe(true);
   });
+
+  it('should scan workspace skills directory when workspace is provided', async () => {
+    const skillContent = `---
+name: workspace-skill-only
+description: From workspace skills directory
+when-to-use: workspace only
+allowed-tools:
+  - read_file
+user-invocable: true
+---
+
+Workspace skill body`;
+
+    await mkdir(join(testDir, 'skills', 'workspace-skill-only'), { recursive: true });
+    await writeFile(
+      join(testDir, 'skills', 'workspace-skill-only', 'SKILL.md'),
+      skillContent
+    );
+
+    const workspaceLoader = new SkillLoader(undefined, testDir);
+    const summaries = await workspaceLoader.listSkillSummaries();
+    const found = summaries.find((s) => s.name === 'workspace-skill-only');
+    expect(found).toBeTruthy();
+    expect(found?.description).toBe('From workspace skills directory');
+  });
 });

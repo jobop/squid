@@ -396,7 +396,8 @@ async function main() {
       // List skills
       if (url.pathname === '/api/skills' && req.method === 'GET') {
         try {
-          const skills = await taskAPI.listSkills();
+          const workspace = String(url.searchParams.get('workspace') || '').trim();
+          const skills = await taskAPI.listSkills(workspace || undefined);
           return new Response(JSON.stringify(skills), { headers });
         } catch (error: any) {
           return new Response(JSON.stringify([]), { headers });

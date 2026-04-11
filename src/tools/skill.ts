@@ -64,7 +64,7 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
   ): Promise<ToolResult<SkillOutput>> {
     try {
       const loader = new SkillLoader();
-      const summaries = await loader.listSkillSummaries();
+      const summaries = await loader.listSkillSummaries(context.workDir);
 
       if (isListSkillsAlias(input.skill_name)) {
         const invocableSkills = summaries
@@ -85,7 +85,7 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
       }
 
       // 只有在 LLM 明确选择技能时，才加载该技能 body（systemPrompt）。
-      const skill = await loader.loadSkillByName(input.skill_name);
+      const skill = await loader.loadSkillByName(input.skill_name, context.workDir);
 
       if (!skill) {
         return {

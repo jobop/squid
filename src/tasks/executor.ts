@@ -8,7 +8,7 @@ import { MemorySelector } from '../memory/selector';
 import { MemoryManager } from '../memory/manager';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { eventBridge } from '../channels/bridge/event-bridge';
-import { appendAgentLog, truncateText } from '../utils/agent-execution-log';
+import { appendAgentLog, truncateMiddleText, truncateText } from '../utils/agent-execution-log';
 import {
   checkPlanModeToolInvocation,
   getParallelToolBatchSystemSection,
@@ -32,6 +32,31 @@ function filePathFromRawToolArgs(raw: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function summarizeNameList(names: string[], maxItems = 12): string {
+  if (!names.length) return '(none)';
+  if (names.length <= maxItems) return names.join(', ');
+  return `${names.slice(0, maxItems).join(', ')} ... (+${names.length - maxItems})`;
+}
+
+function parseToolArgs(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw && raw.trim() ? raw : '{}') as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function parseSkillSelection(rawArgs: string): { skillName: string; skillArgs?: string } | null {
+  const args = parseToolArgs(rawArgs);
+  const skillName = typeof args.skill_name === 'string' ? args.skill_name.trim() : '';
+  if (!skillName) return null;
+  const skillArgs = typeof args.args === 'string' ? truncateMiddleText(args.args, 120) : undefined;
+  return {
+    skillName,
+    skillArgs: skillArgs && skillArgs.length > 0 ? skillArgs : undefined,
+  };
 }
 
 /** 执行请求：模型 API Key 等凭证仅由 TaskExecutor 从 ~/.squid/config.json 读取，不由 Channel 传入 */
@@ -232,13 +257,19 @@ export class TaskExecutor {
       // Continue without memories
     }
 
+    let invocableSkillNames: string[] = [];
+
     // 仅当本执行器注册了 skill 工具时，才注入技能列表，避免子执行器误导模型触发递归。
     if (this.toolRegistry.get('skill')) {
       try {
-        const summaries = await this.skillLoader.listSkillSummaries();
+        const summaries = await this.skillLoader.listSkillSummaries(workspace);
         const invocableSkills = summaries
           .filter((skill) => skill.userInvocable)
           .map((skill) => `- ${skill.name}: ${skill.description}`)
+          .sort();
+        invocableSkillNames = summaries
+          .filter((skill) => skill.userInvocable)
+          .map((skill) => skill.name)
           .sort();
 
         if (invocableSkills.length > 0) {
@@ -284,6 +315,28 @@ export class TaskExecutor {
       role: 'user',
       content: buildOpenAIUserContent(instruction, attachments),
     });
+
+    const tools = getToolsForTaskMode(mode, this.toolRegistry);
+    const toolNames = tools.map((tool) => tool.name);
+    const systemPromptPreview = truncateMiddleText(systemContent, 200);
+    const userPromptPreview = truncateMiddleText(instruction, 200);
+    appendAgentLog('executor', 'info', 'Prompt summary', {
+      systemPromptPreview,
+      userPromptPreview,
+      toolCount: toolNames.length,
+      toolNames: summarizeNameList(toolNames),
+      skillCount: invocableSkillNames.length,
+      skillNames: summarizeNameList(invocableSkillNames),
+    });
+    console.log(
+      '[LLM] Prompt summary | systemPrompt=%s | userPrompt=%s | tools(%d)=%s | skills(%d)=%s',
+      systemPromptPreview,
+      userPromptPreview,
+      toolNames.length,
+      summarizeNameList(toolNames),
+      invocableSkillNames.length,
+      summarizeNameList(invocableSkillNames)
+    );
 
     return messages;
   }
@@ -426,8 +479,11 @@ export class TaskExecutor {
     const messages: Array<Record<string, any>> = [...initialMessages];
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
-    console.log(`[Executor] Registered tool count: ${tools.length}`);
-    console.log('[Executor] Tool list:', tools.map((t) => t.name).join(', '));
+    console.log(
+      '[LLM] Tool registry | count=%d names=%s',
+      tools.length,
+      summarizeNameList(tools.map((t) => t.name))
+    );
 
     const toolsParam = tools.length > 0 ? tools.map(t => ({
       type: 'function',
@@ -438,7 +494,6 @@ export class TaskExecutor {
       }
     })) : undefined;
 
-    console.log('[Executor] Tool payload sent to API:', JSON.stringify(toolsParam, null, 2));
     const maxToolRounds = 20;
     for (let round = 0; round < maxToolRounds; round++) {
       appendAgentLog('executor', 'debug', `OpenAI stream round ${round + 1} request`, {
@@ -582,12 +637,24 @@ export class TaskExecutor {
       const streamBatches = this.buildToolExecutionBatches(streamMetas, workspace);
 
       const runStreamOne = async (m: ToolCallPartitionItem) => {
-        console.log('Tool call arguments:', m.rawArguments);
         const filePath = filePathFromRawToolArgs(m.rawArguments);
+        const selectedSkill = m.toolName === 'skill' ? parseSkillSelection(m.rawArguments) : null;
         appendAgentLog('executor', 'info', `Tool call: ${m.toolName}`, {
-          argsPreview: truncateText(m.rawArguments, 500),
+          argsPreview: truncateMiddleText(m.rawArguments, 200),
           ...(filePath ? { file_path: filePath } : {}),
         });
+        console.log('[LLM] Selected tool | round=%d tool=%s', round + 1, m.toolName);
+        if (selectedSkill) {
+          appendAgentLog('executor', 'info', `Skill selected: ${selectedSkill.skillName}`, {
+            skillName: selectedSkill.skillName,
+            skillArgsPreview: selectedSkill.skillArgs,
+          });
+          console.log(
+            '[LLM] Selected skill | name=%s args=%s',
+            selectedSkill.skillName,
+            selectedSkill.skillArgs || '(none)'
+          );
+        }
         onChunk(`\n🔧 Calling tool: ${m.toolName}\n`);
 
         const toolResult = await this.executeToolAndFormatResult({
@@ -600,17 +667,34 @@ export class TaskExecutor {
         });
 
         if (toolResult.isError) {
+          const errorPreview = truncateMiddleText(toolResult.content, 200);
           appendAgentLog('executor', 'warn', `Tool result: ${m.toolName}`, {
-            resultPreview: truncateText(toolResult.content, 400),
+            resultPreview: errorPreview,
             ...(filePath ? { file_path: filePath } : {}),
           });
-          onChunk(`\n❌ ${toolResult.content}\n`);
+          console.log(
+            '[LLM] Tool execution | tool=%s status=failed error=%s',
+            m.toolName,
+            errorPreview
+          );
+          if (selectedSkill) {
+            console.log(
+              '[LLM] Skill execution | skill=%s status=failed error=%s',
+              selectedSkill.skillName,
+              errorPreview
+            );
+          }
+          onChunk(`\n❌ Tool failed: ${m.toolName} | ${errorPreview}\n`);
         } else {
           appendAgentLog('executor', 'debug', `Tool result: ${m.toolName}`, {
-            resultPreview: truncateText(toolResult.content, 400),
+            resultPreview: truncateMiddleText(toolResult.content, 200),
             ...(filePath ? { file_path: filePath } : {}),
           });
-          onChunk(`\n✅ Tool executed successfully: ${toolResult.content}\n`);
+          console.log('[LLM] Tool execution | tool=%s status=ok', m.toolName);
+          if (selectedSkill) {
+            console.log('[LLM] Skill execution | skill=%s status=ok', selectedSkill.skillName);
+          }
+          onChunk(`\n✅ Tool executed: ${m.toolName}\n`);
         }
 
         return {
@@ -688,6 +772,36 @@ When running git clone without a user-specified destination, explicitly clone in
       anthropicSystem += getPlanModeSystemAppendix(workspace || process.cwd(), conversationId);
     }
 
+    let invocableSkillNames: string[] = [];
+    if (this.toolRegistry.get('skill')) {
+      try {
+        invocableSkillNames = (await this.skillLoader.listSkillSummaries(workspace || process.cwd()))
+          .filter((skill) => skill.userInvocable)
+          .map((skill) => skill.name)
+          .sort();
+      } catch {
+        invocableSkillNames = [];
+      }
+    }
+
+    appendAgentLog('executor', 'info', 'Prompt summary', {
+      systemPromptPreview: truncateMiddleText(anthropicSystem, 200),
+      userPromptPreview: truncateMiddleText(instruction, 200),
+      toolCount: tools.length,
+      toolNames: summarizeNameList(tools.map((tool) => tool.name)),
+      skillCount: invocableSkillNames.length,
+      skillNames: summarizeNameList(invocableSkillNames),
+    });
+    console.log(
+      '[LLM] Prompt summary | systemPrompt=%s | userPrompt=%s | tools(%d)=%s | skills(%d)=%s',
+      truncateMiddleText(anthropicSystem, 200),
+      truncateMiddleText(instruction, 200),
+      tools.length,
+      summarizeNameList(tools.map((tool) => tool.name)),
+      invocableSkillNames.length,
+      summarizeNameList(invocableSkillNames)
+    );
+
     for (let round = 0; round < maxToolRounds; round++) {
       const response = await fetch(`${endpoint}/messages`, {
         method: 'POST',
@@ -733,6 +847,21 @@ When running git clone without a user-specified destination, explicitly clone in
         return finalText || '';
       }
 
+      appendAgentLog('executor', 'info', `Anthropic round ${round + 1}: tool calls`, {
+        count: toolUses.length,
+        tools: summarizeNameList(
+          toolUses.map((toolUse: { name?: string }) => toolUse.name || '(unknown)')
+        ),
+      });
+      console.log(
+        '[LLM] Selected tools | round=%d count=%d names=%s',
+        round + 1,
+        toolUses.length,
+        summarizeNameList(
+          toolUses.map((toolUse: { name?: string }) => toolUse.name || '(unknown)')
+        )
+      );
+
       const anthropicMetas = toolUses.map((toolUse: { id: string; name?: string; input?: unknown }) => ({
         toolName: toolUse.name || '',
         rawArguments: JSON.stringify(toolUse.input || {}),
@@ -743,6 +872,22 @@ When running git clone without a user-specified destination, explicitly clone in
       const anthropicBatches = this.buildToolExecutionBatches(anthropicMetas, ws);
 
       const runAnthropicOne = async (m: (typeof anthropicMetas)[0]) => {
+        const selectedSkill = m.toolName === 'skill' ? parseSkillSelection(m.rawArguments) : null;
+        appendAgentLog('executor', 'info', `Tool call: ${m.toolName}`, {
+          argsPreview: truncateMiddleText(m.rawArguments, 200),
+        });
+        console.log('[LLM] Selected tool | round=%d tool=%s', round + 1, m.toolName);
+        if (selectedSkill) {
+          appendAgentLog('executor', 'info', `Skill selected: ${selectedSkill.skillName}`, {
+            skillName: selectedSkill.skillName,
+            skillArgsPreview: selectedSkill.skillArgs,
+          });
+          console.log(
+            '[LLM] Selected skill | name=%s args=%s',
+            selectedSkill.skillName,
+            selectedSkill.skillArgs || '(none)'
+          );
+        }
         const toolResult = await this.executeToolAndFormatResult({
           toolName: m.toolName,
           rawArguments: m.rawArguments,
@@ -751,6 +896,30 @@ When running git clone without a user-specified destination, explicitly clone in
           conversationId,
           abortSignal,
         });
+        appendAgentLog('executor', toolResult.isError ? 'warn' : 'debug', `Tool result: ${m.toolName}`, {
+          resultPreview: truncateMiddleText(toolResult.content, 200),
+        });
+        const errorPreview = toolResult.isError ? truncateMiddleText(toolResult.content, 200) : '';
+        if (toolResult.isError) {
+          console.log(
+            '[LLM] Tool execution | tool=%s status=failed error=%s',
+            m.toolName,
+            errorPreview
+          );
+        } else {
+          console.log('[LLM] Tool execution | tool=%s status=ok', m.toolName);
+        }
+        if (selectedSkill) {
+          if (toolResult.isError) {
+            console.log(
+              '[LLM] Skill execution | skill=%s status=failed error=%s',
+              selectedSkill.skillName,
+              errorPreview
+            );
+          } else {
+            console.log('[LLM] Skill execution | skill=%s status=ok', selectedSkill.skillName);
+          }
+        }
         return {
           type: 'tool_result' as const,
           tool_use_id: m.toolUseId,

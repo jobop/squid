@@ -30,6 +30,15 @@ export function truncateText(s: string, max = 400): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
+export function truncateMiddleText(s: string, max = 200): string {
+  if (!s) return '';
+  const t = s.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  if (max <= 20) return `${t.slice(0, max)}…`;
+  const side = Math.floor((max - 1) / 2);
+  return `${t.slice(0, side)}…${t.slice(t.length - side)}`;
+}
+
 export function appendAgentLog(
   category: string,
   level: AgentLogLevel,

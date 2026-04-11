@@ -49,7 +49,7 @@ import {
   type QueuedCommandSource,
   type QueuePriority,
 } from '../utils/messageQueueManager';
-import { appendAgentLog, truncateText } from '../utils/agent-execution-log';
+import { appendAgentLog, truncateMiddleText, truncateText } from '../utils/agent-execution-log';
 
 import { TaskAPIConversationBusyError } from './task-api-channel-errors';
 
@@ -421,10 +421,30 @@ function normalizeSkillMentionsFromMentions(mentions: unknown): SelectedSkillInp
   return out;
 }
 
+function summarizeNameList(names: string[], maxItems = 12): string {
+  if (!names.length) return '(none)';
+  if (names.length <= maxItems) return names.join(', ');
+  return `${names.slice(0, maxItems).join(', ')} ... (+${names.length - maxItems})`;
+}
+
+function mergeSelectedSkillsForLog(mentions: MentionInput[], legacySkill?: string): string[] {
+  const fromMentions = normalizeSkillMentionsFromMentions(mentions).map((s) => s.name);
+  const seen = new Set(fromMentions.map((s) => s.toLowerCase()));
+  const merged = [...fromMentions];
+  if (typeof legacySkill === 'string' && legacySkill.trim()) {
+    const normalized = legacySkill.trim();
+    if (!seen.has(normalized.toLowerCase())) {
+      merged.unshift(normalized);
+    }
+  }
+  return merged;
+}
+
 async function validateMentionsForWorkspaceAndSkills(
   workspace: string,
   mentions: MentionInput[],
-  skillLoader: SkillLoader
+  skillLoader: SkillLoader,
+  workspaceForSkills?: string
 ): Promise<{ ok: true; mentions: MentionInput[] } | { ok: false; error: string }> {
   if (mentions.length === 0) return { ok: true, mentions: [] };
   const { fileMentions, skillMentions } = splitMentions(mentions);
@@ -466,7 +486,7 @@ async function validateMentionsForWorkspaceAndSkills(
   }
   const validatedSkills = new Map<string, SkillMentionInput>();
   if (skillMentions.length > 0) {
-    const summaries = await skillLoader.listSkillSummaries();
+    const summaries = await skillLoader.listSkillSummaries(workspaceForSkills);
     const invocableByLower = new Map(
       summaries
         .filter((item) => item.userInvocable)
@@ -916,8 +936,9 @@ export class TaskAPI {
     );
   }
 
-  async listSkills(): Promise<Array<{ name: string; description: string; effort: string }>> {
-    const skills = await this.skillLoader.loadAll();
+  async listSkills(workspace?: string): Promise<Array<{ name: string; description: string; effort: string }>> {
+    const workspacePath = (workspace || '').trim();
+    const skills = await this.skillLoader.loadAll(workspacePath || undefined);
     return Array.from(skills.values()).map(skill => ({
       name: skill.metadata.name,
       description: skill.metadata.description,
@@ -1298,7 +1319,12 @@ Complete tasks based on the user's instructions.`;
     this.runningConversations.add(cid);
     try {
       try {
-        console.log('Executing task:', request);
+        console.log(
+          '[LLM] Task request | userPrompt=%s | workspace=%s mode=%s',
+          truncateMiddleText(request.instruction || '', 200),
+          request.workspace,
+          request.mode
+        );
         appendAgentLog('task', 'info', 'executeTask started', {
           mode: request.mode,
           workspace: request.workspace,
@@ -1327,7 +1353,8 @@ Complete tasks based on the user's instructions.`;
         const mentionValidation = await validateMentionsForWorkspaceAndSkills(
           request.workspace,
           normalizedMentions,
-          this.skillLoader
+          this.skillLoader,
+          request.workspace
         );
         if (!mentionValidation.ok) {
           return {
@@ -1350,6 +1377,17 @@ Complete tasks based on the user's instructions.`;
           mentionImageAttachmentsResult.attachments
         );
         const expert = request.expertId ? this.expertManager.get(request.expertId) : undefined;
+        const selectedSkillsForLog = mergeSelectedSkillsForLog(mentionValidation.mentions, request.skill);
+        appendAgentLog('task', 'info', 'Selection summary', {
+          selectedSkillsCount: selectedSkillsForLog.length,
+          selectedSkills: summarizeNameList(selectedSkillsForLog),
+          fileMentionsCount: splitMentions(mentionValidation.mentions).fileMentions.length,
+        });
+        console.log(
+          '[LLM] Selection summary | selectedSkills(%d)=%s',
+          selectedSkillsForLog.length,
+          summarizeNameList(selectedSkillsForLog)
+        );
         const effective = buildInstructionWithSelections({
           instruction: request.instruction,
           mentions: mentionValidation.mentions,
@@ -1503,7 +1541,8 @@ Complete tasks based on the user's instructions.`;
         const mentionValidation = await validateMentionsForWorkspaceAndSkills(
           normalizedRequest.workspace,
           normalizedMentions,
-          this.skillLoader
+          this.skillLoader,
+          normalizedRequest.workspace
         );
         if (!mentionValidation.ok) {
           throw new Error(mentionValidation.error);
@@ -1523,6 +1562,20 @@ Complete tasks based on the user's instructions.`;
         const expert = normalizedRequest.expertId
           ? this.expertManager.get(normalizedRequest.expertId)
           : undefined;
+        const selectedSkillsForLog = mergeSelectedSkillsForLog(
+          mentionValidation.mentions,
+          normalizedRequest.skill
+        );
+        appendAgentLog('task-stream', 'info', 'Selection summary', {
+          selectedSkillsCount: selectedSkillsForLog.length,
+          selectedSkills: summarizeNameList(selectedSkillsForLog),
+          fileMentionsCount: splitMentions(mentionValidation.mentions).fileMentions.length,
+        });
+        console.log(
+          '[LLM] Selection summary | selectedSkills(%d)=%s',
+          selectedSkillsForLog.length,
+          summarizeNameList(selectedSkillsForLog)
+        );
         const effective = buildInstructionWithSelections({
           instruction: normalizedRequest.instruction,
           mentions: mentionValidation.mentions,

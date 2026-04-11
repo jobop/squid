@@ -2475,7 +2475,12 @@
       }
       skillsLoadingPromise = (async () => {
       try {
-        const response = await fetch('http://localhost:50001/api/skills');
+        const workspace = (document.getElementById('workspace')?.value || '').trim();
+        const url = new URL('http://localhost:50001/api/skills');
+        if (workspace) {
+          url.searchParams.set('workspace', workspace);
+        }
+        const response = await fetch(url.toString());
         if (response.ok) {
           skills = await response.json();
           skillsLoadedAt = Date.now();

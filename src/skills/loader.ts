@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'fs/promises';
-import { basename, dirname, extname, join } from 'path';
+import { basename, dirname, extname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { getSquidProjectRoot } from '../channels/extensions/config';
 import type { SkillDefinition, SkillYAML } from './schema';
@@ -36,17 +36,22 @@ interface MergedSkillEntry {
 export class SkillLoader {
   private readonly userSkillsDir: string;
   private readonly bundledSkillsDir: string | null;
+  private readonly workspaceSkillsDir: string | null;
 
   /**
-   * @param skillsDir 若传入，仅扫描该目录（测试用）；否则合并「包内 skills」与 `~/.squid/skills`，同名以用户为准。
+   * @param skillsDir 若传入，仅扫描该目录（测试用）；否则合并「包内 skills」与 `~/.squid/skills`。
+   * @param workspaceDir 传入时会额外扫描 `<workspaceDir>/skills`，用于工作区私有技能。
    */
-  constructor(skillsDir?: string) {
+  constructor(skillsDir?: string, workspaceDir?: string) {
     if (skillsDir !== undefined) {
       this.userSkillsDir = skillsDir;
       this.bundledSkillsDir = null;
+      this.workspaceSkillsDir = null;
     } else {
       this.userSkillsDir = join(homedir(), '.squid', 'skills');
       this.bundledSkillsDir = resolveBundledSkillsDir();
+      const ws = (workspaceDir || '').trim();
+      this.workspaceSkillsDir = ws ? join(resolve(ws), 'skills') : null;
     }
   }
 
@@ -62,8 +67,8 @@ export class SkillLoader {
     };
   }
 
-  async loadSkillByName(skillName: string): Promise<SkillDefinition | null> {
-    const summaries = await this.listSkillSummaries();
+  async loadSkillByName(skillName: string, workspaceDir?: string): Promise<SkillDefinition | null> {
+    const summaries = await this.listSkillSummaries(workspaceDir);
     const normalizedInput = this.normalizeSkillName(skillName);
     const matched = summaries.find((summary) =>
       this.normalizeSkillName(summary.name) === normalizedInput
@@ -259,9 +264,9 @@ export class SkillLoader {
     return { metadata, systemPrompt };
   }
 
-  async loadAll(): Promise<Map<string, SkillDefinition>> {
+  async loadAll(workspaceDir?: string): Promise<Map<string, SkillDefinition>> {
     const skills = new Map<string, SkillDefinition>();
-    const entries = await this.collectMergedSkillEntries();
+    const entries = await this.collectMergedSkillEntries(workspaceDir);
 
     for (const entry of entries) {
       try {
@@ -278,8 +283,8 @@ export class SkillLoader {
     return skills;
   }
 
-  async listSkillSummaries(): Promise<SkillSummary[]> {
-    const entries = await this.collectMergedSkillEntries();
+  async listSkillSummaries(workspaceDir?: string): Promise<SkillSummary[]> {
+    const entries = await this.collectMergedSkillEntries(workspaceDir);
     return entries.map((e) => ({
       name: e.name,
       description: e.description,
@@ -290,9 +295,18 @@ export class SkillLoader {
   }
 
   /**
-   * 先收录包内 skills，再收录用户目录；按规范化技能名去重，后者覆盖前者。
+   * 先收录包内 skills，再收录用户目录，最后收录 workspace/skills；
+   * 按规范化技能名去重，后者覆盖前者。
    */
-  private async collectMergedSkillEntries(): Promise<MergedSkillEntry[]> {
+  private resolveWorkspaceSkillsDir(workspaceDir?: string): string | null {
+    const ws = (workspaceDir || '').trim();
+    if (!ws) {
+      return this.workspaceSkillsDir;
+    }
+    return join(resolve(ws), 'skills');
+  }
+
+  private async collectMergedSkillEntries(workspaceDir?: string): Promise<MergedSkillEntry[]> {
     const byNorm = new Map<string, MergedSkillEntry>();
 
     const scanRoot = async (root: string) => {
@@ -327,6 +341,10 @@ export class SkillLoader {
       await scanRoot(this.bundledSkillsDir);
     }
     await scanRoot(this.userSkillsDir);
+    const dynamicWorkspaceSkillsDir = this.resolveWorkspaceSkillsDir(workspaceDir);
+    if (dynamicWorkspaceSkillsDir) {
+      await scanRoot(dynamicWorkspaceSkillsDir);
+    }
 
     return Array.from(byNorm.values());
   }
