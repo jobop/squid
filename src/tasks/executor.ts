@@ -33,6 +33,7 @@ import {
   normalizeOpenAIMessageToolCalls,
 } from './openai-tool-call-normalizer';
 import { contentCharLength } from '../tools/tool-output-format';
+import { appendLlmIoFileLog } from '../utils/llm-io-file-log';
 
 /** 从工具 raw JSON 参数中提取 file_path，便于并发场景下对照日志与 tool_call 顺序 */
 function filePathFromRawToolArgs(raw: string): string | undefined {
@@ -486,9 +487,8 @@ export class TaskExecutor {
         tools: toolsParam,
       };
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] OpenAI request payload | round=%d payload=%s',
-          round + 1,
+        await appendLlmIoFileLog(
+          `[LLM-IO] OpenAI request | round=${round + 1}`,
           formatJsonForLog(requestPayload)
         );
       }
@@ -508,9 +508,8 @@ export class TaskExecutor {
 
       const result = await response.json();
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] OpenAI response payload | round=%d payload=%s',
-          round + 1,
+        await appendLlmIoFileLog(
+          `[LLM-IO] OpenAI response | round=${round + 1}`,
           formatJsonForLog(result)
         );
       }
@@ -731,9 +730,8 @@ export class TaskExecutor {
         stream: true,
       };
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] OpenAI stream request payload | round=%d payload=%s',
-          round + 1,
+        await appendLlmIoFileLog(
+          `[LLM-IO] OpenAI stream request | round=${round + 1}`,
           formatJsonForLog(requestPayload)
         );
       }
@@ -766,7 +764,6 @@ export class TaskExecutor {
       /** Reasoning content for models that emit thinking in tool-call rounds. */
       let assistantReasoning = '';
       const toolCalls: any[] = [];
-      let streamResponseRaw = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -780,11 +777,6 @@ export class TaskExecutor {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') continue;
-          if (isLlmIoLogEnabled() && isLlmIoFullLogEnabled()) {
-            streamResponseRaw += `${data}\n`;
-          } else if (isLlmIoLogEnabled() && streamResponseRaw.length < llmIoLogMaxChars() * 2) {
-            streamResponseRaw += `${data}\n`;
-          }
 
           try {
             const parsed = JSON.parse(data);
@@ -818,15 +810,14 @@ export class TaskExecutor {
 
       const resolvedToolCalls = toolCalls.filter(Boolean);
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] OpenAI stream response payload | round=%d resolvedToolCallCount=%d payload=%s',
-          round + 1,
-          resolvedToolCalls.length,
-          streamResponseRaw.length > 0
-            ? (isLlmIoFullLogEnabled()
-                ? streamResponseRaw
-                : truncateMiddleText(streamResponseRaw, llmIoLogMaxChars()))
-            : '(empty stream payload)'
+        const aggregatedStreamResult = {
+          assistantContent,
+          assistantReasoning,
+          resolvedToolCalls,
+        };
+        await appendLlmIoFileLog(
+          `[LLM-IO] OpenAI stream response | round=${round + 1} resolvedToolCallCount=${resolvedToolCalls.length}`,
+          formatJsonForLog(aggregatedStreamResult)
         );
       }
       const selectedTools: ToolSelectionRecord[] = resolvedToolCalls.map((toolCall) =>
@@ -1144,9 +1135,8 @@ When running git clone without a user-specified destination, explicitly clone in
         tools: toolsParam,
       };
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] Anthropic request payload | round=%d payload=%s',
-          round + 1,
+        await appendLlmIoFileLog(
+          `[LLM-IO] Anthropic request | round=${round + 1}`,
           formatJsonForLog(requestPayload)
         );
       }
@@ -1168,9 +1158,8 @@ When running git clone without a user-specified destination, explicitly clone in
 
       const result = await response.json();
       if (isLlmIoLogEnabled()) {
-        console.debug(
-          '[LLM-IO] Anthropic response payload | round=%d payload=%s',
-          round + 1,
+        await appendLlmIoFileLog(
+          `[LLM-IO] Anthropic response | round=${round + 1}`,
           formatJsonForLog(result)
         );
       }

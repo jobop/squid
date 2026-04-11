@@ -27,6 +27,17 @@ describe('tool-invocation-consistency', () => {
     expect(buildToolConsistencyRemediationMessage(result)).toContain('禁止“只提不调”');
   });
 
+  it('伪执行装饰文本但无 tool call 时返回 warning', () => {
+    const result = checkToolInvocationConsistency({
+      assistantText:
+        '好的，我来处理。\n[Executing tool calls...]\n🔧 Calling tool: bash\n✅ Tool executed: bash\n[Tool calls completed, continuing generation...]',
+      selectedTools: [],
+      executedTools: [],
+    });
+    expect(result.status).toBe('warning');
+    expect(result.reason).toBe('tool_selection_missing');
+  });
+
   it('声明且至少一个工具成功时返回 ok', () => {
     const result = checkToolInvocationConsistency({
       assistantText: 'I already ran the bash tool.',

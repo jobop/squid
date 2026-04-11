@@ -728,6 +728,18 @@ export class TaskAPI {
     return !['0', 'false', 'off', 'no'].includes(raw);
   }
 
+  private stripExecutionDecorationForHistory(text: string): string {
+    if (!text) return text;
+    return text
+      .replace(/\n?\[Executing tool calls\.\.\.\]\n?/g, '\n')
+      .replace(/\n?\[Tool calls completed, continuing generation\.\.\.\]\n?/g, '\n')
+      .replace(/\n?[ \t]*🔧\s*Calling tool:.*\n?/g, '\n')
+      .replace(/\n?[ \t]*✅\s*Tool executed:.*\n?/g, '\n')
+      .replace(/\n?[ \t]*❌\s*Tool failed:.*\n?/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   private async syncBundledCoreSkillsToUserDir(): Promise<void> {
     if (!this.shouldSyncBundledCoreSkillsOnStartup()) return;
     const { existsSync } = await import('fs');
@@ -1825,7 +1837,11 @@ Complete tasks based on the user's instructions.`;
         );
 
         await this.conversationManager.addMessage(conversationId, 'user', normalizedRequest.instruction);
-        await this.conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+        await this.conversationManager.addMessage(
+          conversationId,
+          'assistant',
+          this.stripExecutionDecorationForHistory(fullResponse)
+        );
 
         const task = this.tasks.get(taskId);
         if (task) {

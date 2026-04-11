@@ -34,6 +34,9 @@ const TOOL_CLAIM_PATTERNS: RegExp[] = [
   /(?:我|已|已经|刚刚|将|会|正在|马上).{0,16}(?:调用|使用|执行|运行|验证).{0,24}(?:tool|工具|skill|技能|命令|bash|shell|web[_\-\s]?search|read|write)/giu,
   /(?:I|we)\s+(?:will|have|already|just|can)?\s*(?:invoke|use|run|ran|execute|executed|verify|validated|called)\s+(?:the\s+)?(?:tool|tools|skill|skills|command|bash|shell|web[_\-\s]?search)/giu,
   /(?:已|已经|刚刚).{0,10}(?:验证|确认).{0,24}(?:可用|正常|成功|worked|works)/giu,
+  /\[\s*executing\s+tool\s+calls\.\.\.\s*\]/giu,
+  /\[\s*tool\s+calls\s+completed,\s*continuing\s+generation\.\.\.\s*\]/giu,
+  /(?:✅|❌|🔧)\s*tool\s+(?:executed|failed|calls?)/giu,
 ];
 
 export function detectToolClaimSignals(assistantText: string): string[] {
