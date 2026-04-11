@@ -93,19 +93,19 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
         } else if (this.openclawPlugin.sendMessage) {
           await this.openclawPlugin.sendMessage(params.content);
         } else {
-          console.warn(`[OpenClawAdapter] 插件 ${this.id} 没有实现发送方法`);
+          console.warn(`[OpenClawAdapter] Plugin ${this.id} does not implement a send method`);
           return {
             success: false,
-            error: '插件未实现发送方法',
+            error: 'Plugin does not implement a send method',
           };
         }
 
         return { success: true };
       } catch (error: any) {
-        console.error(`[OpenClawAdapter] 发送消息失败:`, error);
+        console.error(`[OpenClawAdapter] Failed to send message:`, error);
         return {
           success: false,
-          error: error.message || '发送失败',
+          error: error.message || 'Send failed',
         };
       }
     },
@@ -140,7 +140,7 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
       } else if (this.openclawPlugin.onMessage) {
         this.openclawPlugin.onMessage(callback);
       } else {
-        console.warn(`[OpenClawAdapter] 插件 ${this.id} 没有实现消息接收方法`);
+        console.warn(`[OpenClawAdapter] Plugin ${this.id} does not implement a message receive method`);
       }
     },
   };
@@ -154,19 +154,19 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
           const result = await this.openclawPlugin.probe();
           return {
             healthy: result.success || result.connected,
-            message: result.message || (result.success ? '已连接' : '未连接'),
+            message: result.message || (result.success ? 'Connected' : 'Disconnected'),
           };
         } else if (this.openclawPlugin.isConnected) {
           const connected = await this.openclawPlugin.isConnected();
           return {
             healthy: connected,
-            message: connected ? '已连接' : '未连接',
+            message: connected ? 'Connected' : 'Disconnected',
           };
         } else if (this.openclawPlugin.checkStatus) {
           const status = await this.openclawPlugin.checkStatus();
           return {
             healthy: status.healthy !== false,
-            message: status.message || '状态未知',
+            message: status.message || 'Unknown status',
           };
         }
 
@@ -174,12 +174,12 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
         const configValid = this.config.validate();
         return {
           healthy: configValid,
-          message: configValid ? '配置有效' : '配置无效',
+          message: configValid ? 'Configuration valid' : 'Configuration invalid',
         };
       } catch (error: any) {
         return {
           healthy: false,
-          message: `状态检查失败: ${error.message}`,
+          message: `Status check failed: ${error.message}`,
         };
       }
     },
@@ -188,7 +188,7 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
   // 设置适配器
   setup: ChannelSetupAdapter = {
     initialize: async () => {
-      console.log(`[OpenClawAdapter] 初始化插件: ${this.id}`);
+      console.log(`[OpenClawAdapter] Initializing plugin: ${this.id}`);
 
       // 调用插件的初始化方法
       if (this.openclawPlugin.initialize) {
@@ -202,19 +202,19 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
       // 订阅任务完成事件，转发到插件
       eventBridge.onTaskComplete((event) => {
         const message = event.error
-          ? `❌ 任务失败\n任务: ${event.taskId}\n错误: ${event.error}`
-          : `✅ 任务完成\n任务: ${event.taskId}`;
+          ? `❌ Task failed\nTask: ${event.taskId}\nError: ${event.error}`
+          : `✅ Task completed\nTask: ${event.taskId}`;
 
         this.outbound.sendText({ content: message }).catch((error) => {
-          console.error(`[OpenClawAdapter] 发送任务通知失败:`, error);
+          console.error(`[OpenClawAdapter] Failed to send task notification:`, error);
         });
       });
 
-      console.log(`[OpenClawAdapter] 插件 ${this.id} 初始化完成`);
+      console.log(`[OpenClawAdapter] Plugin ${this.id} initialization completed`);
     },
 
     cleanup: async () => {
-      console.log(`[OpenClawAdapter] 清理插件: ${this.id}`);
+      console.log(`[OpenClawAdapter] Cleaning up plugin: ${this.id}`);
 
       // 调用插件的清理方法
       if (this.openclawPlugin.cleanup) {
@@ -225,7 +225,7 @@ export class OpenClawChannelAdapter implements ChannelPlugin {
         await this.openclawPlugin.close();
       }
 
-      console.log(`[OpenClawAdapter] 插件 ${this.id} 清理完成`);
+      console.log(`[OpenClawAdapter] Plugin ${this.id} cleanup completed`);
     },
   };
 }

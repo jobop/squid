@@ -69,16 +69,16 @@ describe('plan-mode-policy', () => {
 
   it('getPlanModeSystemAppendix 含相对路径与探索/成文说明', () => {
     const appendix = getPlanModeSystemAppendix(WS, 'sess-1');
-    expect(appendix).toContain('唯一允许的写入目标');
-    expect(appendix).toContain('探索阶段');
-    expect(appendix).toContain('同轮工具并行');
+    expect(appendix).toContain('Only allowed write target');
+    expect(appendix).toContain('Exploration Phase');
+    expect(appendix).toContain('parallel tool');
     expect(appendix).toContain(getCanonicalPlanFileRelativePath(WS, 'sess-1'));
     expect(appendix).toContain(getCanonicalPlanFilePath(WS, 'sess-1'));
   });
 
   it('getParallelToolBatchSystemSection 含自行判断与 isConcurrencySafe 编排说明', () => {
     const s = getParallelToolBatchSystemSection();
-    expect(s).toContain('由你判断');
+    expect(s).toContain('model-decided');
     expect(s).toContain('write_file');
     expect(s).toContain('bash');
   });
@@ -119,8 +119,8 @@ describe('plan-mode-policy', () => {
       WS
     );
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.message).toContain('仅允许写入计划文件');
-    expect(r.ok === false && r.message).toContain('下一步：请立即使用 write_file');
+    expect(r.ok === false && r.message).toContain('Only plan-file writes are allowed');
+    expect(r.ok === false && r.message).toContain('Next step');
     expect(r.ok === false && r.message).toMatch(/\.squid[\\/]plan\.md/);
   });
 
@@ -131,7 +131,7 @@ describe('plan-mode-policy', () => {
       WS
     );
     expect(r.ok).toBe(false);
-    expect(r.ok === false && r.message).toContain('越出工作区');
+    expect(r.ok === false && r.message).toContain('escapes workspace');
   });
 
   it('有 conversationId 时仅允许对应 plan 文件路径', () => {

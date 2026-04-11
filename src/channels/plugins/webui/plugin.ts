@@ -107,8 +107,8 @@ export class WebUIChannelPlugin implements ChannelPlugin {
       return {
         healthy: isHealthy,
         message: isHealthy
-          ? `WebSocket 服务运行中，${this.clients.size} 个客户端连接`
-          : 'WebSocket 服务未启动',
+          ? `WebSocket service running, ${this.clients.size} client(s) connected`
+          : 'WebSocket service is not started',
       };
     },
   };
@@ -138,7 +138,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
     this.wss = new WebSocketServer({ port });
 
     this.wss.on('connection', (ws: WebSocket) => {
-      console.log('[WebUI] 客户端已连接');
+      console.log('[WebUI] Client connected');
       this.clients.add(ws);
 
       ws.on('message', (data: Buffer) => {
@@ -146,30 +146,30 @@ export class WebUIChannelPlugin implements ChannelPlugin {
       });
 
       ws.on('close', () => {
-        console.log('[WebUI] 客户端已断开');
+        console.log('[WebUI] Client disconnected');
         this.clients.delete(ws);
       });
 
       ws.on('error', (error) => {
-        console.error('[WebUI] WebSocket 错误:', error);
+        console.error('[WebUI] WebSocket error:', error);
         this.clients.delete(ws);
       });
 
-      // 发送欢迎消息
+      // Send welcome message
       ws.send(JSON.stringify({
         type: 'notification',
         data: {
-          content: 'WebSocket 连接成功',
+          content: 'WebSocket connected',
           type: 'success',
         },
       }));
     });
 
-    console.log(`[WebUI] WebSocket 服务器启动在端口 ${port}`);
+    console.log(`[WebUI] WebSocket server started on port ${port}`);
   }
 
   /**
-   * 停止 WebSocket 服务器
+   * Stop WebSocket server
    */
   private async stopWebSocketServer(): Promise<void> {
     if (this.wss) {
@@ -178,7 +178,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
 
       await new Promise<void>((resolve) => {
         this.wss!.close(() => {
-          console.log('[WebUI] WebSocket 服务器已关闭');
+          console.log('[WebUI] WebSocket server stopped');
           resolve();
         });
       });
@@ -218,7 +218,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
           }
       }
     } catch (error) {
-      console.error('[WebUI] 解析消息失败:', error);
+      console.error('[WebUI] Failed to parse message:', error);
     }
   }
 
@@ -236,7 +236,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
           client.send(messageStr);
           successCount++;
         } catch (error) {
-          console.error('[WebUI] 发送消息失败:', error);
+          console.error('[WebUI] Failed to send message:', error);
           errorCount++;
         }
       }
@@ -244,7 +244,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
 
     return {
       success: errorCount === 0,
-      error: errorCount > 0 ? `${errorCount} 个客户端发送失败` : undefined,
+      error: errorCount > 0 ? `${errorCount} client(s) failed to receive message` : undefined,
     };
   }
 
@@ -284,7 +284,7 @@ export class WebUIChannelPlugin implements ChannelPlugin {
           try {
             client.send(JSON.stringify({ type: 'ping' }));
           } catch (error) {
-            console.error('[WebUI] 发送心跳失败:', error);
+            console.error('[WebUI] Failed to send heartbeat:', error);
             this.clients.delete(client);
           }
         } else {

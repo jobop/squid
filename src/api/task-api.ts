@@ -927,12 +927,12 @@ export class TaskAPI {
 
   async generateSkill(description: string): Promise<{ success: boolean; yaml?: string; error?: string }> {
     try {
-      // TODO: 调用 LLM 生成技能 YAML
-      // 这里先返回一个模板
+      // TODO: Generate skill YAML via LLM.
+      // Temporary template response.
       const yaml = `---
 name: custom-skill
 description: ${description}
-when-to-use: 根据用户需求使用
+when-to-use: Use according to user intent
 allowed-tools:
   - Read
   - Write
@@ -941,9 +941,9 @@ effort: medium
 user-invocable: true
 ---
 
-你是一个专业的助手，专注于：${description}
+You are a professional assistant focused on: ${description}
 
-请根据用户的指令完成任务。`;
+Complete tasks based on the user's instructions.`;
 
       return {
         success: true,
@@ -1299,7 +1299,7 @@ user-invocable: true
     try {
       try {
         console.log('Executing task:', request);
-        appendAgentLog('task', 'info', 'executeTask 开始', {
+        appendAgentLog('task', 'info', 'executeTask started', {
           mode: request.mode,
           workspace: request.workspace,
           instructionPreview: truncateText(request.instruction, 240),
@@ -1357,7 +1357,7 @@ user-invocable: true
           expert,
         });
         const effectiveInstruction = effective.instruction;
-        appendAgentLog('task', 'debug', 'executeTask 指令构建', {
+        appendAgentLog('task', 'debug', 'executeTask instruction built', {
           expertId: request.expertId || undefined,
           expertApplied: effective.expertApplied,
           fileMentionsCount: splitMentions(mentionValidation.mentions).fileMentions.length,
@@ -1381,7 +1381,7 @@ user-invocable: true
         }
 
         if (result.error) {
-          appendAgentLog('task', 'error', 'executeTask 失败', {
+          appendAgentLog('task', 'error', 'executeTask failed', {
             error: truncateText(result.error, 500),
           });
           return {
@@ -1392,7 +1392,7 @@ user-invocable: true
           };
         }
 
-        appendAgentLog('task', 'info', 'executeTask 完成', {
+        appendAgentLog('task', 'info', 'executeTask completed', {
           outputChars: (result.output || '').length,
         });
         return {
@@ -1402,7 +1402,7 @@ user-invocable: true
         };
       } catch (error: any) {
         console.error('Task execution failed:', error);
-        appendAgentLog('task', 'error', 'executeTask 异常', {
+        appendAgentLog('task', 'error', 'executeTask exception', {
           error: truncateText(error?.message || String(error), 500),
         });
 
@@ -1434,7 +1434,7 @@ user-invocable: true
     const command = (request.instruction || '').trim();
     if (/^\/wtf\b/i.test(command)) {
       const aborted = this.abortConversation(cid);
-      appendAgentLog('task-stream', 'info', '执行 /wtf（中断当前运行）', {
+      appendAgentLog('task-stream', 'info', 'execute /wtf (abort current run)', {
         conversationId: cid,
         aborted,
       });
@@ -1474,7 +1474,7 @@ user-invocable: true
         // /new = 仅清空当前线程消息；/reset = 清空会话并清空全部长期记忆
         if (/^\/new\b/i.test(trimmedInstruction)) {
           const r = await this.clearThreadMessages(conversationId);
-          appendAgentLog('task-stream', 'info', '执行 /new（不经 LLM，仅会话消息）', {
+          appendAgentLog('task-stream', 'info', 'execute /new (no LLM, session messages only)', {
             success: r.success,
             conversationId,
           });
@@ -1487,7 +1487,7 @@ user-invocable: true
         }
         if (/^\/reset\b/i.test(trimmedInstruction)) {
           const r = await this.newSessionClearAll(conversationId);
-          appendAgentLog('task-stream', 'info', '执行 /reset（不经 LLM，会话+记忆）', {
+          appendAgentLog('task-stream', 'info', 'execute /reset (no LLM, session + memory)', {
             success: r.success,
             conversationId,
           });
@@ -1536,15 +1536,15 @@ user-invocable: true
         const modelName = normalizedRequest.modelName || modelConfig.modelName;
 
         console.log(
-          '[LLM] TaskAPI.executeTaskStream 开始 workspace=%s conversationId=%s model.provider=%s apiKey已配置=%s',
+          '[LLM] TaskAPI.executeTaskStream start workspace=%s conversationId=%s model.provider=%s apiKeyConfigured=%s',
           normalizedRequest.workspace,
           normalizedRequest.conversationId || '(默认会话)',
           modelConfig.provider || '(无)',
-          apiKey ? '是' : '否'
+          apiKey ? 'yes' : 'no'
         );
 
         const streamStartedAt = Date.now();
-        appendAgentLog('task-stream', 'info', 'executeTaskStream → LLM', {
+        appendAgentLog('task-stream', 'info', 'executeTaskStream -> LLM', {
           workspace: normalizedRequest.workspace,
           conversationId,
           mode: normalizedRequest.mode,
@@ -1578,13 +1578,13 @@ user-invocable: true
           expertId: normalizedRequest.expertId,
         });
 
-        console.log('[LLM] TaskAPI 校验 workspace: %s', normalizedRequest.workspace);
+        console.log('[LLM] TaskAPI validating workspace: %s', normalizedRequest.workspace);
         const sandbox = new WorkspaceSandbox(normalizedRequest.workspace);
         await sandbox.validatePath(normalizedRequest.workspace);
 
         let fullResponse = '';
 
-        console.log('[LLM] TaskAPI → TaskExecutor.executeStream（模型凭证仅来自 ~/.squid/config.json）');
+        console.log('[LLM] TaskAPI -> TaskExecutor.executeStream (model credentials loaded only from ~/.squid/config.json)');
 
         const executorConversationId =
           normalizeSyntheticConversationId(conversationId);
@@ -1611,21 +1611,21 @@ user-invocable: true
         if (task) {
           task.status = 'completed';
         }
-        appendAgentLog('task-stream', 'info', 'executeTaskStream 完成', {
+        appendAgentLog('task-stream', 'info', 'executeTaskStream completed', {
           durationMs: Date.now() - streamStartedAt,
           responseChars: fullResponse.length,
           conversationId,
         });
       } catch (error: any) {
         if (isAbortError(error)) {
-          appendAgentLog('task-stream', 'info', 'executeTaskStream 已中断', {
+          appendAgentLog('task-stream', 'info', 'executeTaskStream aborted', {
             conversationId: cid,
           });
           onChunk('⛔ 已中断当前生成。');
           return;
         }
         console.error('Task execution failed:', error);
-        appendAgentLog('task-stream', 'error', 'executeTaskStream 失败', {
+        appendAgentLog('task-stream', 'error', 'executeTaskStream failed', {
           error: truncateText(error?.message || String(error), 500),
         });
 
@@ -1887,13 +1887,13 @@ user-invocable: true
 
   async generateExpertFromDescription(description: string): Promise<{ success: boolean; expert?: any; error?: string }> {
     try {
-      // TODO: 调用 LLM 生成专家定义
-      // 这里先返回一个模板
+      // TODO: Generate expert profile via LLM.
+      // Temporary template response.
       const expert = {
-        name: '自定义专家',
+        name: 'Custom Expert',
         role: description,
-        expertise: ['通用技能'],
-        promptTemplate: `你是一位专业的助手，专注于：${description}\n\n请根据用户的需求提供专业的帮助。`
+        expertise: ['General Skills'],
+        promptTemplate: `You are a professional assistant focused on: ${description}\n\nProvide expert help based on user needs.`
       };
 
       return {
@@ -1970,7 +1970,7 @@ user-invocable: true
 
         return {
           success: true,
-          message: 'OpenAI API 连接成功'
+          message: 'OpenAI API connected successfully'
         };
       } else if (config.provider === 'anthropic') {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1994,10 +1994,10 @@ user-invocable: true
 
         return {
           success: true,
-          message: 'Anthropic API 连接成功'
+          message: 'Anthropic API connected successfully'
         };
       } else if (config.provider === 'custom') {
-        // 自定义端点，根据协议类型测试
+        // Custom endpoint, test by protocol type
         if (config.apiProtocol === 'openai') {
           const response = await fetch(`${config.apiEndpoint}/models`, {
             headers: {
@@ -2011,7 +2011,7 @@ user-invocable: true
 
           return {
             success: true,
-            message: '自定义端点（OpenAI 协议）连接成功'
+            message: 'Custom endpoint (OpenAI protocol) connected successfully'
           };
         } else if (config.apiProtocol === 'anthropic') {
           const response = await fetch(`${config.apiEndpoint}/messages`, {
@@ -2035,14 +2035,14 @@ user-invocable: true
 
           return {
             success: true,
-            message: '自定义端点（Anthropic 协议）连接成功'
+            message: 'Custom endpoint (Anthropic protocol) connected successfully'
           };
         }
       }
 
       return {
         success: false,
-        error: '未知的提供商类型'
+        error: 'Unknown provider type'
       };
     } catch (error: any) {
       return {

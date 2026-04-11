@@ -45,7 +45,7 @@ describe('BriefTool', () => {
     );
 
     expect(result.data.success).toBe(false);
-    expect(result.data.error).toContain('未配置');
+    expect(result.data.error).toContain('not configured');
   });
 
   it('应该成功生成简短摘要', async () => {
@@ -186,7 +186,7 @@ describe('BriefTool', () => {
 
     expect(result.type).toBe('tool_result');
     expect(result.tool_use_id).toBe('test-id');
-    expect(result.content).toContain('摘要类型: brief');
+    expect(result.content).toContain('Summary type: brief');
     expect(result.content).toContain('Test summary');
   });
 

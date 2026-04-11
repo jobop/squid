@@ -95,7 +95,7 @@ export class FeishuChannelPlugin implements ChannelPlugin {
     check: async () => {
       const c = loadFeishuChannelConfigSync();
       if (!c) {
-        return { healthy: false, message: '未配置 feishu-channel.json' };
+        return { healthy: false, message: 'feishu-channel.json is not configured' };
       }
       const base = validateFeishuChannelConfig(c);
       if (!base.ok) {
@@ -110,10 +110,10 @@ export class FeishuChannelPlugin implements ChannelPlugin {
         return {
           healthy: true,
           message:
-            'tenant token 可用；未填默认接收方时将使用最近入站会话的 chat_id 发主动消息（冷启动无入站前可能无法推送）',
+            'Tenant token available; when default receiver is empty, outbound chat_id uses the latest inbound session (cold start without inbound messages may block push)',
         };
       }
-      return { healthy: true, message: 'tenant token 可用' };
+      return { healthy: true, message: 'Tenant token available' };
     },
   };
 
@@ -131,10 +131,10 @@ export class FeishuChannelPlugin implements ChannelPlugin {
 
       this.taskCompleteHandler = (event: TaskCompleteEvent) => {
         const text = event.error
-          ? `❌ 任务失败\n任务: ${event.taskId}\n错误: ${event.error}`
-          : `✅ 任务完成\n任务: ${event.taskId}`;
+          ? `❌ Task failed\nTask: ${event.taskId}\nError: ${event.error}`
+          : `✅ Task completed\nTask: ${event.taskId}`;
         this.outbound.sendText({ content: text }).catch((err) => {
-          console.error('[Feishu] 发送任务完成通知失败:', err);
+          console.error('[Feishu] Failed to send task completion notification:', err);
         });
       };
       getFeishuExtensionEventBridge().onTaskComplete(this.taskCompleteHandler);

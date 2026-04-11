@@ -23,7 +23,7 @@ function isChatAllowed(
     if (!allowedAllLogged) {
       allowedAllLogged = true;
       console.warn(
-        '[Telegram] allowedChatIds 未配置：将处理所有对话。生产环境建议在 ~/.squid/telegram-channel.json 中设置 allowedChatIds。'
+        '[Telegram] allowedChatIds is not configured: all chats will be processed. In production, set allowedChatIds in ~/.squid/telegram-channel.json.'
       );
     }
     return true;
@@ -70,14 +70,14 @@ function pickTelegramInboundMedia(message: {
 }
 
 /**
- * Telegram Bot：长轮询 getUpdates 入站；出站走 Bot API sendMessage。
+ * Telegram Bot: inbound via long-polling getUpdates; outbound via Bot API sendMessage.
  */
 export class TelegramChannelPlugin implements ChannelPlugin {
   id = 'telegram';
 
   meta = {
     name: 'Telegram',
-    description: 'Telegram Bot（长轮询入站 + sendMessage 出站）',
+    description: 'Telegram Bot (long-poll inbound + sendMessage outbound)',
     icon: '✈️',
     category: 'third-party' as const,
   };
@@ -103,7 +103,7 @@ export class TelegramChannelPlugin implements ChannelPlugin {
       return all[key] as T | undefined;
     },
     set: <T>(_key: string, _value: T): void => {
-      /* 凭证写入 ~/.squid/telegram-channel.json */
+      /* Credentials are persisted to ~/.squid/telegram-channel.json */
     },
     getAll: () => toTelegramConfigPublicView(loadTelegramChannelConfigSync()) as Record<string, unknown>,
     validate: () => validateTelegramChannelConfig(loadTelegramChannelConfigSync() ?? {}).ok,
@@ -115,10 +115,13 @@ export class TelegramChannelPlugin implements ChannelPlugin {
       const token = c?.botToken?.trim();
       const chatId = c?.defaultChatId?.trim();
       if (!token) {
-        return { success: false, error: '未配置 ~/.squid/telegram-channel.json 的 botToken' };
+        return { success: false, error: 'botToken is not configured in ~/.squid/telegram-channel.json' };
       }
       if (!chatId) {
-        return { success: false, error: '出站需配置 defaultChatId（或通过对话入站后仅能通过通知管理器带目标，当前未实现）' };
+        return {
+          success: false,
+          error: 'defaultChatId is required for outbound messages (targeted notification routing from inbound context is not implemented yet)',
+        };
       }
       let text = params.content;
       if (params.title) {
@@ -131,10 +134,10 @@ export class TelegramChannelPlugin implements ChannelPlugin {
       const token = c?.botToken?.trim();
       const chatId = c?.defaultChatId?.trim();
       if (!token) {
-        return { success: false, error: '未配置 botToken' };
+        return { success: false, error: 'botToken is not configured' };
       }
       if (!chatId) {
-        return { success: false, error: '未配置 defaultChatId' };
+        return { success: false, error: 'defaultChatId is not configured' };
       }
       let text = message.content;
       if (message.title) {
@@ -146,7 +149,7 @@ export class TelegramChannelPlugin implements ChannelPlugin {
 
   inbound = {
     onMessage: () => {
-      console.warn('[Telegram] 入站由 setup 中长轮询处理；亦可订阅 eventBridge.onChannelInbound');
+      console.warn('[Telegram] Inbound messages are handled by long polling in setup; subscribe to eventBridge.onChannelInbound if needed');
     },
   };
 
@@ -154,7 +157,7 @@ export class TelegramChannelPlugin implements ChannelPlugin {
     check: async () => {
       const c = loadTelegramChannelConfigSync();
       if (!c?.botToken?.trim()) {
-        return { healthy: false, message: '未配置 ~/.squid/telegram-channel.json 的 botToken' };
+        return { healthy: false, message: 'botToken is not configured in ~/.squid/telegram-channel.json' };
       }
       const v = validateTelegramChannelConfig(c);
       if (!v.ok) {
@@ -172,11 +175,11 @@ export class TelegramChannelPlugin implements ChannelPlugin {
         if (!r.ok) {
           return { healthy: false, message: r.error };
         }
-        return { healthy: true, message: 'Bot API 可访问' };
+        return { healthy: true, message: 'Bot API reachable' };
       } catch (e: unknown) {
         clearTimeout(t);
         const msg = e instanceof Error ? e.message : String(e);
-        return { healthy: false, message: `连通性检查失败: ${msg}` };
+        return { healthy: false, message: `Connectivity check failed: ${msg}` };
       }
     },
   };
@@ -193,17 +196,17 @@ export class TelegramChannelPlugin implements ChannelPlugin {
         const chatId = c?.defaultChatId?.trim();
         if (!token || !chatId) return;
         const text = event.error
-          ? `❌ 任务失败\n任务: ${event.taskId}\n错误: ${event.error}`
-          : `✅ 任务完成\n任务: ${event.taskId}`;
+          ? `❌ Task failed\nTask: ${event.taskId}\nError: ${event.error}`
+          : `✅ Task completed\nTask: ${event.taskId}`;
         void telegramSendMessage(token, chatId, text, { apiBase: c?.apiBase }).catch((err) => {
-          console.error('[Telegram] 任务完成通知发送失败:', err);
+          console.error('[Telegram] Failed to send task completion notification:', err);
         });
       };
       this.bridge.onTaskComplete(this.taskCompleteHandler);
 
       const c = loadTelegramChannelConfigSync();
       if (!c?.botToken?.trim()) {
-        console.warn('[Telegram] 未配置 botToken，跳过 getUpdates 长轮询');
+        console.warn('[Telegram] botToken is not configured, skipping getUpdates long polling');
         return;
       }
 
@@ -212,7 +215,7 @@ export class TelegramChannelPlugin implements ChannelPlugin {
       this.pollPromise = this.runPollLoop(c.botToken, c.apiBase, c.allowedChatIds, signal);
       this.pollPromise.catch((err) => {
         if (!signal.aborted) {
-          console.error('[Telegram] 长轮询异常退出:', err);
+          console.error('[Telegram] Long-polling exited unexpectedly:', err);
         }
       });
     },
@@ -277,7 +280,7 @@ export class TelegramChannelPlugin implements ChannelPlugin {
       } catch (e: unknown) {
         if (signal.aborted) break;
         const msg = e instanceof Error ? e.message : String(e);
-        console.error('[Telegram] 轮询错误:', msg);
+        console.error('[Telegram] Polling error:', msg);
         try {
           await sleep(3000, signal);
         } catch {

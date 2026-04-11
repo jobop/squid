@@ -3,7 +3,7 @@ import { TelegramChannelPlugin } from './src/plugin';
 
 export default async function createChannelPlugin(ctx?: ChannelExtensionFactoryContext) {
   if (!ctx?.eventBridge) {
-    throw new Error('渠道扩展须由宿主注入 eventBridge（打包后无法从 ../../src 解析 event-bridge）');
+    throw new Error('Channel extension requires host-injected eventBridge (cannot resolve event-bridge from ../../src after packaging)');
   }
   return new TelegramChannelPlugin(ctx.eventBridge, ctx.taskAPI);
 }

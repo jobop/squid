@@ -1,7 +1,12 @@
 import { useState } from 'react';
+import type { Locale, TranslationKey } from '../i18n';
 
 export interface SettingsPageProps {
   onSave: (settings: Settings) => void;
+  locale: Locale;
+  onLocaleChange: (nextLocale: Locale) => void;
+  t: (key: TranslationKey) => string;
+  localeOptions: Array<{ value: Locale; label: string }>;
 }
 
 export interface Settings {
@@ -17,17 +22,46 @@ export interface Settings {
     user: string;
     pass: string;
   };
+  language?: Locale;
 }
 
-export function SettingsPage({ onSave }: SettingsPageProps) {
-  const [settings, setSettings] = useState<Settings>({ apiKeys: {} });
+export function SettingsPage({
+  onSave,
+  locale,
+  onLocaleChange,
+  t,
+  localeOptions,
+}: SettingsPageProps) {
+  const [settings, setSettings] = useState<Settings>({ apiKeys: {}, language: locale });
 
   return (
     <div className="settings-page">
-      <h2>设置</h2>
+      <h2>{t('settings.title')}</h2>
 
       <section className="settings-section">
-        <h3>API 密钥</h3>
+        <h3>{t('settings.language')}</h3>
+        <div className="form-group">
+          <label>{t('settings.language')}</label>
+          <select
+            value={locale}
+            onChange={(e) => {
+              const nextLocale = e.target.value as Locale;
+              onLocaleChange(nextLocale);
+              setSettings((prev) => ({ ...prev, language: nextLocale }));
+            }}
+          >
+            {localeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <small>{t('settings.language.help')}</small>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>{t('settings.apiKeys')}</h3>
         <div className="form-group">
           <label>Anthropic API Key</label>
           <input
@@ -64,7 +98,7 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
       </section>
 
       <section className="settings-section">
-        <h3>Claw Token</h3>
+        <h3>{t('settings.clawToken')}</h3>
         <div className="form-group">
           <label>Token</label>
           <input
@@ -72,14 +106,14 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
             value={settings.clawToken || ''}
             onChange={(e) => setSettings({ ...settings, clawToken: e.target.value })}
           />
-          <button>生成新 Token</button>
+          <button>{t('settings.generateToken')}</button>
         </div>
       </section>
 
       <section className="settings-section">
-        <h3>邮件配置</h3>
+        <h3>{t('settings.emailConfig')}</h3>
         <div className="form-group">
-          <label>SMTP 主机</label>
+          <label>{t('settings.smtpHost')}</label>
           <input
             type="text"
             value={settings.email?.host || ''}
@@ -90,7 +124,7 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
           />
         </div>
         <div className="form-group">
-          <label>端口</label>
+          <label>{t('settings.port')}</label>
           <input
             type="number"
             value={settings.email?.port || 587}
@@ -101,7 +135,7 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
           />
         </div>
         <div className="form-group">
-          <label>用户名</label>
+          <label>{t('settings.username')}</label>
           <input
             type="text"
             value={settings.email?.user || ''}
@@ -112,7 +146,7 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
           />
         </div>
         <div className="form-group">
-          <label>密码</label>
+          <label>{t('settings.password')}</label>
           <input
             type="password"
             value={settings.email?.pass || ''}
@@ -124,7 +158,7 @@ export function SettingsPage({ onSave }: SettingsPageProps) {
         </div>
       </section>
 
-      <button onClick={() => onSave(settings)}>保存设置</button>
+      <button onClick={() => onSave(settings)}>{t('settings.save')}</button>
     </div>
   );
 }

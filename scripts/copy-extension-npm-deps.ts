@@ -1,7 +1,9 @@
 /**
- * 渠道扩展在 app 包内动态 import，解析路径为 Resources/app/extensions/.../src/*.ts，
- * 须能在 Resources/app/node_modules 找到 npm 依赖（与主进程 bundle 分离）。
- * 从飞书 WS 等扩展实际用到的包出发，按 package.json 的 dependencies / optionalDependencies BFS 复制子集。
+ * Channel extensions are dynamically imported inside the app package from
+ * Resources/app/extensions/.../src/*.ts. Their npm dependencies must exist
+ * under Resources/app/node_modules (separate from the main process bundle).
+ * Starting from real extension seed packages, BFS-copy dependencies and
+ * optionalDependencies declared in package.json.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -48,7 +50,7 @@ function readProdDepNames(pkgDir: string): string[] {
   return [...Object.keys(d ?? {}), ...Object.keys(o ?? {})];
 }
 
-/** 与 extensions 中实际 `from '包名'` 对齐；新增扩展 npm 依赖时在此追加种子 */
+/** Keep aligned with real `from 'pkg'` usage in extensions; add new seeds here. */
 const SEEDS = ['@larksuiteoapi/node-sdk', 'axios'];
 
 function safeRealpath(dir: string): string {
@@ -67,7 +69,7 @@ function main(): void {
   for (const seed of SEEDS) {
     const p = resolvePackage(feishuSrc, seed) ?? resolvePackage(projectRoot, seed);
     if (!p) {
-      console.error('[copy-extension-npm-deps] 找不到种子包:', seed);
+      console.error('[copy-extension-npm-deps] Seed package not found:', seed);
       process.exit(1);
     }
     queue.push(p);
@@ -85,7 +87,7 @@ function main(): void {
 
     const relFromNm = relative(nmRoot, rp);
     if (relFromNm.startsWith('..') || relFromNm === '') {
-      console.warn('[copy-extension-npm-deps] 跳过（不在 node_modules 下）:', rp);
+      console.warn('[copy-extension-npm-deps] Skipped (not under node_modules):', rp);
       continue;
     }
 
@@ -103,11 +105,11 @@ function main(): void {
   }
 
   console.log(
-    '[copy-extension-npm-deps] 已写入',
+    '[copy-extension-npm-deps] copied to',
     outRoot,
-    '（包目录数',
+    '(package directories:',
     visitedReal.size,
-    '）'
+    ')'
   );
 }
 

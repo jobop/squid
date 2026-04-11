@@ -1145,7 +1145,7 @@ async function main() {
           try {
             await reloadChannelExtensions(channelRegistry);
           } catch (reloadErr: unknown) {
-            console.error('[Channels] 扩展 Web 配置保存后重载失败:', reloadErr);
+            console.error('[Channels] Failed to reload extensions after saving extension web config:', reloadErr);
           }
           return new Response(JSON.stringify({ success: true }), { headers });
         } catch (error: any) {
@@ -1203,7 +1203,7 @@ async function main() {
             try {
               await reloadChannelExtensions(channelRegistry);
             } catch (reloadErr: unknown) {
-              console.error('[Channels] 扩展 Auth 登录成功后重载失败:', reloadErr);
+              console.error('[Channels] Failed to reload extensions after extension auth success:', reloadErr);
             }
           }
           return new Response(
@@ -1231,9 +1231,9 @@ async function main() {
   const htmlPath = resolvePublicIndexHtmlPath();
   if (!existsSync(htmlPath)) {
     console.error(
-      '[squid] 未找到 UI：',
+      '[squid] UI not found:',
       htmlPath,
-      '（请确认 electrobun.config.ts 的 build.copy 已包含 public 目录）'
+      '(please ensure electrobun.config.ts build.copy includes the public directory)'
     );
   }
   const htmlUrl = pathToFileURL(htmlPath).href;
@@ -1293,14 +1293,14 @@ async function main() {
   } as any);
 
   await initializeBuiltinChannels(taskAPI);
-  console.log('Channel system initialized（扩展在 setup 内自行注册 squid-bridge）');
+  console.log('Channel system initialized (extensions register squid-bridge in setup)');
 
   taskAPI.setCronQueuedCompletionHandler((taskId, success, result) => {
     console.log(
-      `[CronManager] 队列执行任务 ${taskId} 完成 success=${success} result=${result}`
+      `[CronManager] Queue task ${taskId} completed success=${success} result=${result}`
     );
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(success ? '定时任务完成' : '定时任务失败', {
+      new Notification(success ? 'Scheduled task completed' : 'Scheduled task failed', {
         body: result,
         icon: '/icon.png',
       });

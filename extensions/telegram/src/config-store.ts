@@ -14,7 +14,7 @@ export function validateTelegramChannelConfig(c: Partial<TelegramChannelFileConf
   errors: string[];
 } {
   const errors: string[] = [];
-  if (!c.botToken?.trim()) errors.push('botToken 不能为空');
+  if (!c.botToken?.trim()) errors.push('botToken is required');
   return { ok: errors.length === 0, errors };
 }
 

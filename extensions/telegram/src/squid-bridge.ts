@@ -14,12 +14,12 @@ function telegramConversationId(chatId: string): string {
 }
 
 /**
- * Telegram 入站（channel:inbound）→ TaskAPI 流式 ask → 同 chat 回贴。
- * 会话忙时入队，完成后由 `channelReply.channelId === 'telegram'` 的队列回调回贴。
+ * Telegram inbound (channel:inbound) -> TaskAPI streaming ask -> reply to the same chat.
+ * When conversation is busy, enqueue and reply via queued callback when completed.
  */
 export function registerTelegramSquidBridge(
   taskAPI: TaskAPI,
-  /** 须与插件 emit channel:inbound 使用的 EventBridge 一致（宿主 ctx.eventBridge） */
+  /** Must match the EventBridge used by plugin emit channel:inbound (host ctx.eventBridge). */
   bridge: EventBridge
 ): () => void {
   const offQueued = taskAPI.addChannelQueuedCompleteHandler((cmd, assistantText) => {
@@ -29,15 +29,15 @@ export function registerTelegramSquidBridge(
     const cfg = loadTelegramChannelConfigSync();
     const token = cfg?.botToken?.trim();
     if (!token) return;
-    let body = assistantText.trim() || '(空回复)';
+    let body = assistantText.trim() || '(empty reply)';
     if (body.length > TELEGRAM_MAX_MESSAGE_CHARS) {
-      body = `${body.slice(0, TELEGRAM_MAX_MESSAGE_CHARS)}\n…(已截断)`;
+      body = `${body.slice(0, TELEGRAM_MAX_MESSAGE_CHARS)}\n...(truncated)`;
     }
     void telegramSendMessage(token, chatId, body, { apiBase: cfg?.apiBase }).then((sent) => {
       if (!sent.success) {
-        console.error('[TelegramBridge] 排队任务回复发送失败:', sent.error);
+        console.error('[TelegramBridge] Failed to send queued task reply:', sent.error);
       } else {
-        console.log('[TelegramBridge] 排队任务回复已发送 chatId=%s', chatId);
+        console.log('[TelegramBridge] Queued task reply sent chatId=%s', chatId);
       }
     });
   });
@@ -46,11 +46,11 @@ export function registerTelegramSquidBridge(
     if (event.channelId !== 'telegram') return;
     console.log(
       '[TelegramBridge] channel:inbound chatId=%s textLen=%d',
-      event.chatId?.trim() || '(无)',
+      event.chatId?.trim() || '(none)',
       event.text?.length ?? 0
     );
     void handleTelegramInbound(taskAPI, event).catch((err: unknown) => {
-      console.error('[TelegramBridge] handleTelegramInbound 异常:', err);
+      console.error('[TelegramBridge] handleTelegramInbound error:', err);
     });
   };
 
@@ -83,13 +83,13 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
 
   const chatId = event.chatId?.trim();
   if (!chatId) {
-    console.warn('[TelegramBridge] 缺少 chatId，跳过');
+    console.warn('[TelegramBridge] Missing chatId, skipping');
     return;
   }
 
   const cfg = loadTelegramChannelConfigSync();
   if (!cfg?.botToken?.trim()) {
-    console.warn('[TelegramBridge] 未配置 ~/.squid/telegram-channel.json 的 botToken，跳过');
+    console.warn('[TelegramBridge] botToken is not configured in ~/.squid/telegram-channel.json, skipping');
     return;
   }
   const token = cfg.botToken.trim();
@@ -112,7 +112,7 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
     if (!fileId) continue;
     const downloaded = await telegramDownloadFileById(token, fileId, { apiBase: cfg.apiBase });
     if (!downloaded.ok) {
-      console.warn('[TelegramBridge] 下载媒体失败 fileId=%s error=%s', fileId, downloaded.error);
+      console.warn('[TelegramBridge] Failed to download media fileId=%s error=%s', fileId, downloaded.error);
       continue;
     }
     const saved = await saveInboundImageToWorkspace({
@@ -123,27 +123,27 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
       filenameHint: media.fileName || downloaded.filePath.split('/').pop(),
     });
     if (!saved.ok) {
-      console.warn('[TelegramBridge] 媒体落盘失败 fileId=%s error=%s', fileId, saved.error);
+      console.warn('[TelegramBridge] Failed to save media fileId=%s error=%s', fileId, saved.error);
       continue;
     }
     mentions.push({ type: 'file', path: saved.relativePath, label: saved.filename });
   }
 
   if (!text && mentions.length === 0) {
-    console.warn('[TelegramBridge] 文本与可识别图片均为空，跳过');
+    console.warn('[TelegramBridge] Both text and recognizable images are empty, skipping');
     return;
   }
-  const instruction = text || '请识别并描述用户发送的图片内容。';
+  const instruction = text || 'Please identify and describe the image content sent by the user.';
 
   try {
     await taskAPI.prepareExternalConversation(conversationId, workspace);
   } catch (prepErr: unknown) {
     const msg = prepErr instanceof Error ? prepErr.message : String(prepErr);
-    console.error('[TelegramBridge] prepareExternalConversation 失败:', prepErr);
-    const r = await telegramSendMessage(token, chatId, `❌ 会话准备失败：${msg}`, {
+    console.error('[TelegramBridge] prepareExternalConversation failed:', prepErr);
+    const r = await telegramSendMessage(token, chatId, `❌ Failed to prepare conversation: ${msg}`, {
       apiBase: cfg.apiBase,
     });
-    if (!r.success) console.error('[TelegramBridge] 发送错误说明失败:', r.error);
+    if (!r.success) console.error('[TelegramBridge] Failed to send error message:', r.error);
     return;
   }
 
@@ -170,26 +170,26 @@ async function handleTelegramInbound(taskAPI: TaskAPI, event: ChannelInboundEven
       const r = await telegramSendMessage(
         token,
         chatId,
-        `⏳ 上一条仍在处理中，本条已加入队列（序号 ${pos}），完成后将自动回复。`,
+        `⏳ Previous request is still running. This message has been queued (#${pos}) and will be replied to automatically when done.`,
         { apiBase: cfg.apiBase }
       );
-      if (!r.success) console.error('[TelegramBridge] 发送排队提示失败:', r.error);
+      if (!r.success) console.error('[TelegramBridge] Failed to send queue notification:', r.error);
       return;
     }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[TelegramBridge] executeTaskStream 失败:', err);
-    full = `❌ 执行失败：${msg}`;
+    console.error('[TelegramBridge] executeTaskStream failed:', err);
+    full = `❌ Execution failed: ${msg}`;
   }
 
-  let body = full.trim() || '(空回复)';
+  let body = full.trim() || '(empty reply)';
   if (body.length > TELEGRAM_MAX_MESSAGE_CHARS) {
-    body = `${body.slice(0, TELEGRAM_MAX_MESSAGE_CHARS)}\n…(已截断)`;
+    body = `${body.slice(0, TELEGRAM_MAX_MESSAGE_CHARS)}\n...(truncated)`;
   }
 
   const sent = await telegramSendMessage(token, chatId, body, { apiBase: cfg.apiBase });
   if (!sent.success) {
-    console.error('[TelegramBridge] 回复发送失败:', sent.error);
+    console.error('[TelegramBridge] Failed to send reply:', sent.error);
   } else {
-    console.log('[TelegramBridge] 回复已发送 chatId=%s', chatId);
+    console.log('[TelegramBridge] Reply sent chatId=%s', chatId);
   }
 }
