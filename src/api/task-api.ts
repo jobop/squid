@@ -698,6 +698,11 @@ export class TaskAPI {
     this.conversationManager.init();
     this.memoryManager.init();
 
+    // Fire-and-forget startup sync: overwrite bundled core skills into ~/.squid/skills.
+    this.syncBundledCoreSkillsToUserDir().catch((error) => {
+      console.warn('[SkillHub] bundled core skills sync skipped:', error?.message || error);
+    });
+
     // Fire-and-forget startup self-healing: ensure local skillhub CLI exists for squid.
     this.ensureSkillHubInstalledForSquid().catch((error) => {
       console.warn('[SkillHub] startup install skipped:', error?.message || error);
@@ -714,6 +719,39 @@ export class TaskAPI {
     const raw = (process.env.SQUID_AUTO_INSTALL_SKILLHUB || '').trim().toLowerCase();
     if (!raw) return true;
     return !['0', 'false', 'off', 'no'].includes(raw);
+  }
+
+  private shouldSyncBundledCoreSkillsOnStartup(): boolean {
+    if (process.env.NODE_ENV === 'test') return false;
+    const raw = (process.env.SQUID_SYNC_CORE_SKILLS_ON_STARTUP || '').trim().toLowerCase();
+    if (!raw) return true;
+    return !['0', 'false', 'off', 'no'].includes(raw);
+  }
+
+  private async syncBundledCoreSkillsToUserDir(): Promise<void> {
+    if (!this.shouldSyncBundledCoreSkillsOnStartup()) return;
+    const { existsSync } = await import('fs');
+    const { mkdir, cp } = await import('fs/promises');
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+
+    const coreSkills = ['find-skills', 'github', 'skill-creator'];
+    const sourceSkillsDir = join(getSquidProjectRoot(), 'skills');
+    const targetSkillsDir = join(homedir(), '.squid', 'skills');
+    await mkdir(targetSkillsDir, { recursive: true });
+
+    for (const skillName of coreSkills) {
+      const sourceDir = join(sourceSkillsDir, skillName);
+      if (!existsSync(sourceDir)) {
+        console.warn(`[SkillHub] bundled skill not found, skip sync: ${sourceDir}`);
+        continue;
+      }
+      const targetDir = join(targetSkillsDir, skillName);
+      if (existsSync(targetDir)) {
+        continue;
+      }
+      await cp(sourceDir, targetDir, { recursive: true, force: true });
+    }
   }
 
   private async commandExists(commandName: string): Promise<boolean> {
