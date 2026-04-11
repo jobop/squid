@@ -1303,42 +1303,42 @@
     <div class="sidebar-nav">
       <a href="#" class="nav-item active" data-page="task" id="newThreadNav">
         <i data-lucide="edit-3" class="nav-item-icon"></i>
-        <span>新线程</span>
+        <span>New Thread</span>
       </a>
       <a href="#" class="nav-item" data-page="skills">
         <i data-lucide="package" class="nav-item-icon"></i>
-        <span>技能</span>
+        <span>Skills</span>
       </a>
       <a href="#" class="nav-item" data-page="experts">
         <i data-lucide="users" class="nav-item-icon"></i>
-        <span>专家</span>
+        <span>Experts</span>
       </a>
       <a href="#" class="nav-item" data-page="memory">
         <i data-lucide="brain" class="nav-item-icon"></i>
-        <span>记忆</span>
+        <span>Memory</span>
       </a>
       <a href="#" class="nav-item" data-page="channels">
         <i data-lucide="plug" class="nav-item-icon"></i>
-        <span>渠道</span>
+        <span>Channels</span>
       </a>
       <a href="#" class="nav-item" data-page="agent-logs">
         <i data-lucide="scroll-text" class="nav-item-icon"></i>
-        <span>执行日志</span>
+        <span>Logs</span>
       </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings" class="nav-item-icon"></i>
-        <span>设置</span>
+        <span>Settings</span>
       </a>
     </div>
 
     <div class="task-section">
       <div class="task-section-header">
-        <span>线程</span>
+        <span id="threadSectionTitle">Threads</span>
         <div class="task-section-actions">
-          <button class="icon-btn" onclick="refreshTaskList()" title="刷新">
+          <button class="icon-btn" id="refreshTaskBtn" onclick="refreshTaskList()" title="Refresh">
             <i data-lucide="refresh-cw"></i>
           </button>
-          <button class="icon-btn" onclick="filterTasks()" title="筛选">
+          <button class="icon-btn" id="filterTaskBtn" onclick="filterTasks()" title="Filter">
             <i data-lucide="filter"></i>
           </button>
         </div>
@@ -1347,8 +1347,8 @@
 
     <div class="task-list" id="taskList">
       <div class="task-item">
-        <div class="task-title">暂无线程</div>
-        <div class="task-meta">开始创建你的第一个线程</div>
+        <div class="task-title" id="threadEmptyTitle">No threads yet</div>
+        <div class="task-meta" id="threadEmptySubtitle">Create your first thread</div>
       </div>
     </div>
   </div>
@@ -1356,11 +1356,11 @@
   <div class="main">
     <div id="task-page" style="display: flex; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>新线程</h1>
+        <h1 id="taskPageTitle">New Thread</h1>
 
         <div class="header-actions">
-          <!-- 上下文占用指示器 -->
-          <div class="context-indicator" id="contextIndicator" onclick="handleContextClick()" title="点击压缩对话">
+          <!-- Context usage indicator -->
+          <div class="context-indicator" id="contextIndicator" onclick="handleContextClick()" title="Compress conversation">
             <svg width="20" height="20" viewBox="0 0 32 32">
               <circle cx="16" cy="16" r="12" stroke="#e5e7eb" stroke-width="3" fill="none"/>
               <circle
@@ -1378,17 +1378,17 @@
             <div class="tooltip" id="contextTooltip">0%</div>
           </div>
 
-          <button class="icon-btn" onclick="clearConversation()" title="删除当前会话">
+          <button class="icon-btn" id="clearConversationBtn" onclick="clearConversation()" title="Delete current session">
             <i data-lucide="trash-2"></i>
           </button>
           <div class="custom-select" id="expertSelect">
             <div class="custom-select-trigger">
-              <span id="expertSelectText">选择专家</span>
+              <span id="expertSelectText">Select Expert</span>
               <i data-lucide="chevron-down" class="custom-select-arrow"></i>
             </div>
             <div class="custom-select-dropdown" id="expertDropdown">
               <div class="custom-select-option" data-value="" onclick="selectExpert('')">
-                <span>无 - 通用助手</span>
+                <span id="noExpertOptionLabel">None - General Assistant</span>
                 <i data-lucide="check" class="custom-select-option-check"></i>
               </div>
             </div>
@@ -1401,8 +1401,8 @@
         <div class="chat-container" id="chatContainer">
           <div class="empty-state">
             <i data-lucide="bot" class="empty-icon"></i>
-            <div class="empty-title">开始构建</div>
-            <div class="empty-subtitle">在下方输入你的需求，开始创建任务</div>
+            <div class="empty-title" id="taskEmptyTitle">Start Building</div>
+            <div class="empty-subtitle" id="taskEmptySubtitle">Describe your request below to create a task</div>
           </div>
         </div>
       </div>
@@ -1412,7 +1412,7 @@
           <textarea
             id="instruction"
             class="input-main"
-            placeholder="Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, % for skills"
+            placeholder="Ask squid anything, @ add files, /new clear session, /reset clear session + memory, % for skills"
             rows="1"
           ></textarea>
           <div id="mentionFileTokens" class="mention-file-tokens"></div>
@@ -1427,18 +1427,18 @@
                 <option value="craft">Craft</option>
                 <option
                   value="plan"
-                  title="规划模式：仅可将计划写入工作区 .squid/plan.md（无会话）或 .squid/plan-会话后缀.md；修改业务代码请切换 Ask 或 Craft。"
+                  title="Plan mode only writes plan files (.squid/plan.md or session-specific plan files). Use Ask/Craft to edit business code."
                 >
                   Plan
                 </option>
               </select>
-              <input type="text" id="workspace" class="option-btn" placeholder="工作目录" value="/tmp/squid-test" style="width: 200px;">
+              <input type="text" id="workspace" class="option-btn" placeholder="Workspace" value="/tmp/squid-test" style="width: 200px;">
               <button
                 type="button"
                 id="workspacePickerBtn"
                 class="option-btn"
                 onclick="pickWorkspacePath()"
-                title="选择本机路径"
+                title="Select local path"
                 style="width: 36px; display: inline-flex; align-items: center; justify-content: center;"
               >
                 <i data-lucide="folder-open" style="width: 14px; height: 14px;"></i>
@@ -1454,53 +1454,53 @@
 
     <div id="skills-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>技能管理</h1>
+        <h1 id="skillsPageTitle">Skill Management</h1>
         <div class="header-actions">
-          <button class="btn" onclick="showCreateSkillForm()">创建技能</button>
-          <button class="btn btn-secondary" onclick="showInstallSkillForm()">安装技能</button>
+          <button class="btn" id="createSkillBtn" onclick="showCreateSkillForm()">Create Skill</button>
+          <button class="btn btn-secondary" id="installSkillBtn" onclick="showInstallSkillForm()">Install Skill</button>
         </div>
       </div>
 
       <div class="main-content" style="flex: 1; overflow-y: auto;">
         <div class="page-content">
           <div id="createSkillForm" class="card hidden">
-            <h3>创建自定义技能</h3>
+            <h3 id="createCustomSkillTitle">Create Custom Skill</h3>
             <div class="form-group">
-              <label>用自然语言描述你想要的技能</label>
-              <textarea id="skillDescription" placeholder="例如：我需要一个技能，可以分析 Python 代码的复杂度，找出性能瓶颈，并给出优化建议"></textarea>
+              <label id="skillDescriptionLabel">Describe the skill in natural language</label>
+              <textarea id="skillDescription" placeholder="e.g. Analyze Python code complexity, identify bottlenecks, and suggest optimizations"></textarea>
             </div>
-            <button class="btn" id="generateSkillBtn" onclick="generateSkill()">生成技能</button>
-            <button class="btn btn-secondary" onclick="hideCreateSkillForm()" style="margin-left: 10px;">取消</button>
+            <button class="btn" id="generateSkillBtn" onclick="generateSkill()">Generate Skill</button>
+            <button class="btn btn-secondary" id="hideCreateSkillFormBtn" onclick="hideCreateSkillForm()" style="margin-left: 10px;">Cancel</button>
 
             <div id="skillPreview" class="hidden" style="margin-top: 20px;">
-              <h4 style="margin-bottom: 12px;">预览生成的技能：</h4>
+              <h4 id="skillPreviewTitle" style="margin-bottom: 12px;">Generated Skill Preview:</h4>
               <pre id="skillYamlPreview" style="background: #f8f9fa; padding: 16px; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 13px;"></pre>
-              <button class="btn" onclick="saveSkill()" style="margin-top: 12px;">保存技能</button>
+              <button class="btn" id="saveSkillBtn" onclick="saveSkill()" style="margin-top: 12px;">Save Skill</button>
             </div>
           </div>
 
           <div id="installSkillForm" class="card hidden">
-            <h3>安装技能</h3>
+            <h3 id="installSkillTitle">Install Skill</h3>
             <div class="form-group">
-              <label>技能 URL 或本地路径</label>
-              <input type="text" id="skillUrl" placeholder="https://example.com/skill.md 或 /path/to/skill.md">
+              <label id="skillUrlLabel">Skill URL or local path</label>
+              <input type="text" id="skillUrl" placeholder="https://example.com/skill.md or /path/to/skill.md">
             </div>
-            <button class="btn" id="previewSkillBtn" onclick="previewSkill()">预览技能</button>
-            <button class="btn btn-secondary" onclick="hideInstallSkillForm()" style="margin-left: 10px;">取消</button>
+            <button class="btn" id="previewSkillBtn" onclick="previewSkill()">Preview Skill</button>
+            <button class="btn btn-secondary" id="hideInstallSkillFormBtn" onclick="hideInstallSkillForm()" style="margin-left: 10px;">Cancel</button>
 
             <div id="skillSecurityPreview" class="hidden" style="margin-top: 20px;">
-              <h4 style="margin-bottom: 12px;">安全预览：</h4>
+              <h4 id="skillSecurityPreviewTitle" style="margin-bottom: 12px;">Security Preview:</h4>
               <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
                 <div style="margin-bottom: 12px;">
-                  <strong style="color: #1a1a1a;">技能名称：</strong>
+                  <strong id="previewNameLabel" style="color: #1a1a1a;">Skill Name:</strong>
                   <span id="previewName"></span>
                 </div>
                 <div style="margin-bottom: 12px;">
-                  <strong style="color: #1a1a1a;">描述：</strong>
+                  <strong id="previewDescriptionLabel" style="color: #1a1a1a;">Description:</strong>
                   <span id="previewDescription"></span>
                 </div>
                 <div style="margin-bottom: 12px;">
-                  <strong style="color: #ff9800;">允许的工具：</strong>
+                  <strong id="previewToolsLabel" style="color: #ff9800;">Allowed Tools:</strong>
                   <div id="previewTools" style="margin-top: 8px;"></div>
                 </div>
                 <div style="margin-bottom: 12px;">
@@ -1508,15 +1508,15 @@
                   <div id="previewHooks" style="margin-top: 8px;"></div>
                 </div>
                 <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ff9800;">
-                  <strong>⚠️ 安全提示：</strong>
+                  <strong id="skillSecurityTipsTitle">⚠️ Security Tips:</strong>
                   <ul style="margin: 8px 0 0 20px; font-size: 13px; color: #666;">
-                    <li>请仔细检查允许的工具列表</li>
-                    <li>Hooks 可以执行任意命令，请确保来源可信</li>
-                    <li>只安装来自可信来源的技能</li>
+                    <li id="skillSecurityTip1">Carefully review the allowed tools list</li>
+                    <li id="skillSecurityTip2">Hooks can execute commands; only trust verified sources</li>
+                    <li id="skillSecurityTip3">Install skills from trusted sources only</li>
                   </ul>
                 </div>
               </div>
-              <button class="btn" onclick="installSkill()" style="margin-top: 12px;">确认安装</button>
+              <button class="btn" id="confirmInstallSkillBtn" onclick="installSkill()" style="margin-top: 12px;">Confirm Install</button>
             </div>
           </div>
 
@@ -1529,26 +1529,26 @@
                   type="text"
                   id="tencentSkillHubQuery"
                   class="skillhub-search-input"
-                  placeholder="搜索 SkillHub 技能"
+                  placeholder="Search SkillHub skills"
                 />
               </div>
               <div class="skillhub-filter-wrap">
                 <select id="tencentSkillHubFilter" class="skillhub-filter">
-                  <option value="all">全部</option>
-                  <option value="not_installed">未安装</option>
-                  <option value="installed">已安装</option>
-                  <option value="updatable">可更新</option>
+                  <option id="skillhubFilterAllOption" value="all">All</option>
+                  <option id="skillhubFilterNotInstalledOption" value="not_installed">Not Installed</option>
+                  <option id="skillhubFilterInstalledOption" value="installed">Installed</option>
+                  <option id="skillhubFilterUpdatableOption" value="updatable">Updatable</option>
                 </select>
                 <i data-lucide="chevron-down"></i>
               </div>
-              <button class="btn btn-secondary skillhub-search-btn" onclick="loadTencentSkillHubSkills()">搜索</button>
+              <button class="btn btn-secondary skillhub-search-btn" id="skillhubSearchBtn" onclick="loadTencentSkillHubSkills()">Search</button>
             </div>
             <div class="skillhub-subsection">
-              <div class="skillhub-section-title">推荐</div>
+              <div class="skillhub-section-title" id="skillhubRecommendedTitle">Recommended</div>
               <div id="tencentSkillHubRecommendedGrid" class="skillhub-list"></div>
             </div>
             <div class="skillhub-subsection personal">
-              <div class="skillhub-section-title" style="font-size: 20px;">个人</div>
+              <div class="skillhub-section-title" id="skillhubPersonalTitle" style="font-size: 20px;">Installed</div>
               <div id="tencentSkillHubInstalledGrid" class="skillhub-list"></div>
             </div>
           </div>
@@ -1558,49 +1558,49 @@
 
     <div id="experts-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>专家中心</h1>
+        <h1 id="expertsPageTitle">Experts</h1>
         <div class="header-actions">
-          <button class="btn" onclick="showCreateExpertForm()">创建专家</button>
+          <button class="btn" id="createExpertBtn" onclick="showCreateExpertForm()">Create Expert</button>
         </div>
       </div>
 
       <div class="main-content" style="flex: 1; overflow-y: auto;">
         <div class="page-content">
           <div id="createExpertForm" class="card hidden">
-            <h3>创建自定义专家</h3>
+            <h3 id="createCustomExpertTitle">Create Custom Expert</h3>
             <div class="form-group">
-              <label>用自然语言描述专家角色</label>
-              <textarea id="expertDescription" placeholder="例如：我需要一个电商运营专家，擅长商品上架、店铺装修、营销活动策划"></textarea>
+              <label id="expertDescriptionLabel">Describe the expert role in natural language</label>
+              <textarea id="expertDescription" placeholder="e.g. E-commerce operations specialist for listings, store setup, and campaigns"></textarea>
             </div>
-            <button class="btn" id="generateExpertBtn" onclick="generateExpert()">生成专家</button>
-            <button class="btn btn-secondary" onclick="hideCreateExpertForm()" style="margin-left: 10px;">取消</button>
+            <button class="btn" id="generateExpertBtn" onclick="generateExpert()">Generate Expert</button>
+            <button class="btn btn-secondary" id="hideCreateExpertFormBtn" onclick="hideCreateExpertForm()" style="margin-left: 10px;">Cancel</button>
 
             <div id="expertPreview" class="hidden" style="margin-top: 20px;">
-              <h4 style="margin-bottom: 12px;">预览生成的专家：</h4>
+              <h4 id="expertPreviewTitle" style="margin-bottom: 12px;">Generated Expert Preview:</h4>
               <div style="background: #f8f9fa; padding: 16px; border-radius: 8px;">
                 <div class="form-group">
-                  <label>专家名称</label>
-                  <input type="text" id="expertName" placeholder="例如：电商运营专家">
+                  <label id="expertNameLabel">Expert Name</label>
+                  <input type="text" id="expertName" placeholder="e.g. E-commerce Operations Specialist">
                 </div>
                 <div class="form-group">
-                  <label>角色描述</label>
-                  <input type="text" id="expertRole" placeholder="例如：专业电商运营专家">
+                  <label id="expertRoleLabel">Role Description</label>
+                  <input type="text" id="expertRole" placeholder="e.g. Professional e-commerce operations expert">
                 </div>
                 <div class="form-group">
-                  <label>专业领域（用逗号分隔）</label>
-                  <input type="text" id="expertExpertise" placeholder="例如：商品上架,店铺装修,营销策划">
+                  <label id="expertExpertiseLabel">Expertise (comma-separated)</label>
+                  <input type="text" id="expertExpertise" placeholder="e.g. product listing, store design, campaign planning">
                 </div>
                 <div class="form-group">
-                  <label>提示词模板</label>
+                  <label id="expertPromptLabel">Prompt Template</label>
                   <textarea id="expertPrompt"></textarea>
                 </div>
               </div>
-              <button class="btn" onclick="saveExpert()" style="margin-top: 12px;">保存专家</button>
+              <button class="btn" id="saveExpertBtn" onclick="saveExpert()" style="margin-top: 12px;">Save Expert</button>
             </div>
           </div>
 
           <div id="expertsList">
-            <h3 style="margin-bottom: 16px;">专家列表</h3>
+            <h3 id="expertsListTitle" style="margin-bottom: 16px;">Expert List</h3>
             <div id="expertsGrid" class="grid"></div>
           </div>
         </div>
@@ -1609,37 +1609,37 @@
 
     <div id="memory-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>记忆管理</h1>
+        <h1 id="memoryPageTitle">Memory Management</h1>
         <div class="header-actions">
-          <button class="btn" onclick="showCreateMemoryForm()">创建记忆</button>
+          <button class="btn" id="createMemoryBtn" onclick="showCreateMemoryForm()">Create Memory</button>
         </div>
       </div>
       <div class="main-content" style="flex: 1; overflow-y: auto;">
         <div class="page-content">
-          <!-- 过滤器和搜索 -->
+          <!-- Filters and search -->
           <div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center;">
             <div style="flex: 1;">
-              <input type="text" id="memorySearchInput" placeholder="搜索记忆..." style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 14px;">
+              <input type="text" id="memorySearchInput" placeholder="Search memories..." style="width: 100%; padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 14px;">
             </div>
             <select id="memoryTypeFilter" style="padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 14px;">
-              <option value="">所有类型</option>
-              <option value="user">用户信息</option>
-              <option value="feedback">反馈建议</option>
-              <option value="project">项目信息</option>
-              <option value="reference">参考资料</option>
+              <option id="memoryTypeFilterAllOption" value="">All Types</option>
+              <option id="memoryTypeFilterUserOption" value="user">User Profile</option>
+              <option id="memoryTypeFilterFeedbackOption" value="feedback">Feedback</option>
+              <option id="memoryTypeFilterProjectOption" value="project">Project</option>
+              <option id="memoryTypeFilterReferenceOption" value="reference">Reference</option>
             </select>
           </div>
 
-          <!-- 记忆列表 -->
+          <!-- Memory list -->
           <div id="memoriesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
-            <!-- 记忆卡片将在这里动态生成 -->
+            <!-- Memory cards render dynamically here -->
           </div>
 
-          <!-- 空状态 -->
+          <!-- Empty state -->
           <div id="memoryEmptyState" style="display: none; text-align: center; padding: 60px 20px; color: #999;">
             <i data-lucide="brain" style="width: 64px; height: 64px; margin: 0 auto 16px; opacity: 0.3;"></i>
-            <p style="font-size: 16px; margin-bottom: 8px;">还没有记忆</p>
-            <p style="font-size: 14px;">创建第一个记忆来帮助 AI 记住重要信息</p>
+            <p id="memoryEmptyTitle" style="font-size: 16px; margin-bottom: 8px;">No memories yet</p>
+            <p id="memoryEmptySubtitle" style="font-size: 14px;">Create your first memory to help AI remember key information</p>
           </div>
         </div>
       </div>
@@ -1647,10 +1647,10 @@
 
     <div id="channels-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1 id="channelsPageTitle">渠道</h1>
+        <h1 id="channelsPageTitle">Channels</h1>
         <div class="header-actions">
-          <button type="button" class="btn btn-secondary" id="channelsBackBtn" style="display: none;">← 返回列表</button>
-          <button type="button" class="btn" id="channelsRefreshBtn">刷新状态</button>
+          <button type="button" class="btn btn-secondary" id="channelsBackBtn" style="display: none;">← Back to list</button>
+          <button type="button" class="btn" id="channelsRefreshBtn">Refresh status</button>
         </div>
       </div>
       <div class="main-content" style="flex: 1; overflow-y: auto;">
@@ -1658,13 +1658,13 @@
           <p id="channelsLoadError" style="display: none; color: #c00; margin-bottom: 12px;"></p>
           <div id="channelsExtensionErrors" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: #fff7ed; border: 1px solid #fdba74; border-radius: 6px; font-size: 13px; color: #9a3412;"></div>
           <div id="channelsExtensionCatalogCard" class="card" style="display: none; margin-bottom: 16px;">
-            <h3>渠道扩展</h3>
+            <h3 id="channelsExtensionTitle">Channel Extensions</h3>
             <p style="font-size: 13px; color: #666; margin-bottom: 8px;">
-              下列为扫描到的扩展。勾选「启用」的扩展才会被加载；保存后写入 ~/.squid/channel-extensions.json 并立即重新加载（无需重启）。
+              Scanned extensions are listed below. Only checked extensions are loaded; saving writes to ~/.squid/channel-extensions.json and reloads immediately.
             </p>
             <p id="channelsExtensionCatalogModeHint" style="font-size: 12px; color: #888; margin-bottom: 12px;"></p>
             <div id="channelsExtensionCatalogChecks"></div>
-            <button type="button" class="btn" id="channelsExtensionSaveBtn" style="margin-top: 12px;">保存启用并重新加载</button>
+            <button type="button" class="btn" id="channelsExtensionSaveBtn" style="margin-top: 12px;">Save & Reload</button>
             <p id="channelsExtensionCatalogSaveHint" style="margin-top: 10px; font-size: 13px; color: #666;"></p>
           </div>
           <div id="channelsListView">
@@ -1673,10 +1673,10 @@
           <div id="channelsDetailView" style="display: none;">
             <div id="channelsDetailReadonly" class="card" style="display: none;"></div>
             <div id="channelsDetailExtCfg" class="card" style="display: none;">
-              <h3 id="extCfgHeading">扩展配置</h3>
+              <h3 id="extCfgHeading">Extension Config</h3>
               <p id="extCfgIntro" style="font-size: 13px; color: #666; margin-bottom: 16px;"></p>
               <div id="extCfgFields"></div>
-              <button type="button" class="btn" id="extCfgSaveBtn">保存</button>
+              <button type="button" class="btn" id="extCfgSaveBtn">Save</button>
               <p id="extCfgHint" style="margin-top: 12px; font-size: 13px; color: #666;"></p>
             </div>
           </div>
@@ -1686,18 +1686,38 @@
 
     <div id="settings-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>设置</h1>
+        <h1 id="settingsPageTitle">Settings</h1>
       </div>
       <div class="main-content" style="flex: 1; overflow-y: auto;">
         <div class="page-content">
           <div class="card">
-            <h3>模型配置</h3>
+            <h3 id="uiLanguageTitle">Interface Language</h3>
             <div class="form-group">
-              <label>API 提供商</label>
+              <label id="uiLanguageLabel">Display Language</label>
+              <select id="uiLanguageSelect">
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ru">Русский</option>
+                <option value="it">Italiano</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+              </select>
+              <small id="uiLanguageHelp" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
+                Switch language for navigation and settings copy.
+              </small>
+            </div>
+            <button class="btn" id="saveUiLanguageBtn">Save Language</button>
+          </div>
+
+          <div class="card">
+            <h3 id="modelConfigTitle">Model Configuration</h3>
+            <div class="form-group">
+              <label id="apiProviderLabel">API Provider</label>
               <select id="apiProvider">
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic (Claude)</option>
-                <option value="custom">自定义端点</option>
+                <option id="customProviderOption" value="custom">Custom Endpoint</option>
               </select>
             </div>
             <div class="form-group">
@@ -1705,87 +1725,87 @@
               <input type="password" id="apiKey" placeholder="sk-...">
             </div>
             <div class="form-group">
-              <label>模型名称</label>
+              <label id="modelNameLabel">Model Name</label>
               <input type="text" id="modelName" placeholder="gpt-4-turbo">
             </div>
             <div class="form-group" id="apiEndpointGroup" style="display: none;">
-              <label>API 端点</label>
+              <label id="apiEndpointLabel">API Endpoint</label>
               <input type="text" id="apiEndpoint" placeholder="https://api.openai.com/v1">
             </div>
             <div class="form-group" id="apiProtocolGroup" style="display: none;">
-              <label>协议类型</label>
+              <label id="apiProtocolLabel">Protocol</label>
               <select id="apiProtocol">
-                <option value="openai">OpenAI 兼容</option>
-                <option value="anthropic">Anthropic 兼容</option>
+                <option id="apiProtocolOpenAIOption" value="openai">OpenAI Compatible</option>
+                <option id="apiProtocolAnthropicOption" value="anthropic">Anthropic Compatible</option>
               </select>
             </div>
             <div class="form-group">
-              <label>温度 (Temperature)</label>
+              <label id="temperatureLabel">Temperature</label>
               <input type="number" id="temperature" min="0" max="2" step="0.1" value="0.7">
             </div>
             <div class="form-group">
-              <label>最大 Token 数</label>
+              <label id="maxTokensLabel">Max Tokens</label>
               <input type="number" id="maxTokens" min="1" max="128000" step="1" value="4096">
             </div>
-            <button class="btn" id="saveModelConfigBtn">保存配置</button>
-            <button class="btn btn-secondary" id="testModelConfigBtn" style="margin-left: 10px;">测试连接</button>
+            <button class="btn" id="saveModelConfigBtn">Save Configuration</button>
+            <button class="btn btn-secondary" id="testModelConfigBtn" style="margin-left: 10px;">Test Connection</button>
 
-            <!-- 测试结果提示 -->
+            <!-- Test result hint -->
             <div id="testResult" style="margin-top: 15px; padding: 12px; border-radius: 8px; display: none;"></div>
           </div>
 
           <div class="card">
-            <h3>工作目录</h3>
+            <h3 id="workspaceConfigTitle">Workspace</h3>
             <div class="form-group">
-              <label>默认工作目录</label>
+              <label id="defaultWorkspaceLabel">Default Workspace</label>
               <input type="text" id="defaultWorkspace" placeholder="/tmp/squid-test">
             </div>
-            <button class="btn" id="saveWorkspaceConfigBtn">保存配置</button>
+            <button class="btn" id="saveWorkspaceConfigBtn">Save Configuration</button>
           </div>
 
           <div class="card">
-            <h3>工具设置</h3>
-            <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
-              各工具独立配置，写入 <code>~/.squid/config.json</code> 的 <code>tools</code> 对象，与大模型 API 无关。后续可在此扩展更多工具项。
+            <h3 id="toolsConfigTitle">Tool Settings</h3>
+            <p id="toolsConfigHelp" style="font-size: 13px; color: #666; margin-bottom: 16px;">
+              Tools are configured independently in ~/.squid/config.json under tools, separate from model API settings.
             </p>
-            <h4 style="font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">联网搜索（web_search）</h4>
+            <h4 id="webSearchSectionTitle" style="font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Web Search (web_search)</h4>
             <div class="form-group">
-              <label>搜索提供商</label>
+              <label id="webSearchProviderLabel">Search Provider</label>
               <select id="webSearchProvider">
                 <option value="duckduckgo">DuckDuckGo</option>
-                <option value="bing">必应（cn.bing.com）</option>
+                <option value="bing">Bing (cn.bing.com)</option>
               </select>
-              <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
-                对应 <code>tools.webSearch.provider</code>。环境变量 <code>WEB_SEARCH_PROVIDER</code> 为 bing / duckduckgo 时优先于此项。
+              <small id="webSearchProviderHelp" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
+                Maps to tools.webSearch.provider. WEB_SEARCH_PROVIDER (bing / duckduckgo) takes precedence.
               </small>
             </div>
-            <button class="btn" id="saveWebSearchConfigBtn">保存工具设置</button>
+            <button class="btn" id="saveWebSearchConfigBtn">Save Tool Settings</button>
           </div>
 
           <div class="card">
-            <h3>对话压缩设置</h3>
+            <h3 id="compressionSettingsTitle">Conversation Compression</h3>
             <div class="form-group">
-              <label>自动压缩阈值 (%)</label>
+              <label id="compressionThresholdLabel">Auto-compress threshold (%)</label>
               <input type="number" id="compressionThreshold" min="50" max="90" step="5" value="70" placeholder="70">
-              <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
-                当对话 token 使用率达到此阈值时自动触发压缩（建议 70-80%）
+              <small id="compressionThresholdHelp" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
+                Auto compression triggers when token usage reaches this threshold (recommended 70-80%)
               </small>
             </div>
             <div class="form-group">
-              <label>上下文限制 (tokens)</label>
+              <label id="contextLimitLabel">Context limit (tokens)</label>
               <input type="number" id="contextLimit" min="10000" max="200000" step="10000" value="100000" placeholder="100000">
-              <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
-                模型的最大上下文窗口大小
+              <small id="contextLimitHelp" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">
+                Maximum context window size for the model
               </small>
             </div>
-            <button class="btn" id="saveCompressionConfigBtn">保存配置</button>
+            <button class="btn" id="saveCompressionConfigBtn">Save Configuration</button>
             <div style="margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #666;">
-              <strong>压缩策略：</strong>
+              <strong id="compressionStrategyTitle">Compression strategy:</strong>
               <ul style="margin: 8px 0 0 20px; padding: 0;">
-                <li>70%：微压缩 - 清除冗余内容</li>
-                <li>75%：智能截断 - 保留最近消息</li>
-                <li>80%：部分压缩 - AI 摘要中间部分</li>
-                <li>85%：完整压缩 - AI 摘要全部历史</li>
+                <li id="compressionStrategyItem70">70%: Light compression - remove redundant content</li>
+                <li id="compressionStrategyItem75">75%: Smart truncation - keep recent messages</li>
+                <li id="compressionStrategyItem80">80%: Partial compression - summarize middle history</li>
+                <li id="compressionStrategyItem85">85%: Full compression - summarize all history</li>
               </ul>
             </div>
           </div>
@@ -1795,21 +1815,21 @@
 
     <div id="agent-logs-page" class="hidden" style="display: none; flex-direction: column; height: 100%;">
       <div class="main-header">
-        <h1>执行日志</h1>
+        <h1 id="agentLogsPageTitle">Execution Logs</h1>
         <div class="header-actions">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#666;margin-right:8px;">
             <input type="checkbox" id="agentLogsAutoRefresh" checked />
-            自动刷新
+            <span id="agentLogsAutoRefreshLabel">Auto refresh</span>
           </label>
-          <button type="button" class="btn btn-secondary" id="agentLogsRefreshBtn">刷新</button>
-          <button type="button" class="btn btn-secondary" id="agentLogsClearBtn">清空记录</button>
+          <button type="button" class="btn btn-secondary" id="agentLogsRefreshBtn">Refresh</button>
+          <button type="button" class="btn btn-secondary" id="agentLogsClearBtn">Clear</button>
         </div>
       </div>
       <div class="main-content" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
         <div class="page-content" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
           <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin: 0 24px 24px;">
-            <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
-              记录本机 Agent 任务与工具调用（内存保留最近约 800 条，不含 API Key）。渠道队列触发的任务也会写入。
+            <p id="agentLogsDescription" style="font-size: 13px; color: #666; margin-bottom: 12px;">
+              Records local agent tasks and tool calls (keeps about 800 recent in memory, excluding API keys). Channel-queued tasks are included too.
             </p>
             <pre id="agentLogsView" style="flex: 1; margin: 0; padding: 12px; background: #0f172a; color: #e2e8f0; font-size: 12px; line-height: 1.45; overflow: auto; border-radius: 8px; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;"></pre>
           </div>
@@ -1819,8 +1839,8 @@
   </div>
 
   <div id="imagePreviewOverlay" class="image-preview-overlay" aria-hidden="true">
-    <div class="image-preview-content" role="dialog" aria-modal="true" aria-label="图片预览">
-      <button type="button" class="image-preview-close" id="imagePreviewCloseBtn" aria-label="关闭图片预览">×</button>
+    <div class="image-preview-content" id="imagePreviewDialog" role="dialog" aria-modal="true" aria-label="Image Preview">
+      <button type="button" class="image-preview-close" id="imagePreviewCloseBtn" aria-label="Close image preview">×</button>
       <img id="imagePreviewImg" src="" alt="preview" />
       <div id="imagePreviewCaption" class="image-preview-caption"></div>
     </div>
@@ -1829,9 +1849,9 @@
   <!-- Debug Console -->
   <div id="debugConsole" style="position: fixed; bottom: 0; left: 0; width: 350px; height: 250px; background: #1a1a1a; color: #00ff00; font-family: monospace; font-size: 11px; overflow-y: auto; padding: 10px; border-top: 2px solid #00ff00; border-right: 2px solid #00ff00; z-index: 10000; display: none;">
     <div style="position: sticky; top: 0; background: #1a1a1a; padding-bottom: 5px; margin-bottom: 5px; border-bottom: 1px solid #00ff00;">
-      <button onclick="document.getElementById('debugConsole').style.display='none'" style="float: right; background: #ff0000; color: #fff; border: none; padding: 2px 8px; cursor: pointer;">关闭</button>
-      <button onclick="document.getElementById('debugLog').innerHTML=''" style="float: right; background: #333; color: #fff; border: none; padding: 2px 8px; cursor: pointer; margin-right: 5px;">清空</button>
-      <strong>调试控制台</strong>
+      <button id="debugCloseBtn" onclick="document.getElementById('debugConsole').style.display='none'" style="float: right; background: #ff0000; color: #fff; border: none; padding: 2px 8px; cursor: pointer;">Close</button>
+      <button id="debugClearBtn" onclick="document.getElementById('debugLog').innerHTML=''" style="float: right; background: #333; color: #fff; border: none; padding: 2px 8px; cursor: pointer; margin-right: 5px;">Clear</button>
+      <strong id="debugConsoleTitle">Debug Console</strong>
     </div>
     <div id="debugLog"></div>
   </div>
@@ -1848,7 +1868,7 @@
     const originalConsoleError = console.error;
 
     function addDebugLine(type, ...args) {
-      // 只在调试控制台打开时才记录日志
+      // Record logs only when debug console is visible
       if (debugConsole.style.display === 'none') return;
 
       const line = document.createElement('div');
@@ -1979,7 +1999,9 @@
 
     function selectExpert(value) {
       selectedExpert = value;
-      const text = value ? experts.find(e => e.id === value)?.name || '选择专家' : '选择专家';
+      const text = value
+        ? experts.find(e => e.id === value)?.name || getUiText('selectExpertPlaceholder')
+        : getUiText('selectExpertPlaceholder');
       document.getElementById('expertSelectText').textContent = text;
 
       // Update selected state
@@ -2152,7 +2174,7 @@
             body: JSON.stringify({ conversationId: cid }),
           });
         } catch {
-          // 请求断开场景下后端会由 req.signal 自动触发中断，这里静默兜底。
+          // Backend aborts via req.signal on disconnect; keep silent fallback here.
         }
       }
       return true;
@@ -2174,7 +2196,7 @@
       el.innerHTML = selectedImageAttachments.map((item) => `
         <span class="image-attachment-token">
           🖼 ${escapeHtml(item.name || item.path || 'image')}
-          <button type="button" title="移除" onclick="removeImageAttachmentByKey('${encodeURIComponent(item.key)}')">x</button>
+          <button type="button" title="Remove" onclick="removeImageAttachmentByKey('${encodeURIComponent(item.key)}')">x</button>
         </span>
       `).join('');
     }
@@ -2207,7 +2229,7 @@
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
         reader.readAsDataURL(file);
       });
     }
@@ -2306,7 +2328,7 @@
       el.innerHTML = selectedMentionFiles.map((f) => `
         <span class="mention-file-token">
           @${escapeHtml(f.path)}
-          <button type="button" title="移除" onclick="removeMentionFile('${encodeURIComponent(f.path)}')">x</button>
+          <button type="button" title="Remove" onclick="removeMentionFile('${encodeURIComponent(f.path)}')">x</button>
         </span>
       `).join('');
     }
@@ -2321,7 +2343,7 @@
       el.innerHTML = selectedMentionSkills.map((s) => `
         <span class="mention-skill-token">
           %${escapeHtml(s.name)}
-          <button type="button" title="移除" onclick="removeMentionSkill('${encodeURIComponent(s.name)}')">x</button>
+          <button type="button" title="Remove" onclick="removeMentionSkill('${encodeURIComponent(s.name)}')">x</button>
         </span>
       `).join('');
     }
@@ -2368,7 +2390,7 @@
       if (!parsed || parsed.type !== 'skill') return;
       const before = input.value.slice(0, parsed.start);
       const after = input.value.slice(cursor);
-      // %技能选择后仅保留 token，不把技能名文本写回输入框
+      // Keep only the %skill token; do not write skill name back to input.
       input.value = `${before}${after}`;
       const nextPos = before.length;
       input.setSelectionRange(nextPos, nextPos);
@@ -2387,7 +2409,7 @@
       if (!parsed || parsed.type !== 'file') return;
       const before = input.value.slice(0, parsed.start);
       const after = input.value.slice(cursor);
-      // @文件选择后仅保留 token，不把路径文本写回输入框
+      // Keep only the @file token; do not write file path text back to input.
       input.value = `${before}${after}`;
       const nextPos = before.length;
       input.setSelectionRange(nextPos, nextPos);
@@ -2473,8 +2495,8 @@
       const recommendedGrid = document.getElementById('tencentSkillHubRecommendedGrid');
       const installedGrid = document.getElementById('tencentSkillHubInstalledGrid');
       if (!recommendedGrid || !installedGrid) return;
-      recommendedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">加载中...</div>';
-      installedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">加载中...</div>';
+      recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('loading')}</div>`;
+      installedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('loading')}</div>`;
       try {
         const url = new URL('http://localhost:50001/api/skillhub/tencent/skills');
         if (query) {
@@ -2488,7 +2510,7 @@
         const result = await catalogResponse.json();
         const installedResult = await installedResponse.json();
         if (!result.success) {
-          recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1; color:#d93025;">加载失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+          recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1; color:#d93025;">${getUiText('loading')} ${escapeHtml(result.error || 'unknown')}</div>`;
           if (installedResult?.success && Array.isArray(installedResult.skills) && installedResult.skills.length > 0) {
             tencentSkillHubInstalledSkills = installedResult.skills.map((item) => ({
               slug: item.slug,
@@ -2500,7 +2522,7 @@
             }));
             renderTencentSkillHubSkills();
           } else {
-            installedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">暂无已安装技能</div>';
+            installedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('noInstalledSkills')}</div>`;
           }
           return;
         }
@@ -2541,18 +2563,18 @@
         tencentSkillHubInstalledSkills = mergedInstalled;
         renderTencentSkillHubSkills();
       } catch (error) {
-        recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1; color:#d93025;">加载失败: ${escapeHtml(error.message || '未知错误')}</div>`;
-        installedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">暂无已安装技能</div>';
+        recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1; color:#d93025;">${getUiText('loading')} ${escapeHtml(error.message || 'unknown')}</div>`;
+        installedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('noInstalledSkills')}</div>`;
       }
     }
 
     function renderSkillhubItem(skill, options = {}) {
       const { installed = false } = options;
       const statusTag = skill.installStatus === 'installed'
-        ? '<span class="skillhub-status installed">已安装</span>'
+        ? `<span class="skillhub-status installed">${getUiText('skillhubStatusInstalled')}</span>`
         : skill.installStatus === 'updatable'
-          ? `<span class="skillhub-status updatable">可更新 ${escapeHtml(skill.installedVersion || '')} → ${escapeHtml(skill.latestVersion || '')}</span>`
-          : '<span class="skillhub-status">未安装</span>';
+          ? `<span class="skillhub-status updatable">${getUiText('skillhubStatusUpdatePrefix')} ${escapeHtml(skill.installedVersion || '')} → ${escapeHtml(skill.latestVersion || '')}</span>`
+          : `<span class="skillhub-status">${getUiText('skillhubStatusNotInstalled')}</span>`;
       const iconText = escapeHtml((skill.name || skill.slug || 'S').slice(0, 2).toUpperCase());
       const iconVariant = (skill.slug || skill.name || '').length % 4;
       const iconUrl = String(skill.iconUrl || skill.icon || skill.logo || skill.avatar || skill.avatarUrl || '').trim();
@@ -2573,8 +2595,8 @@
           <div class="skillhub-actions">
             ${statusTag}
             ${installed
-              ? `<button class="skillhub-check-btn" title="已安装" onclick="event.stopPropagation(); openTencentInstalledSkillDetail(decodeURIComponent('${encodedSlug}'));">✓</button>`
-              : `<button class="skillhub-install-btn" title="安装 ${escapeHtml(skill.name || skill.slug)}" onclick="installTencentSkillHubSkill(decodeURIComponent('${encodedSlug}'), this)">+</button>`
+              ? `<button class="skillhub-check-btn" title="${escapeHtml(getUiText('skillhubFilterInstalledOption'))}" onclick="event.stopPropagation(); openTencentInstalledSkillDetail(decodeURIComponent('${encodedSlug}'));">✓</button>`
+              : `<button class="skillhub-install-btn" title="${escapeHtml(getUiText('installSkillBtn'))} ${escapeHtml(skill.name || skill.slug)}" onclick="installTencentSkillHubSkill(decodeURIComponent('${encodedSlug}'), this)">+</button>`
             }
           </div>
         </div>
@@ -2587,13 +2609,13 @@
       if (!recommendedGrid || !installedGrid) return;
 
       if (!tencentSkillHubRecommendedSkills.length) {
-        recommendedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">暂无推荐技能</div>';
+        recommendedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('skillhubNoRecommended')}</div>`;
       } else {
         recommendedGrid.innerHTML = tencentSkillHubRecommendedSkills.map(skill => renderSkillhubItem(skill, { installed: false })).join('');
       }
 
       if (!tencentSkillHubInstalledSkills.length) {
-        installedGrid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1;">暂无已安装技能</div>';
+        installedGrid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1;">${getUiText('noInstalledSkills')}</div>`;
       } else {
         installedGrid.innerHTML = tencentSkillHubInstalledSkills.map(skill => renderSkillhubItem(skill, { installed: true })).join('');
       }
@@ -2637,7 +2659,7 @@
       const originalText = btn ? btn.textContent : '';
       if (btn) {
         btn.disabled = true;
-        btn.textContent = '...';
+        btn.textContent = getUiText('loading');
       }
       const skill = tencentSkillHubRecommendedSkills.find((item) => item.slug === slug)
         || tencentSkillHubSkills.find((item) => item.slug === slug);
@@ -2650,15 +2672,15 @@
         });
         const result = await response.json();
         if (result.success) {
-          setSkillhubFeedback(`安装成功：${result.slug}@${result.version || ''}`, 'success');
+          setSkillhubFeedback(`${getUiText('installSuccessWithName')}${result.slug}@${result.version || ''}`, 'success');
           await loadSkills();
           renderSkillsGrid();
           await loadTencentSkillHubSkills();
         } else {
-          setSkillhubFeedback(`安装失败：${result.error || '未知错误'}`, 'error');
+          setSkillhubFeedback(`${getUiText('installFailedWithName')}${result.error || 'unknown'}`, 'error');
         }
       } catch (error) {
-        setSkillhubFeedback(`安装失败：${error.message || '未知错误'}`, 'error');
+        setSkillhubFeedback(`${getUiText('installFailedWithName')}${error.message || 'unknown'}`, 'error');
       } finally {
         skillhubActionLocks.delete(lockKey);
         if (btn) {
@@ -2674,7 +2696,7 @@
         const response = await fetch(`http://localhost:50001/api/skillhub/tencent/installed/${encodeURIComponent(slug)}`);
         const result = await response.json();
         if (!result.success || !result.skill) {
-          setSkillhubFeedback(`加载详情失败：${result.error || '未知错误'}`, 'error');
+          setSkillhubFeedback(`${getUiText('channelsLoadFailed')}${result.error || 'unknown'}`, 'error');
           return;
         }
         const skill = result.skill;
@@ -2694,14 +2716,14 @@
                 <div style="font-size: 22px; font-weight: 700; color: #111;">${escapeHtml(skill.title || skill.slug || slug)}</div>
                 <div style="margin-top: 4px; font-size: 14px; color: #666;">${escapeHtml(skill.description || '')}</div>
               </div>
-              <button class="icon-btn" onclick="closeSkillhubDetailModal()" title="关闭">
+              <button class="icon-btn" onclick="closeSkillhubDetailModal()" title="${escapeHtml(getUiText('skillDetailCloseBtn'))}">
                 <i data-lucide="x"></i>
               </button>
             </div>
-            <div class="skillhub-detail-body">${escapeHtml(skill.content || '暂无详情')}</div>
+            <div class="skillhub-detail-body">${escapeHtml(skill.content || getUiText('noSkillDetails'))}</div>
             <div class="skillhub-detail-footer">
-              <button class="btn btn-secondary" style="color:#d93025;border-color:#f5c2c7;" onclick="uninstallTencentInstalledSkill('${escapeHtml(skill.slug || slug)}', this)">卸载</button>
-              <button class="btn" onclick="closeSkillhubDetailModal()">关闭</button>
+              <button class="btn btn-secondary" style="color:#d93025;border-color:#f5c2c7;" onclick="uninstallTencentInstalledSkill('${escapeHtml(skill.slug || slug)}', this)">${getUiText('skillhubUninstallBtn')}</button>
+              <button class="btn" onclick="closeSkillhubDetailModal()">${getUiText('closeBtn')}</button>
             </div>
           </div>
         `;
@@ -2710,7 +2732,7 @@
           lucide.createIcons();
         }
       } catch (error) {
-        setSkillhubFeedback(`加载详情失败：${error.message || '未知错误'}`, 'error');
+        setSkillhubFeedback(`${getUiText('channelsLoadFailed')}${error.message || 'unknown'}`, 'error');
       }
     }
 
@@ -2723,7 +2745,7 @@
       const originalText = btn ? btn.textContent : '';
       if (btn) {
         btn.disabled = true;
-        btn.textContent = '卸载中...';
+        btn.textContent = getUiText('uninstalling');
       }
       try {
         const response = await fetch('http://localhost:50001/api/skillhub/tencent/uninstall', {
@@ -2733,20 +2755,20 @@
         });
         const result = await response.json();
         if (!result.success) {
-          setSkillhubFeedback(`卸载失败：${result.error || '未知错误'}`, 'error');
+          setSkillhubFeedback(`${getUiText('uninstallFailed')}${result.error || 'unknown'}`, 'error');
           return;
         }
-        setSkillhubFeedback(`卸载成功：${slug}`, 'success');
+        setSkillhubFeedback(`${getUiText('uninstalled')}: ${slug}`, 'success');
         closeSkillhubDetailModal();
         await loadSkills();
         await loadTencentSkillHubSkills();
       } catch (error) {
-        setSkillhubFeedback(`卸载失败：${error.message || '未知错误'}`, 'error');
+        setSkillhubFeedback(`${getUiText('uninstallFailed')}${error.message || 'unknown'}`, 'error');
       } finally {
         skillhubActionLocks.delete(lockKey);
         if (btn) {
           btn.disabled = false;
-          btn.textContent = originalText || '卸载';
+          btn.textContent = originalText || getUiText('uninstalled');
         }
       }
     }
@@ -2770,7 +2792,7 @@
 
       dropdown.innerHTML = `
         <div class="custom-select-option ${selectedExpert === '' ? 'selected' : ''}" data-value="" onclick="selectExpert('')">
-          <span>无 - 通用助手</span>
+          <span>${escapeHtml(getUiText('noExpertOptionLabel'))}</span>
           <i data-lucide="check" class="custom-select-option-check"></i>
         </div>
       `;
@@ -2799,6 +2821,7 @@
 
       // Initialize custom selects
       initCustomSelects();
+      initUiLanguage();
 
       const skillhubQueryInput = document.getElementById('tencentSkillHubQuery');
       if (skillhubQueryInput) {
@@ -2831,10 +2854,10 @@
         agentLogsClearBtn.addEventListener('click', () => clearAgentLogsOnServer());
       }
 
-      // 启动上下文监控
+      // Start context monitoring
       startContextMonitoring();
 
-      // 添加回车发送功能
+      // Enable Enter-to-send behavior
       const instructionInput = document.getElementById('instruction');
       if (instructionInput) {
         instructionInput.addEventListener('input', async () => {
@@ -2845,7 +2868,7 @@
             return;
           }
           if (parsed.type === 'skill') {
-            // 输入 `%` 触发时尽量拿最新技能，避免“刚安装但候选没刷新”。
+            // Refresh skills when typing `%` to avoid stale candidates.
             if (skills.length === 0 || Date.now() - skillsLoadedAt > 10000) {
               await loadSkills(true);
             }
@@ -2942,7 +2965,7 @@
               addedCount += 1;
             }
             if (addedCount > 0) {
-              showNotification(`已添加 ${addedCount} 张图片`, 'success');
+              showNotification(`Added ${addedCount} image(s)`, 'success');
             }
           } catch (error) {
             console.error('Failed to parse pasted image:', error);
@@ -2955,14 +2978,14 @@
         }
       });
 
-      // 绑定 API 提供商选择器
+      // Bind API provider selector
       const apiProvider = document.getElementById('apiProvider');
       if (apiProvider) {
         apiProvider.addEventListener('change', updateProviderFields);
         console.log('apiProvider change event bound');
       }
 
-      // 绑定设置页面的按钮事件
+      // Bind settings page button handlers
       console.log('Looking for buttons...');
       console.log('All buttons:', document.querySelectorAll('button').length);
 
@@ -2976,6 +2999,11 @@
         console.log('saveModelConfig button found and bound');
       } else {
         console.error('saveModelConfigBtn not found!');
+      }
+
+      const saveUiLanguageBtn = document.getElementById('saveUiLanguageBtn');
+      if (saveUiLanguageBtn) {
+        saveUiLanguageBtn.addEventListener('click', () => saveUiLanguage());
       }
 
       const testModelConfigBtn = document.getElementById('testModelConfigBtn');
@@ -3017,17 +3045,17 @@
       const extCfgSaveBtn = document.getElementById('extCfgSaveBtn');
       if (extCfgSaveBtn) extCfgSaveBtn.addEventListener('click', () => saveExtensionWebConfigForm());
 
-      // 确保所有输入框支持粘贴
+      // Ensure all inputs support paste
       document.querySelectorAll('input, textarea').forEach(element => {
         element.addEventListener('paste', (e) => {
-          // 允许默认粘贴行为
+          // Allow default paste behavior
           return true;
         });
 
-        // 添加 Ctrl+V / Cmd+V 支持
+        // Add Ctrl+V / Cmd+V support
         element.addEventListener('keydown', (e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-            // 不阻止默认行为，让浏览器处理粘贴
+            // Do not block default behavior; let browser paste naturally
             console.log('Paste shortcut detected on', element.id || element.tagName);
           }
         });
@@ -3063,7 +3091,7 @@
     async function generateSkill() {
       const description = document.getElementById('skillDescription').value.trim();
       if (!description) {
-        alert('请输入技能描述');
+        alert(getUiText('generateSkillRequired'));
         return;
       }
 
@@ -3072,8 +3100,8 @@
       const yamlPreview = document.getElementById('skillYamlPreview');
 
       generateBtn.disabled = true;
-      generateBtn.textContent = '生成中...';
-      yamlPreview.textContent = '正在调用 AI 生成技能定义...\n';
+      generateBtn.textContent = getUiText('generating');
+      yamlPreview.textContent = getUiText('generatingSkillHint');
 
       try {
         const response = await fetch('http://localhost:50001/api/skills/generate', {
@@ -3089,21 +3117,21 @@
           yamlPreview.textContent = result.yaml;
           preview.classList.remove('hidden');
         } else {
-          yamlPreview.textContent = '生成失败: ' + result.error;
+          yamlPreview.textContent = getUiText('generateFailed') + result.error;
           preview.classList.remove('hidden');
         }
       } catch (error) {
-        yamlPreview.textContent = '错误: ' + error.message;
+        yamlPreview.textContent = getUiText('genericError') + error.message;
         preview.classList.remove('hidden');
       } finally {
         generateBtn.disabled = false;
-        generateBtn.textContent = '生成技能';
+        generateBtn.textContent = getUiText('generateSkillBtnText');
       }
     }
 
     async function saveSkill() {
       if (!generatedSkillYaml) {
-        alert('没有可保存的技能');
+        alert(getUiText('noSkillToSave'));
         return;
       }
 
@@ -3117,15 +3145,15 @@
         const result = await response.json();
 
         if (result.success) {
-          alert('技能保存成功！');
+          alert(getUiText('saveSuccessSkill'));
           hideCreateSkillForm();
           await loadSkills();
           renderSkillsGrid();
         } else {
-          alert('保存失败: ' + result.error);
+          alert(getUiText('saveFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -3138,7 +3166,7 @@
       }
 
       if (skills.length === 0) {
-        grid.innerHTML = '<div class="skillhub-empty" style="grid-column: 1 / -1; border-top: none;">暂无已安装技能</div>';
+        grid.innerHTML = `<div class="skillhub-empty" style="grid-column: 1 / -1; border-top: none;">${getUiText('noInstalledSkills')}</div>`;
         return;
       }
 
@@ -3158,7 +3186,7 @@
     async function previewSkill() {
       const url = document.getElementById('skillUrl').value.trim();
       if (!url) {
-        alert('请输入技能 URL 或路径');
+        alert(getUiText('enterSkillUrl'));
         return;
       }
 
@@ -3166,7 +3194,7 @@
       const preview = document.getElementById('skillSecurityPreview');
 
       previewBtn.disabled = true;
-      previewBtn.textContent = '加载中...';
+      previewBtn.textContent = getUiText('loading');
 
       try {
         const response = await fetch('http://localhost:50001/api/skills/preview', {
@@ -3195,24 +3223,24 @@
               ${result.data.hooks.post_invoke ? '<div style="font-size: 12px; color: #d93025;">• post_invoke: ' + escapeHtml(result.data.hooks.post_invoke) + '</div>' : ''}
             `;
           } else {
-            hooksDiv.innerHTML = '<span style="color: #999; font-size: 12px;">无</span>';
+            hooksDiv.innerHTML = '<span style="color: #999; font-size: 12px;">None</span>';
           }
 
           preview.classList.remove('hidden');
         } else {
-          alert('预览失败: ' + result.error);
+          alert(getUiText('previewFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       } finally {
         previewBtn.disabled = false;
-        previewBtn.textContent = '预览技能';
+        previewBtn.textContent = getUiText('previewSkillBtn');
       }
     }
 
     async function installSkill() {
       if (!previewedSkillData) {
-        alert('没有可安装的技能');
+        alert(getUiText('noSkillToInstall'));
         return;
       }
 
@@ -3226,15 +3254,15 @@
         const result = await response.json();
 
         if (result.success) {
-          alert('技能安装成功！');
+          alert(getUiText('installSuccess'));
           hideInstallSkillForm();
           await loadSkills();
           renderSkillsGrid();
         } else {
-          alert('安装失败: ' + result.error);
+          alert(getUiText('installFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -3265,16 +3293,16 @@
       });
 
       if (filteredTasks.length === 0) {
-        taskList.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">暂无线程</div>';
+        taskList.innerHTML = `<div style="padding: 20px; text-align: center; color: #888;">${getUiText('threadEmptyTitle')}</div>`;
         return;
       }
 
       taskList.innerHTML = filteredTasks.map(task => `
         <div class="task-item ${task.id === currentThreadId ? 'active' : ''}" data-thread-id="${escapeHtml(task.id)}" onclick="loadTask('${task.id}')">
-          <div class="task-title">${escapeHtml(task.title || '新线程')}</div>
+          <div class="task-title">${escapeHtml(task.title || getUiText('taskPageTitle'))}</div>
           <div class="task-meta">
             ${formatTime(task.updatedAt || task.createdAt)}
-            ${Number(task.messageCount || 0) > 0 ? ' · ' + task.messageCount + ' 条消息' : ''}
+            ${Number(task.messageCount || 0) > 0 ? ' · ' + task.messageCount + ' msgs' : ''}
           </div>
         </div>
       `).join('');
@@ -3294,7 +3322,7 @@
 
         const result = await response.json();
         if (!result.success) {
-          showNotification('线程切换失败: ' + (result.error || '未知错误'), 'error');
+          showNotification(getUiText('threadSwitchFailed') + (result.error || 'unknown'), 'error');
           return;
         }
 
@@ -3311,13 +3339,7 @@
 
         const messages = Array.isArray(result.messages) ? result.messages : [];
         if (messages.length === 0) {
-          chatContainer.innerHTML = `
-            <div class="empty-state">
-              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-              <h2>开始构建</h2>
-              <p>在下方输入你的需求，开始创建任务</p>
-            </div>
-          `;
+          chatContainer.innerHTML = getBuildEmptyStateHtml();
           return;
         }
 
@@ -3339,13 +3361,13 @@
         });
       } catch (error) {
         console.error('Switch thread error:', error);
-        showNotification('线程切换失败: ' + error.message, 'error');
+        showNotification(getUiText('threadSwitchFailed') + error.message, 'error');
       }
     }
 
     async function switchExpert() {
       if (!currentTaskId) {
-        alert('请先选择一个任务');
+        alert(getUiText('selectTaskFirst'));
         return;
       }
 
@@ -3361,13 +3383,13 @@
         const result = await response.json();
 
         if (result.success) {
-          alert('专家切换成功！');
+          alert(getUiText('switchExpertSuccess'));
           await refreshTaskList();
         } else {
-          alert('切换失败: ' + result.error);
+          alert(getUiText('switchFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -3379,15 +3401,15 @@
     }
 
     function formatTime(timestamp) {
-      if (!timestamp) return '刚刚';
+      if (!timestamp) return getUiText('justNow');
       const date = new Date(timestamp);
       const now = new Date();
       const diff = now - date;
 
-      if (diff < 60000) return '刚刚';
-      if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
-      if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
-      return Math.floor(diff / 86400000) + '天前';
+      if (diff < 60000) return getUiText('justNow');
+      if (diff < 3600000) return Math.floor(diff / 60000) + getUiText('minutesAgo');
+      if (diff < 86400000) return Math.floor(diff / 3600000) + getUiText('hoursAgo');
+      return Math.floor(diff / 86400000) + getUiText('daysAgo');
     }
 
     function applyWorkspaceToInputs(workspace) {
@@ -3420,7 +3442,7 @@
 
         if (!result.success) {
           if (!result.cancelled) {
-            showNotification('目录选择失败: ' + (result.error || '未知错误'), 'error');
+            showNotification(getUiText('pickDirectoryFailed') + (result.error || 'unknown'), 'error');
           }
           return;
         }
@@ -3430,17 +3452,17 @@
           defaultWorkspaceInput.value = result.path;
         }
 
-        // 同步保存成默认工作目录，避免下次重启还要再选。
+        // Also save as default workspace to persist across restarts.
         await fetch('http://localhost:50001/api/config/workspace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ workspace: result.path })
         });
 
-        showNotification('工作目录已更新', 'success');
+        showNotification(getUiText('workspaceUpdated'), 'success');
       } catch (error) {
         console.error('Pick workspace path error:', error);
-        showNotification('目录选择失败: ' + error.message, 'error');
+        showNotification(getUiText('pickDirectoryFailed') + error.message, 'error');
       } finally {
         pickerBtn.disabled = false;
         pickerBtn.innerHTML = originalHtml;
@@ -3456,7 +3478,7 @@
         });
         const result = await response.json();
         if (!result.success) {
-          showNotification('新线程创建失败: ' + (result.error || '未知错误'), 'error');
+          showNotification(getUiText('newThreadFailed') + (result.error || 'unknown'), 'error');
           return;
         }
 
@@ -3466,16 +3488,10 @@
         renderTaskList();
 
         const chatContainer = document.getElementById('chatContainer');
-        chatContainer.innerHTML = `
-          <div class="empty-state">
-            <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-            <h2>开始构建</h2>
-            <p>在下方输入你的需求，开始创建任务</p>
-          </div>
-        `;
+        chatContainer.innerHTML = getBuildEmptyStateHtml();
       } catch (error) {
         console.error('Start new thread error:', error);
-        showNotification('新线程创建失败: ' + error.message, 'error');
+        showNotification(getUiText('newThreadFailed') + error.message, 'error');
       }
     }
 
@@ -3497,7 +3513,7 @@
         extErrEl.style.display = 'none';
         extErrEl.textContent = '';
       }
-      if (wrap) wrap.innerHTML = '<p style="color:#666">加载中…</p>';
+      if (wrap) wrap.innerHTML = `<p style="color:#666">${getUiText('loading')}</p>`;
       try {
         const response = await fetch('http://localhost:50001/api/channels');
         if (!response.ok) throw new Error(response.statusText || String(response.status));
@@ -3511,7 +3527,7 @@
             const p = er.path ? er.path + ': ' : '';
             return id + p + (er.message || '');
           });
-          extErrEl.textContent = '扩展加载提示（不含密钥）：\n' + lines.join('\n');
+          extErrEl.textContent = getUiText('channelsExtLoadHint') + lines.join('\n');
           extErrEl.style.whiteSpace = 'pre-wrap';
           extErrEl.style.display = 'block';
         }
@@ -3519,7 +3535,7 @@
         renderExtensionCatalogFromData(data);
       } catch (e) {
         if (errEl) {
-          errEl.textContent = '加载失败: ' + e.message;
+          errEl.textContent = getUiText('channelsLoadFailed') + e.message;
           errEl.style.display = 'block';
         }
         if (wrap) wrap.innerHTML = '';
@@ -3544,8 +3560,8 @@
       card.style.display = 'block';
       if (modeHint) {
         modeHint.textContent = whitelist
-          ? '当前为启用白名单模式（项目或 ~/.squid/channel-extensions.json 中的 enabled）。仅列表中的扩展会加载。'
-          : '当前未配置 enabled 白名单：已发现的扩展会全部尝试加载。勾选并保存后，将写入用户配置并仅加载勾选项。';
+          ? getUiText('channelsWhitelistOn')
+          : getUiText('channelsWhitelistOff');
       }
       let html =
         '<div style="display:flex;flex-direction:column;gap:10px;">';
@@ -3553,8 +3569,8 @@
         const id = escapeHtmlChannels(row.id);
         const checked = row.configEnabled ? ' checked' : '';
         const loaded = row.loaded
-          ? ' <span style="color:#059669;font-size:12px;">已加载</span>'
-          : ' <span style="font-size:12px;color:#94a3b8;">未加载</span>';
+          ? ` <span style="color:#059669;font-size:12px;">${getUiText('loaded')}</span>`
+          : ` <span style="font-size:12px;color:#94a3b8;">${getUiText('notLoaded')}</span>`;
         const namePart = row.name ? ' — ' + escapeHtmlChannels(row.name) : '';
         const verPart = row.version
           ? ' <code style="font-size:11px;">' + escapeHtmlChannels(row.version) + '</code>'
@@ -3583,7 +3599,7 @@
       const btn = document.getElementById('channelsExtensionSaveBtn');
       const checkedBoxes = document.querySelectorAll('.channels-ext-enable-cb:checked');
       const enabled = Array.from(checkedBoxes).map((el) => el.value);
-      if (saveHint) saveHint.textContent = '保存中…';
+      if (saveHint) saveHint.textContent = getUiText('saving');
       if (btn) btn.disabled = true;
       try {
         const res = await fetch('http://localhost:50001/api/channels/extensions/enabled', {
@@ -3593,13 +3609,13 @@
         });
         const respData = await res.json();
         if (!respData.success) {
-          if (saveHint) saveHint.textContent = '失败: ' + (respData.error || res.statusText);
+          if (saveHint) saveHint.textContent = getUiText('failedPrefix') + (respData.error || res.statusText);
           return;
         }
-        if (saveHint) saveHint.textContent = '已保存并重新加载扩展。';
+        if (saveHint) saveHint.textContent = getUiText('savedAndReloaded');
         await loadChannelsList();
       } catch (e) {
-        if (saveHint) saveHint.textContent = '失败: ' + e.message;
+        if (saveHint) saveHint.textContent = getUiText('failedPrefix') + e.message;
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -3609,23 +3625,33 @@
       const wrap = document.getElementById('channelsTableWrap');
       if (!wrap) return;
       if (!items.length) {
-        wrap.innerHTML = '<p style="color:#666">暂无渠道数据</p>';
+        wrap.innerHTML = `<p style="color:#666">${getUiText('noChannelData')}</p>`;
         return;
       }
       let html =
-        '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="text-align:left;border-bottom:1px solid #e5e5e5;"><th style="padding:8px;">渠道</th><th style="padding:8px;">来源</th><th style="padding:8px;">ID</th><th style="padding:8px;">状态</th><th style="padding:8px;">说明</th><th style="padding:8px;"></th></tr></thead><tbody>';
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="text-align:left;border-bottom:1px solid #e5e5e5;"><th style="padding:8px;">' +
+        getUiText('channelTableHeaderName') +
+        '</th><th style="padding:8px;">' +
+        getUiText('channelTableHeaderSource') +
+        '</th><th style="padding:8px;">' +
+        getUiText('channelTableHeaderId') +
+        '</th><th style="padding:8px;">' +
+        getUiText('channelTableHeaderStatus') +
+        '</th><th style="padding:8px;">' +
+        getUiText('channelTableHeaderMessage') +
+        '</th><th style="padding:8px;"></th></tr></thead><tbody>';
       for (const c of items) {
         const ok = c.healthy;
         const badge = ok
-          ? '<span style="color:#059669;">正常</span>'
-          : '<span style="color:#b45309;">异常</span>';
+          ? `<span style="color:#059669;">${getUiText('channelHealthy')}</span>`
+          : `<span style="color:#b45309;">${getUiText('channelUnhealthy')}</span>`;
         const reg = c.registered
           ? ''
-          : ' <span style="color:#666;font-size:12px;">(未注册)</span>';
+          : ` <span style="color:#666;font-size:12px;">${getUiText('channelNotRegistered')}</span>`;
         const src =
           c.source === 'extension'
-            ? '<span style="font-size:12px;color:#7c3aed;">扩展</span>'
-            : '<span style="font-size:12px;color:#64748b;">内置</span>';
+            ? `<span style="font-size:12px;color:#7c3aed;">${getUiText('sourceExtension')}</span>`
+            : `<span style="font-size:12px;color:#64748b;">${getUiText('sourceBuiltin')}</span>`;
         html +=
           '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;">' +
           escapeHtmlChannels(c.name) +
@@ -3640,7 +3666,7 @@
           escapeHtmlChannels(c.statusMessage) +
           '</td><td style="padding:8px;"><button type="button" class="btn btn-secondary channels-open-detail" data-channel-id="' +
           escapeHtmlChannels(c.id) +
-          '">详情</button></td></tr>';
+          '">' + getUiText('channelDetail') + '</button></td></tr>';
       }
       html += '</tbody></table>';
       wrap.innerHTML = html;
@@ -3671,7 +3697,7 @@
       if (detailV) detailV.style.display = 'none';
       if (backBtn) backBtn.style.display = 'none';
       if (refBtn) refBtn.style.display = 'inline-block';
-      if (title) title.textContent = '渠道';
+      if (title) title.textContent = getUiText('channelsPageTitle');
       loadChannelsList();
     }
 
@@ -3685,7 +3711,7 @@
       if (detailV) detailV.style.display = 'block';
       if (backBtn) backBtn.style.display = 'inline-block';
       if (refBtn) refBtn.style.display = 'none';
-      if (title) title.textContent = '渠道详情';
+      if (title) title.textContent = getUiText('channelDetailTitle');
       const ch = channelsListCache.find((c) => c.id === id);
       const ro = document.getElementById('channelsDetailReadonly');
       const extCard = document.getElementById('channelsDetailExtCfg');
@@ -3693,14 +3719,14 @@
       if (extCard) extCard.style.display = 'none';
       if (ch && ch.configurable) {
         if (extCard) extCard.style.display = 'block';
-        if (title) title.textContent = ch.name || '渠道配置';
+        if (title) title.textContent = ch.name || getUiText('channelConfigTitle');
         loadExtensionWebConfigForm(id);
       } else if (ch && ro) {
         ro.style.display = 'block';
         const srcLine =
           ch.source === 'extension'
-            ? '<p><strong>来源:</strong> 扩展（从配置的受信目录动态加载，与主进程同进程；请仅安装受信扩展）</p>'
-            : '<p><strong>来源:</strong> 内置</p>';
+            ? `<p><strong>${getUiText('channelTableHeaderSource')}:</strong> ${getUiText('sourceExtension')}</p>`
+            : `<p><strong>${getUiText('channelTableHeaderSource')}:</strong> ${getUiText('sourceBuiltin')}</p>`;
         ro.innerHTML =
           '<h3>' +
           escapeHtmlChannels(ch.name) +
@@ -3710,15 +3736,15 @@
           srcLine +
           '<p><strong>ID:</strong> <code>' +
           escapeHtmlChannels(ch.id) +
-          '</code></p><p><strong>分类:</strong> ' +
+          '</code></p><p><strong>Category:</strong> ' +
           escapeHtmlChannels(ch.category) +
-          '</p><p><strong>已注册:</strong> ' +
-          (ch.registered ? '是' : '否') +
-          '</p><p><strong>健康:</strong> ' +
-          (ch.healthy ? '是' : '否') +
-          '</p><p><strong>状态:</strong> ' +
+          '</p><p><strong>Registered:</strong> ' +
+          (ch.registered ? getUiText('yes') : getUiText('no')) +
+          '</p><p><strong>Healthy:</strong> ' +
+          (ch.healthy ? getUiText('yes') : getUiText('no')) +
+          '</p><p><strong>' + getUiText('channelTableHeaderStatus') + ':</strong> ' +
           escapeHtmlChannels(ch.statusMessage) +
-          '</p><p style="font-size:13px;color:#888;margin-top:16px;">此渠道无 Web 端写入入口，配置请参考项目文档。</p>';
+          '</p><p style="font-size:13px;color:#888;margin-top:16px;">' + getUiText('noWebConfigHint') + '</p>';
       }
     }
 
@@ -3740,11 +3766,11 @@
         const form = data.form;
         const values = data.values || {};
         if (introEl)
-          introEl.textContent = form.intro || '保存至 ~/.squid/' + form.userConfigFile;
-        if (h3) h3.textContent = '配置（' + channelId + '）';
+          introEl.textContent = form.intro || 'Saved to ~/.squid/' + form.userConfigFile;
+        if (h3) h3.textContent = getUiText('extConfigHeadingPrefix') + ' (' + channelId + ')';
         if (!mount || !form || !Array.isArray(form.fields)) return;
 
-        /** Auth 区块始终在表单字段之上（与 manifest 中 authUi 先于 fields 的写法一致） */
+        /** Keep auth section above form fields to match manifest ordering. */
         if (form.authUi && form.authUi.type === 'auth_link') {
           const authWrap = document.createElement('div');
           authWrap.className = 'form-group';
@@ -3764,7 +3790,7 @@
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'btn btn-secondary';
-          btn.textContent = form.authUi.buttonLabel || '获取认证链接';
+          btn.textContent = form.authUi.buttonLabel || getUiText('getAuthLink');
           const qrStatus = document.createElement('p');
           qrStatus.style.fontSize = '13px';
           qrStatus.style.color = '#666';
@@ -3782,7 +3808,7 @@
 
           const copyLinkBtn = document.createElement('button');
           copyLinkBtn.type = 'button';
-          copyLinkBtn.textContent = '点击复制认证链接';
+          copyLinkBtn.textContent = getUiText('copyAuthLink');
           copyLinkBtn.style.display = 'none';
           copyLinkBtn.style.background = 'none';
           copyLinkBtn.style.border = 'none';
@@ -3806,7 +3832,7 @@
           pop.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)';
           pop.style.zIndex = '100';
           const img = document.createElement('img');
-          img.alt = '认证二维码';
+          img.alt = getUiText('authQrAlt');
           img.width = 200;
           img.height = 200;
           pop.appendChild(img);
@@ -3818,10 +3844,10 @@
             ev.preventDefault();
             const t = currentAuthUrl.trim();
             if (!t) return;
-            const labelDefault = '点击复制认证链接';
+            const labelDefault = getUiText('copyAuthLink');
             try {
               await navigator.clipboard.writeText(t);
-              copyLinkBtn.textContent = '已复制到剪贴板';
+              copyLinkBtn.textContent = getUiText('copied');
               setTimeout(function () {
                 copyLinkBtn.textContent = labelDefault;
               }, 2000);
@@ -3836,12 +3862,12 @@
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                copyLinkBtn.textContent = '已复制到剪贴板';
+                copyLinkBtn.textContent = getUiText('copied');
                 setTimeout(function () {
                   copyLinkBtn.textContent = labelDefault;
                 }, 2000);
               } catch (e2) {
-                qrStatus.textContent = '复制失败，请到浏览器地址栏手动粘贴完整链接。';
+                qrStatus.textContent = getUiText('copyFailed');
               }
             }
           });
@@ -3869,7 +3895,7 @@
             currentAuthUrl = (u && String(u).trim()) || '';
             if (currentAuthUrl) {
               copyLinkBtn.style.display = 'inline';
-              copyLinkBtn.textContent = '点击复制认证链接';
+              copyLinkBtn.textContent = getUiText('copyAuthLink');
               img.src =
                 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' +
                 encodeURIComponent(currentAuthUrl);
@@ -3881,7 +3907,7 @@
           }
 
           img.onerror = function () {
-            qrStatus.textContent = '二维码预览加载失败，可复制链接后在外部应用或浏览器中打开。';
+            qrStatus.textContent = getUiText('qrPreviewLoadFailed');
           };
 
           authWrap.appendChild(btn);
@@ -3895,7 +3921,7 @@
             linkBlock.style.display = 'none';
             if (hp) hp.style.display = 'none';
             qrStatus.style.display = 'block';
-            qrStatus.textContent = '正在获取认证链接…';
+            qrStatus.textContent = getUiText('authFetching');
             try {
               const res = await fetch('http://localhost:50001/api/channels/extension-auth/start', {
                 method: 'POST',
@@ -3910,10 +3936,9 @@
               linkBlock.style.display = 'block';
               if (hp) hp.style.display = 'block';
               setAuthUrl(authUrl);
-              qrStatus.textContent =
-                '请复制认证链接，在对应客户端或浏览器中完成验证；鼠标悬停在按钮上可查看二维码。';
+              qrStatus.textContent = getUiText('authCopyCompleteHint');
 
-              /** 串行轮询：每次 poll 可能长轮询数十秒，不能用 setInterval 叠多个请求 */
+              /** Serial polling: each request may long-poll, avoid overlapping intervals. */
               let pollStopped = false;
               window.__extCfgAuthStopPoll = function () {
                 pollStopped = true;
@@ -3924,8 +3949,7 @@
                 });
               };
               (async function runAuthPollLoop() {
-                const pendingFallback =
-                  '正在检测登录状态（服务器长轮询中，请稍候）… 若已扫码，请在客户端或设备上确认。';
+                const pendingFallback = getUiText('authPolling');
                 while (!pollStopped) {
                   const sk = window.__extCfgAuthSessionKey;
                   const cid = window.__extCfgChannelId;
@@ -3940,7 +3964,7 @@
                     if (pollStopped) break;
                     if (!pr.ok) {
                       clearExtensionCfgAuthUi();
-                      qrStatus.textContent = '轮询失败: ' + (pd.error || pr.statusText);
+                      qrStatus.textContent = getUiText('authPollingFailed') + (pd.error || pr.statusText);
                       return;
                     }
                     if (pd.status === 'pending') {
@@ -3950,13 +3974,13 @@
                       await delay(2000);
                     } else if (pd.status === 'success') {
                       clearExtensionCfgAuthUi();
-                      qrStatus.textContent = (pd.message || '登录成功') + ' 正在刷新配置…';
+                      qrStatus.textContent = (pd.message || getUiText('loginSuccess')) + ' ' + getUiText('refreshingConfig');
                       await loadExtensionWebConfigForm(cid);
                       loadChannelsList();
                       return;
                     } else if (pd.status === 'failed') {
                       clearExtensionCfgAuthUi();
-                      qrStatus.textContent = pd.message || '登录失败';
+                      qrStatus.textContent = pd.message || getUiText('loginFailed');
                       return;
                     } else {
                       await delay(2000);
@@ -3964,13 +3988,13 @@
                   } catch (err) {
                     if (pollStopped) break;
                     clearExtensionCfgAuthUi();
-                    qrStatus.textContent = '轮询异常: ' + (err && err.message ? err.message : err);
+                    qrStatus.textContent = getUiText('authPollingError') + (err && err.message ? err.message : err);
                     return;
                   }
                 }
               })();
             } catch (e) {
-              qrStatus.textContent = '获取失败: ' + (e && e.message ? e.message : e);
+              qrStatus.textContent = getUiText('authFetchFailed') + (e && e.message ? e.message : e);
             }
           });
         }
@@ -3980,7 +4004,7 @@
           const wrap = document.createElement('div');
           wrap.className = 'form-group';
           const lab = document.createElement('label');
-          lab.textContent = f.label + (f.optional ? '（可选）' : '');
+          lab.textContent = f.label + (f.optional ? ' (optional)' : '');
           wrap.appendChild(lab);
           let el;
           if (f.type === 'select' && f.options && f.options.length) {
@@ -4019,14 +4043,14 @@
               sm.style.fontSize = '12px';
               sm.style.color = '#888';
               sm.style.marginTop = '6px';
-              sm.textContent = '已配置敏感字段，留空表示不修改。';
+              sm.textContent = getUiText('extSensitiveConfiguredHint');
               wrap.appendChild(sm);
             }
           }
           mount.appendChild(wrap);
         }
       } catch (e) {
-        if (hint) hint.textContent = '加载失败: ' + (e && e.message ? e.message : e);
+        if (hint) hint.textContent = getUiText('channelsLoadFailed') + (e && e.message ? e.message : e);
       }
     }
 
@@ -4034,7 +4058,7 @@
       const hint = document.getElementById('extCfgHint');
       const channelId = window.__extCfgChannelId;
       if (!channelId) return;
-      if (hint) hint.textContent = '保存中…';
+      if (hint) hint.textContent = getUiText('saving');
       const mount = document.getElementById('extCfgFields');
       const values = {};
       if (mount) {
@@ -4052,14 +4076,14 @@
         if (!data.success) {
           if (hint)
             hint.textContent =
-              '保存失败: ' + (data.errors ? data.errors.join('; ') : data.error || res.statusText);
+              getUiText('saveFailed') + (data.errors ? data.errors.join('; ') : data.error || res.statusText);
           return;
         }
-        if (hint) hint.textContent = '已保存；扩展已重新加载。';
+        if (hint) hint.textContent = getUiText('savedAndReloaded');
         await loadExtensionWebConfigForm(channelId);
         loadChannelsList();
       } catch (e) {
-        if (hint) hint.textContent = '保存失败: ' + (e && e.message ? e.message : e);
+        if (hint) hint.textContent = getUiText('saveFailed') + (e && e.message ? e.message : e);
       }
     }
 
@@ -4094,20 +4118,20 @@
         });
         el.textContent = lines.length
           ? lines.join('\n')
-          : '（暂无记录。发起对话或执行任务后可在此查看。）';
+          : '(No records yet. Run a conversation or task to see entries here.)';
       } catch (e) {
-        el.textContent = '加载失败: ' + (e && e.message ? e.message : e);
+        el.textContent = getUiText('channelsLoadFailed') + (e && e.message ? e.message : e);
       }
     }
     async function clearAgentLogsOnServer() {
-      if (!confirm('确定清空内存中的执行日志？')) return;
+      if (!confirm(getUiText('clearLogsConfirm'))) return;
       try {
         const r = await fetch('http://localhost:50001/api/agent-logs', { method: 'DELETE' });
         if (!r.ok) throw new Error(r.statusText);
         await loadAgentLogs();
-        showNotification('已清空执行日志', 'success');
+        showNotification(getUiText('logsCleared'), 'success');
       } catch (e) {
-        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
+        showNotification(getUiText('clearFailed') + (e && e.message ? e.message : e), 'error');
       }
     }
 
@@ -4116,14 +4140,14 @@
 
       stopAgentLogsPolling();
 
-      // 更新激活状态
+      // Update active navigation state
       document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
       const activeNav = document.querySelector(`.nav-item[data-page="${page}"]`);
       if (activeNav) {
         activeNav.classList.add('active');
       }
 
-      // 显示对应页面
+      // Display selected page
       document.querySelectorAll('[id$="-page"]').forEach(p => {
         p.classList.add('hidden');
         p.style.display = 'none';
@@ -4137,18 +4161,18 @@
         await startNewThread();
       }
 
-      // 如果切换到技能页面，渲染技能列表
+      // Render skills view on switch
       if (page === 'skills') {
         renderSkillsGrid();
         loadTencentSkillHubSkills();
       }
 
-      // 如果切换到记忆页面，加载记忆列表
+      // Load memories on switch
       if (page === 'memory') {
         loadMemories();
       }
 
-      // 如果切换到专家页面，渲染专家列表
+      // Render experts on switch
       if (page === 'experts') {
         renderExpertsGrid();
       }
@@ -4174,7 +4198,7 @@
       });
     });
 
-    /** /reset：清空当前线程消息并清空全部长期记忆 */
+    /** /reset: clear current thread and all long-term memories */
     async function performSlashReset() {
       try {
         const response = await fetch('http://localhost:50001/api/sessions/new', {
@@ -4186,7 +4210,7 @@
         });
         const result = await response.json().catch(() => ({}));
         if (!result.success) {
-          showNotification('失败: ' + (result.error || response.statusText), 'error');
+          showNotification(getUiText('failedPrefix') + (result.error || response.statusText), 'error');
           return;
         }
         if (result.threadId) {
@@ -4196,21 +4220,15 @@
         }
         currentTaskId = null;
         const chatContainer = document.getElementById('chatContainer');
-        chatContainer.innerHTML = `
-            <div class="empty-state">
-              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-              <h2>开始构建</h2>
-              <p>在下方输入你的需求，开始创建任务</p>
-            </div>
-          `;
+        chatContainer.innerHTML = getBuildEmptyStateHtml();
         await refreshTaskList();
-        showNotification('已清空当前会话与全部长期记忆', 'success');
+        showNotification(getUiText('sessionResetSuccess'), 'success');
       } catch (e) {
-        showNotification('失败: ' + (e && e.message ? e.message : e), 'error');
+        showNotification(getUiText('failedPrefix') + (e && e.message ? e.message : e), 'error');
       }
     }
 
-    /** /new：仅清空当前线程消息（保留长期记忆） */
+    /** /new: clear current thread messages only (keep long-term memory) */
     async function performSlashNew() {
       try {
         const response = await fetch('http://localhost:50001/api/threads/clear-messages', {
@@ -4222,7 +4240,7 @@
         });
         const result = await response.json().catch(() => ({}));
         if (!result.success) {
-          showNotification('清空失败: ' + (result.error || response.statusText), 'error');
+          showNotification(getUiText('clearFailed') + (result.error || response.statusText), 'error');
           return;
         }
         if (result.threadId) {
@@ -4232,24 +4250,18 @@
         }
         currentTaskId = null;
         const chatContainer = document.getElementById('chatContainer');
-        chatContainer.innerHTML = `
-            <div class="empty-state">
-              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-              <h2>开始构建</h2>
-              <p>在下方输入你的需求，开始创建任务</p>
-            </div>
-          `;
+        chatContainer.innerHTML = getBuildEmptyStateHtml();
         await refreshTaskList();
-        showNotification('已清空当前会话上下文', 'success');
+        showNotification(getUiText('sessionNewSuccess'), 'success');
       } catch (e) {
-        showNotification('清空失败: ' + (e && e.message ? e.message : e), 'error');
+        showNotification(getUiText('clearFailed') + (e && e.message ? e.message : e), 'error');
       }
     }
 
-    // 执行任务
+    // Run task
     async function runTask() {
       if (isTaskRunning) {
-        showNotification('当前任务仍在运行，请先等待或按 Esc 中断。', 'warning');
+        showNotification(getUiText('taskRunningWarning'), 'warning');
         return;
       }
       const mode = document.getElementById('mode').value;
@@ -4294,7 +4306,7 @@
       }));
 
       if (!instruction.trim() && mentionMap.size === 0 && attachments.length === 0) {
-        alert('请输入任务指令');
+        alert(getUiText('enterInstruction'));
         return;
       }
 
@@ -4348,16 +4360,16 @@
       const chatContainer = document.getElementById('chatContainer');
       const emptyState = chatContainer.querySelector('.empty-state');
 
-      // 隐藏空状态
+      // Hide empty state
       if (emptyState) {
         emptyState.style.display = 'none';
       }
 
-      // 添加用户消息（文本 + 本轮图片附件快照，覆盖粘贴图与 @图片）
+      // Add user message (text + current image attachments snapshot)
       const userMessageImages = buildUserMessageImagePreviews(workspace, mentions, attachments);
       addMessage('user', instruction, { images: userMessageImages });
 
-      // 清空输入框
+      // Clear input
       document.getElementById('instruction').value = '';
       selectedMentionSkills = [];
       selectedMentionFiles = [];
@@ -4367,24 +4379,24 @@
       renderImageAttachmentTokens();
       closeMentionSkillPanel();
 
-      // 禁用按钮
+      // Disable button
       runBtn.disabled = true;
       runBtn.innerHTML = '<i data-lucide="loader-2" style="animation: spin 1s linear infinite;"></i>';
       lucide.createIcons();
 
-      // 添加助手思考消息
+      // Add assistant placeholder message
       const assistantMsg = addMessage('assistant', '');
       const assistantContent = assistantMsg.querySelector('.message-content');
       let fullText = '';
 
       try {
-        // 一次性标志：仅对本次实际发送生效
+        // One-time flag: applies only to this send action
         startInNewThreadPending = false;
         const runController = new AbortController();
         activeRunAbortController = runController;
         activeRunConversationId = currentThreadId || (startInNewThread ? null : DEFAULT_CONVERSATION_ID);
         isTaskRunning = true;
-        // 使用流式 API
+        // Use streaming API
         const response = await fetch('http://localhost:50001/api/task/execute-stream', {
           method: 'POST',
           headers: {
@@ -4427,17 +4439,17 @@
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.queued) {
-                  const hint = parsed.message || '已加入执行队列';
-                  const pos = parsed.queuePosition != null ? `（序号 ${parsed.queuePosition}）` : '';
+                  const hint = parsed.message || getUiText('queuedHint');
+                  const pos = parsed.queuePosition != null ? ` (${getUiText('queueOrder')} ${parsed.queuePosition})` : '';
                   renderMessageContent(assistantContent, '⏳ ' + hint + pos);
                   fullText = ' ';
                 } else if (parsed.content) {
                   fullText += parsed.content;
                   renderMessageContent(assistantContent, fullText);
-                  // 滚动到底部
+                  // Scroll to bottom
                   chatContainer.scrollTop = chatContainer.scrollHeight;
                 } else if (parsed.error) {
-                  renderMessageContent(assistantContent, '❌ 错误: ' + parsed.error);
+                  renderMessageContent(assistantContent, getUiText('assistantErrorPrefix') + parsed.error);
                 }
               } catch (e) {
                 // Skip invalid JSON
@@ -4447,10 +4459,10 @@
         }
 
         if (!fullText) {
-          renderMessageContent(assistantContent, '❌ 没有收到响应');
+          renderMessageContent(assistantContent, `❌ ${getUiText('noResponse')}`);
         }
 
-        // 如果是新线程第一次发言，自动把当前线程高亮到左侧列表第一项
+        // For first message in a new thread, highlight it in the list
         await refreshTaskList();
         if (!currentThreadId && tasks.length > 0) {
           currentThreadId = tasks[0].id;
@@ -4458,18 +4470,18 @@
           renderTaskList();
         }
 
-        // 更新上下文使用率
+        // Refresh context usage indicator
         updateContextUsage();
       } catch (error) {
         if (isAbortError(error)) {
           const interrupted = fullText
-            ? `${fullText}\n\n⛔ 已中断当前生成。`
-            : '⛔ 已中断当前生成。';
+            ? `${fullText}\n\n⛔ ${getUiText('interrupted')}.`
+            : `⛔ ${getUiText('interrupted')}.`;
           renderMessageContent(assistantContent, interrupted);
-          showNotification('已中断当前生成', 'warning');
+          showNotification(getUiText('interrupted'), 'warning');
         } else {
           assistantMsg.remove();
-          addMessage('assistant', '❌ 错误: ' + error.message);
+          addMessage('assistant', getUiText('assistantErrorPrefix') + error.message);
         }
       } finally {
         isTaskRunning = false;
@@ -4585,7 +4597,7 @@
       element.innerHTML = html || `<p>${escapeHtml(content)}</p>`;
     }
 
-    // 添加消息到聊天容器
+    // Append message to chat container
     function renderMessageImages(container, images) {
       if (!container || !Array.isArray(images) || images.length === 0) return;
       const safeImages = images.filter((item) => {
@@ -4630,7 +4642,7 @@
       const chatContainer = document.getElementById('chatContainer');
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${role}`;
-      messageDiv.dataset.content = content; // 存储原始内容
+      messageDiv.dataset.content = content; // Store raw content
 
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
@@ -4649,7 +4661,7 @@
 
       contentDiv.appendChild(messageContent);
 
-      // 为助手消息添加"添加到记忆"按钮
+      // Add "Add to Memory" action for assistant messages
       if (role === 'assistant') {
         const actionsDiv = document.createElement('div');
         actionsDiv.style.cssText = 'display: flex; gap: 8px; margin-top: 8px; opacity: 0.6; transition: opacity 0.2s;';
@@ -4658,7 +4670,7 @@
 
         const addToMemoryBtn = document.createElement('button');
         addToMemoryBtn.className = 'icon-btn';
-        addToMemoryBtn.title = '添加到记忆';
+        addToMemoryBtn.title = getUiText('addToMemory');
         addToMemoryBtn.innerHTML = '<i data-lucide="brain" style="width: 14px; height: 14px;"></i>';
         addToMemoryBtn.onclick = () => showAddToMemoryDialog(content);
 
@@ -4670,10 +4682,10 @@
       messageDiv.appendChild(contentDiv);
       chatContainer.appendChild(messageDiv);
 
-      // 滚动到底部
+      // Scroll to bottom
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
-      // 初始化图标
+      // Initialize icons
       lucide.createIcons();
 
       return messageDiv;
@@ -4695,7 +4707,7 @@
     async function generateExpert() {
       const description = document.getElementById('expertDescription').value.trim();
       if (!description) {
-        alert('请输入专家描述');
+        alert(getUiText('expertDescriptionRequired'));
         return;
       }
 
@@ -4703,7 +4715,7 @@
       const preview = document.getElementById('expertPreview');
 
       generateBtn.disabled = true;
-      generateBtn.textContent = '生成中...';
+      generateBtn.textContent = getUiText('generating');
 
       try {
         const response = await fetch('http://localhost:50001/api/experts/generate', {
@@ -4722,13 +4734,13 @@
           document.getElementById('expertPrompt').value = result.expert.promptTemplate;
           preview.classList.remove('hidden');
         } else {
-          alert('生成失败: ' + result.error);
+          alert(getUiText('generateFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       } finally {
         generateBtn.disabled = false;
-        generateBtn.textContent = '生成专家';
+        generateBtn.textContent = getUiText('createExpertBtn');
       }
     }
 
@@ -4739,7 +4751,7 @@
       const promptTemplate = document.getElementById('expertPrompt').value.trim();
 
       if (!name || !role || expertise.length === 0 || !promptTemplate) {
-        alert('请填写所有字段');
+        alert(getUiText('fillAllFields'));
         return;
       }
 
@@ -4753,15 +4765,15 @@
         const result = await response.json();
 
         if (result.success) {
-          alert('专家创建成功！');
+          alert(getUiText('expertCreated'));
           hideCreateExpertForm();
           await loadExperts();
           renderExpertsGrid();
         } else {
-          alert('创建失败: ' + result.error);
+          alert(getUiText('createFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -4769,7 +4781,7 @@
       const grid = document.getElementById('expertsGrid');
 
       if (experts.length === 0) {
-        grid.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">暂无专家</div>';
+        grid.innerHTML = `<div style="padding: 40px; text-align: center; color: #999;">${getUiText('noExperts')}</div>`;
         return;
       }
 
@@ -4782,6 +4794,904 @@
           </div>
         </div>
       `).join('');
+    }
+
+    // UI language helpers
+    const UI_LANGUAGE_STORAGE_KEY = 'squid.ui-language';
+    const UI_SUPPORTED_LANGUAGES = ['en', 'zh', 'ja', 'ru', 'it', 'fr', 'de'];
+    const UI_FALLBACK_LANGUAGE = 'en';
+    let currentUiLanguage = UI_FALLBACK_LANGUAGE;
+
+    const UI_TEXT = {
+      en: {
+        navTask: 'New Thread',
+        navSkills: 'Skills',
+        navExperts: 'Experts',
+        navMemory: 'Memory',
+        navChannels: 'Channels',
+        navAgentLogs: 'Agent Logs',
+        navSettings: 'Settings',
+        threadSectionTitle: 'Threads',
+        threadEmptyTitle: 'No threads yet',
+        threadEmptySubtitle: 'Create your first thread to get started',
+        taskPageTitle: 'New Thread',
+        taskEmptyTitle: 'Start Building',
+        taskEmptySubtitle: 'Describe your request below to create a task',
+        skillsPageTitle: 'Skill Management',
+        createSkillBtn: 'Create Skill',
+        installSkillBtn: 'Install Skill',
+        previewSkillBtn: 'Preview Skill',
+        expertsPageTitle: 'Expert Center',
+        createExpertBtn: 'Create Expert',
+        selectExpertPlaceholder: 'Select Expert',
+        memoryPageTitle: 'Memory Management',
+        createMemoryBtn: 'Create Memory',
+        memorySearchPlaceholder: 'Search memories...',
+        memoryEmptyTitle: 'No memories yet',
+        memoryEmptySubtitle: 'Create your first memory to help the AI remember important information',
+        channelsPageTitle: 'Channels',
+        channelsBackBtn: '← Back to list',
+        channelsRefreshBtn: 'Refresh Status',
+        channelsExtensionTitle: 'Channel Extensions',
+        channelsExtensionSaveBtn: 'Save and Reload Enabled Extensions',
+        extCfgHeading: 'Extension Configuration',
+        extCfgSaveBtn: 'Save',
+        skillDetailCloseBtn: 'Close',
+        agentLogsPageTitle: 'Execution Logs',
+        agentLogsRefreshBtn: 'Refresh',
+        agentLogsClearBtn: 'Clear',
+        settingsPageTitle: 'Settings',
+        uiLanguageTitle: 'Interface Language',
+        uiLanguageLabel: 'Display Language',
+        uiLanguageHelp: 'Switch the language for navigation and settings page copy.',
+        saveUiLanguageBtn: 'Save Language',
+        modelConfigTitle: 'Model Configuration',
+        apiProviderLabel: 'API Provider',
+        customProviderOption: 'Custom Endpoint',
+        modelNameLabel: 'Model Name',
+        apiProtocolLabel: 'Protocol',
+        apiProtocolOpenAIOption: 'OpenAI Compatible',
+        apiProtocolAnthropicOption: 'Anthropic Compatible',
+        temperatureLabel: 'Temperature',
+        maxTokensLabel: 'Max Tokens',
+        saveModelConfigBtn: 'Save Configuration',
+        testModelConfigBtn: 'Test Connection',
+        workspaceConfigTitle: 'Workspace',
+        defaultWorkspaceLabel: 'Default Workspace',
+        saveWorkspaceConfigBtn: 'Save Configuration',
+        toolsConfigTitle: 'Tool Settings',
+        webSearchSectionTitle: 'Web Search (web_search)',
+        webSearchProviderLabel: 'Search Provider',
+        saveWebSearchConfigBtn: 'Save Tool Settings',
+        saveCompressionConfigBtn: 'Save Configuration',
+        modelNamePlaceholderCustom: 'Enter model name',
+        modelConfigSaved: '✅ Model configuration saved successfully!',
+        modelConfigSaving: 'Saving...',
+        testConfigRunning: 'Testing...',
+        languageSaved: 'Language setting saved.',
+        loading: 'Loading...',
+        noInstalledSkills: 'No installed skills yet',
+        noSkillDetails: 'No details available',
+        noExperts: 'No experts yet',
+        noChannelData: 'No channel data',
+        channelHealthy: 'Healthy',
+        channelUnhealthy: 'Unhealthy',
+        channelDetail: 'Detail',
+        channelDetailTitle: 'Channel Details',
+        buildStartHeading: 'Start Building',
+        buildStartDescription: 'Describe your request below to create a task',
+        justNow: 'just now',
+        minutesAgo: 'm ago',
+        hoursAgo: 'h ago',
+        daysAgo: 'd ago',
+        generateSkillRequired: 'Please enter a skill description',
+        generating: 'Generating...',
+        generatingSkillHint: 'Generating skill definition with AI...\n',
+        generateFailed: 'Generation failed: ',
+        genericError: 'Error: ',
+        generateSkillBtnText: 'Generate Skill',
+        noSkillToSave: 'No generated skill to save',
+        saveSuccessSkill: 'Skill saved successfully!',
+        saveFailed: 'Save failed: ',
+        enterSkillUrl: 'Please enter a skill URL or local path',
+        previewFailed: 'Preview failed: ',
+        noSkillToInstall: 'No previewed skill to install',
+        installSuccess: 'Installed successfully!',
+        installFailed: 'Install failed: ',
+        threadSwitchFailed: 'Thread switch failed: ',
+        selectTaskFirst: 'Please select a task first',
+        switchExpertSuccess: 'Expert switched successfully!',
+        switchFailed: 'Switch failed: ',
+        fillAllFields: 'Please fill all required fields',
+        expertCreated: 'Expert created successfully!',
+        createFailed: 'Create failed: ',
+        pickDirectoryFailed: 'Directory selection failed: ',
+        workspaceUpdated: 'Workspace updated',
+        newThreadFailed: 'Failed to create a new thread: ',
+        clearLogsConfirm: 'Clear in-memory execution logs?',
+        logsCleared: 'Execution logs cleared',
+        clearFailed: 'Clear failed: ',
+        taskRunningWarning: 'A task is already running. Please wait or press Esc to interrupt.',
+        enterInstruction: 'Please enter a task instruction',
+        queuedHint: 'Added to queue',
+        queueOrder: 'Queue order',
+        noResponse: 'No response received',
+        interrupted: 'Interrupted current generation',
+        assistantErrorPrefix: '❌ Error: ',
+        addToMemory: 'Add to Memory',
+        channelsLoadingHint: 'Loading...',
+        channelsLoadFailed: 'Load failed: ',
+        channelsExtLoadHint: 'Extension loading hints (without secrets):\n',
+        channelsWhitelistOn: 'Whitelist mode is enabled. Only listed extensions are loaded.',
+        channelsWhitelistOff: 'Whitelist mode is not configured. Discovered extensions are all loaded by default until saved.',
+        loaded: 'Loaded',
+        notLoaded: 'Not Loaded',
+        saving: 'Saving...',
+        savedAndReloaded: 'Saved and reloaded extensions.',
+        failedPrefix: 'Failed: ',
+        channelTableHeaderName: 'Channel',
+        channelTableHeaderSource: 'Source',
+        channelTableHeaderId: 'ID',
+        channelTableHeaderStatus: 'Status',
+        channelTableHeaderMessage: 'Message',
+        channelNotRegistered: '(unregistered)',
+        sourceExtension: 'Extension',
+        sourceBuiltin: 'Built-in',
+        channelConfigTitle: 'Channel Config',
+        yes: 'Yes',
+        no: 'No',
+        noWebConfigHint: 'This channel has no writable web configuration entry. Refer to docs.',
+        getAuthLink: 'Get authentication link',
+        copyAuthLink: 'Click to copy authentication link',
+        copied: 'Copied to clipboard',
+        copyFailed: 'Copy failed. Please paste the full link manually.',
+        authQrAlt: 'Authentication QR code',
+        authFetching: 'Fetching authentication link...',
+        authPolling: 'Checking login status...',
+        uninstalled: 'Uninstalled',
+        uninstalling: 'Uninstalling...',
+        uninstallFailed: 'Uninstall failed: ',
+        installSuccessWithName: 'Install success: ',
+        installFailedWithName: 'Install failed: ',
+        refreshTaskTitle: 'Refresh',
+        filterTaskTitle: 'Filter',
+        contextIndicatorTitle: 'Compress conversation',
+        clearConversationTitle: 'Delete current session',
+        noExpertOptionLabel: 'None - General Assistant',
+        instructionPlaceholder: 'Ask squid anything, @ add files, /new clear session, /reset clear session + memory, % for skills',
+        planModeTitle: 'Plan mode only writes plan files (.squid/plan.md or session-specific plan files). Use Ask/Craft to edit business code.',
+        workspacePlaceholder: 'Workspace',
+        workspacePickerTitle: 'Select local path',
+        createCustomSkillTitle: 'Create Custom Skill',
+        skillDescriptionLabel: 'Describe the skill in natural language',
+        skillDescriptionPlaceholder: 'e.g. Analyze Python code complexity, identify bottlenecks, and suggest optimizations',
+        cancelBtn: 'Cancel',
+        skillPreviewTitle: 'Generated Skill Preview:',
+        saveSkillBtn: 'Save Skill',
+        installSkillTitle: 'Install Skill',
+        skillUrlLabel: 'Skill URL or local path',
+        skillUrlPlaceholder: 'https://example.com/skill.md or /path/to/skill.md',
+        skillSecurityPreviewTitle: 'Security Preview:',
+        previewNameLabel: 'Skill Name:',
+        previewDescriptionLabel: 'Description:',
+        previewToolsLabel: 'Allowed Tools:',
+        skillSecurityTipsTitle: '⚠️ Security Tips:',
+        skillSecurityTip1: 'Carefully review the allowed tools list',
+        skillSecurityTip2: 'Hooks can execute commands; only trust verified sources',
+        skillSecurityTip3: 'Install skills from trusted sources only',
+        confirmInstallSkillBtn: 'Confirm Install',
+        skillhubSearchPlaceholder: 'Search SkillHub skills',
+        skillhubFilterAllOption: 'All',
+        skillhubFilterNotInstalledOption: 'Not Installed',
+        skillhubFilterInstalledOption: 'Installed',
+        skillhubFilterUpdatableOption: 'Updatable',
+        skillhubSearchBtn: 'Search',
+        skillhubRecommendedTitle: 'Recommended',
+        skillhubPersonalTitle: 'Installed',
+        createCustomExpertTitle: 'Create Custom Expert',
+        expertDescriptionLabel: 'Describe the expert role in natural language',
+        expertDescriptionPlaceholder: 'e.g. E-commerce operations specialist for listings, store setup, and campaigns',
+        expertPreviewTitle: 'Generated Expert Preview:',
+        expertNameLabel: 'Expert Name',
+        expertRoleLabel: 'Role Description',
+        expertExpertiseLabel: 'Expertise (comma-separated)',
+        expertPromptLabel: 'Prompt Template',
+        expertNamePlaceholder: 'e.g. E-commerce Operations Specialist',
+        expertRolePlaceholder: 'e.g. Professional e-commerce operations expert',
+        expertExpertisePlaceholder: 'e.g. product listing, store design, campaign planning',
+        saveExpertBtn: 'Save Expert',
+        expertsListTitle: 'Expert List',
+        memoryTypeFilterAllOption: 'All Types',
+        memoryTypeFilterUserOption: 'User Profile',
+        memoryTypeFilterFeedbackOption: 'Feedback',
+        memoryTypeFilterProjectOption: 'Project',
+        memoryTypeFilterReferenceOption: 'Reference',
+        apiEndpointLabel: 'API Endpoint',
+        compressionSettingsTitle: 'Conversation Compression',
+        compressionThresholdLabel: 'Auto-compress threshold (%)',
+        contextLimitLabel: 'Context limit (tokens)',
+        generateExpertBtnText: 'Generate Expert',
+        selectTextFirst: 'Please select text to save first',
+        addToMemoryDialogTitle: 'Add to Memory',
+        memoryTypeLabel: 'Type',
+        suggestedPrefix: 'Suggested',
+        memoryNameLabel: 'Name',
+        memoryDescriptionLabel: 'Description',
+        memoryContentLabel: 'Content',
+        quickMemoryNamePlaceholder: 'e.g. My role',
+        quickMemoryDescriptionPlaceholder: 'Brief description of this memory',
+        duplicateWarningTitle: 'Potential duplicate memories detected',
+        saveBtn: 'Save',
+        createMemoryTitle: 'Create Memory',
+        createBtn: 'Create',
+        closeBtn: 'Close',
+        editBtn: 'Edit',
+        editMemoryTitle: 'Edit Memory',
+        fillAllFieldsMemory: 'Please fill all fields',
+        memoryCreated: 'Memory created successfully',
+        memoryUpdated: 'Memory updated successfully',
+        updatedAtLabel: 'Updated',
+        editTitle: 'Edit',
+        deleteTitle: 'Delete',
+        loadingFailed: 'Load failed: ',
+        sessionResetSuccess: 'Session and all long-term memories were cleared.',
+        sessionNewSuccess: 'Current session context cleared.',
+        expertDescriptionRequired: 'Please enter an expert description',
+        webSearchConfigSaved: 'Web search tool settings saved!',
+        workspaceConfigSaved: 'Workspace configuration saved!',
+        selectSessionFirst: 'Please select a session to delete first',
+        deleteSessionConfirmPrefix: 'Delete session',
+        deleteSessionConfirmSuffix: 'This action cannot be undone.',
+        sessionDeleted: 'Session deleted',
+        extractMemoryConfirm: 'Extract memories from current conversation? AI will create long-term memory entries.',
+        extractMemoryFailed: 'Extraction failed: ',
+        compressConversationConfirm: 'Compress conversation history? AI summary will reduce token usage.',
+        compressConversationFailed: 'Compression failed: ',
+        contextLowNoNeedCompress: 'Context usage is low, compression is not needed now.',
+        contextUsageCompressConfirm: 'Current context usage',
+        contextUsageCompressQuestion: 'Compress conversation history now?',
+        deleteMemoryConfirm: 'Delete this memory?',
+        memoryDeleted: 'Memory deleted',
+        deleteFailed: 'Delete failed: ',
+        qrPreviewLoadFailed: 'Failed to load QR preview. Copy the link and open it externally.',
+        authPollingFailed: 'Polling failed: ',
+        authPollingError: 'Polling error: ',
+        authFetchFailed: 'Fetch failed: ',
+        extSensitiveConfiguredHint: 'Sensitive value already configured. Leave empty to keep unchanged.',
+        toolsConfigHelp: 'Tools are configured independently in ~/.squid/config.json under tools, separate from model API settings.',
+        webSearchProviderHelp: 'Maps to tools.webSearch.provider. WEB_SEARCH_PROVIDER (bing / duckduckgo) takes precedence.',
+        compressionThresholdHelp: 'Auto compression triggers when token usage reaches this threshold (recommended 70-80%)',
+        contextLimitHelp: 'Maximum context window size for the model',
+        compressionStrategyTitle: 'Compression strategy:',
+        compressionStrategyItem70: '70%: Light compression - remove redundant content',
+        compressionStrategyItem75: '75%: Smart truncation - keep recent messages',
+        compressionStrategyItem80: '80%: Partial compression - summarize middle history',
+        compressionStrategyItem85: '85%: Full compression - summarize all history',
+        agentLogsAutoRefreshLabel: 'Auto refresh',
+        agentLogsDescription: 'Records local agent tasks and tool calls (keeps about 800 recent in memory, excluding API keys). Channel-queued tasks are included too.',
+        imagePreviewAriaLabel: 'Image Preview',
+        imagePreviewCloseAriaLabel: 'Close image preview',
+        debugCloseBtn: 'Close',
+        debugClearBtn: 'Clear',
+        debugConsoleTitle: 'Debug Console',
+        skillhubStatusInstalled: 'Installed',
+        skillhubStatusNotInstalled: 'Not Installed',
+        skillhubStatusUpdatePrefix: 'Update',
+        skillhubNoRecommended: 'No recommended skills',
+        skillhubUninstallBtn: 'Uninstall',
+        loginSuccess: 'Login success',
+        loginFailed: 'Login failed',
+        refreshingConfig: 'Refreshing config...',
+        authCopyCompleteHint: 'Copy the auth link and finish verification in your client or browser.',
+        saveFailedWithPrefix: '❌ Save failed: ',
+        errorWithPrefix: '❌ Error: ',
+        apiKeyRequired: 'Please enter API Key first',
+        connectionTestFailed: '❌ Connection test failed: ',
+        wsTaskCompletedTitle: 'Task Completed',
+        wsTaskIdLabel: 'Task ID',
+        wsTaskNameLabel: 'Task Name',
+        wsTaskDurationLabel: 'Duration',
+        wsTaskStatusLabel: 'Status',
+        wsTaskResultLabel: 'Result',
+        wsTaskErrorLabel: 'Error',
+        wsStatusSuccess: '✅ Success',
+        wsStatusFailed: '❌ Failed',
+        wsConnectionLogPrefix: '[WebSocket] connection status:',
+        wsConnected: 'connected',
+        wsDisconnected: 'disconnected',
+        extConfigHeadingPrefix: 'Config',
+        wsSystemNotificationTitle: 'System Notification',
+      },
+      zh: {
+        navTask: '新线程',
+        navSkills: '技能',
+        navExperts: '专家',
+        navMemory: '记忆',
+        navChannels: '渠道',
+        navAgentLogs: '执行日志',
+        navSettings: '设置',
+        threadSectionTitle: '线程',
+        threadEmptyTitle: '暂无线程',
+        threadEmptySubtitle: '开始创建你的第一个线程',
+        taskPageTitle: '新线程',
+        taskEmptyTitle: '开始构建',
+        taskEmptySubtitle: '在下方输入你的需求，开始创建任务',
+        skillsPageTitle: '技能管理',
+        createSkillBtn: '创建技能',
+        installSkillBtn: '安装技能',
+        previewSkillBtn: '预览技能',
+        expertsPageTitle: '专家中心',
+        createExpertBtn: '创建专家',
+        selectExpertPlaceholder: '选择专家',
+        memoryPageTitle: '记忆管理',
+        createMemoryBtn: '创建记忆',
+        memorySearchPlaceholder: '搜索记忆...',
+        memoryEmptyTitle: '还没有记忆',
+        memoryEmptySubtitle: '创建第一个记忆来帮助 AI 记住重要信息',
+        channelsPageTitle: '渠道',
+        channelsBackBtn: '← 返回列表',
+        channelsRefreshBtn: '刷新状态',
+        channelsExtensionTitle: '渠道扩展',
+        channelsExtensionSaveBtn: '保存启用并重新加载',
+        extCfgHeading: '扩展配置',
+        extCfgSaveBtn: '保存',
+        skillDetailCloseBtn: '关闭',
+        agentLogsPageTitle: '执行日志',
+        agentLogsRefreshBtn: '刷新',
+        agentLogsClearBtn: '清空记录',
+        settingsPageTitle: '设置',
+        uiLanguageTitle: '界面语言',
+        uiLanguageLabel: '显示语言',
+        uiLanguageHelp: '切换导航和设置页的界面文案语言。',
+        saveUiLanguageBtn: '保存语言设置',
+        modelConfigTitle: '模型配置',
+        apiProviderLabel: 'API 提供商',
+        customProviderOption: '自定义端点',
+        modelNameLabel: '模型名称',
+        apiProtocolLabel: '协议类型',
+        apiProtocolOpenAIOption: 'OpenAI 兼容',
+        apiProtocolAnthropicOption: 'Anthropic 兼容',
+        temperatureLabel: '温度 (Temperature)',
+        maxTokensLabel: '最大 Token 数',
+        saveModelConfigBtn: '保存配置',
+        testModelConfigBtn: '测试连接',
+        workspaceConfigTitle: '工作目录',
+        defaultWorkspaceLabel: '默认工作目录',
+        saveWorkspaceConfigBtn: '保存配置',
+        toolsConfigTitle: '工具设置',
+        webSearchSectionTitle: '联网搜索（web_search）',
+        webSearchProviderLabel: '搜索提供商',
+        saveWebSearchConfigBtn: '保存工具设置',
+        saveCompressionConfigBtn: '保存配置',
+        modelNamePlaceholderCustom: '输入模型名称',
+        modelConfigSaved: '✅ 模型配置保存成功！',
+        modelConfigSaving: '保存中...',
+        testConfigRunning: '测试中...',
+        languageSaved: '语言设置已保存。',
+        loading: '加载中...',
+        noInstalledSkills: '暂无已安装技能',
+        noSkillDetails: '暂无详情',
+        noExperts: '暂无专家',
+        noChannelData: '暂无渠道数据',
+        channelHealthy: '正常',
+        channelUnhealthy: '异常',
+        channelDetail: '详情',
+        channelDetailTitle: '渠道详情',
+        buildStartHeading: '开始构建',
+        buildStartDescription: '在下方输入你的需求，开始创建任务',
+        justNow: '刚刚',
+        minutesAgo: '分钟前',
+        hoursAgo: '小时前',
+        daysAgo: '天前',
+        generateSkillRequired: '请输入技能描述',
+        generating: '生成中...',
+        generatingSkillHint: '正在调用 AI 生成技能定义...\n',
+        generateFailed: '生成失败: ',
+        genericError: '错误: ',
+        generateSkillBtnText: '生成技能',
+        noSkillToSave: '没有可保存的技能',
+        saveSuccessSkill: '技能保存成功！',
+        saveFailed: '保存失败: ',
+        enterSkillUrl: '请输入技能 URL 或路径',
+        previewFailed: '预览失败: ',
+        noSkillToInstall: '没有可安装的技能',
+        installSuccess: '技能安装成功！',
+        installFailed: '安装失败: ',
+        threadSwitchFailed: '线程切换失败: ',
+        selectTaskFirst: '请先选择一个任务',
+        switchExpertSuccess: '专家切换成功！',
+        switchFailed: '切换失败: ',
+        fillAllFields: '请填写所有字段',
+        expertCreated: '专家创建成功！',
+        createFailed: '创建失败: ',
+        pickDirectoryFailed: '目录选择失败: ',
+        workspaceUpdated: '工作目录已更新',
+        newThreadFailed: '新线程创建失败: ',
+        clearLogsConfirm: '确定清空内存中的执行日志？',
+        logsCleared: '已清空执行日志',
+        clearFailed: '清空失败: ',
+        taskRunningWarning: '当前任务仍在运行，请先等待或按 Esc 中断。',
+        enterInstruction: '请输入任务指令',
+        queuedHint: '已加入执行队列',
+        queueOrder: '序号',
+        noResponse: '没有收到响应',
+        interrupted: '已中断当前生成',
+        assistantErrorPrefix: '❌ 错误: ',
+        addToMemory: '添加到记忆',
+        channelsLoadingHint: '加载中...',
+        channelsLoadFailed: '加载失败: ',
+        channelsExtLoadHint: '扩展加载提示（不含密钥）：\n',
+        channelsWhitelistOn: '当前为启用白名单模式。仅列表中的扩展会加载。',
+        channelsWhitelistOff: '当前未配置 enabled 白名单：发现的扩展会全部尝试加载。',
+        loaded: '已加载',
+        notLoaded: '未加载',
+        saving: '保存中…',
+        savedAndReloaded: '已保存并重新加载扩展。',
+        failedPrefix: '失败: ',
+        channelTableHeaderName: '渠道',
+        channelTableHeaderSource: '来源',
+        channelTableHeaderId: 'ID',
+        channelTableHeaderStatus: '状态',
+        channelTableHeaderMessage: '说明',
+        channelNotRegistered: '(未注册)',
+        sourceExtension: '扩展',
+        sourceBuiltin: '内置',
+        channelConfigTitle: '渠道配置',
+        yes: '是',
+        no: '否',
+        noWebConfigHint: '此渠道无 Web 端写入入口，配置请参考项目文档。',
+        getAuthLink: '获取认证链接',
+        copyAuthLink: '点击复制认证链接',
+        copied: '已复制到剪贴板',
+        copyFailed: '复制失败，请到浏览器地址栏手动粘贴完整链接。',
+        authQrAlt: '认证二维码',
+        authFetching: '正在获取认证链接…',
+        authPolling: '正在检测登录状态（服务器长轮询中，请稍候）…',
+        uninstalled: '已卸载',
+        uninstalling: '卸载中...',
+        uninstallFailed: '卸载失败: ',
+        installSuccessWithName: '安装成功：',
+        installFailedWithName: '安装失败：',
+        refreshTaskTitle: '刷新',
+        filterTaskTitle: '筛选',
+        contextIndicatorTitle: '点击压缩对话',
+        clearConversationTitle: '删除当前会话',
+        noExpertOptionLabel: '无 - 通用助手',
+        instructionPlaceholder: 'Ask squid anything, @ to add files, /new 清空会话, /reset 清空会话与记忆, % for skills',
+        planModeTitle: '规划模式：仅可将计划写入工作区 .squid/plan.md（无会话）或 .squid/plan-会话后缀.md；修改业务代码请切换 Ask 或 Craft。',
+        workspacePlaceholder: '工作目录',
+        workspacePickerTitle: '选择本机路径',
+        createCustomSkillTitle: '创建自定义技能',
+        skillDescriptionLabel: '用自然语言描述你想要的技能',
+        skillDescriptionPlaceholder: '例如：我需要一个技能，可以分析 Python 代码的复杂度，找出性能瓶颈，并给出优化建议',
+        cancelBtn: '取消',
+        skillPreviewTitle: '预览生成的技能：',
+        saveSkillBtn: '保存技能',
+        installSkillTitle: '安装技能',
+        skillUrlLabel: '技能 URL 或本地路径',
+        skillUrlPlaceholder: 'https://example.com/skill.md 或 /path/to/skill.md',
+        skillSecurityPreviewTitle: '安全预览：',
+        previewNameLabel: '技能名称：',
+        previewDescriptionLabel: '描述：',
+        previewToolsLabel: '允许的工具：',
+        skillSecurityTipsTitle: '⚠️ 安全提示：',
+        skillSecurityTip1: '请仔细检查允许的工具列表',
+        skillSecurityTip2: 'Hooks 可以执行任意命令，请确保来源可信',
+        skillSecurityTip3: '只安装来自可信来源的技能',
+        confirmInstallSkillBtn: '确认安装',
+        skillhubSearchPlaceholder: '搜索 SkillHub 技能',
+        skillhubFilterAllOption: '全部',
+        skillhubFilterNotInstalledOption: '未安装',
+        skillhubFilterInstalledOption: '已安装',
+        skillhubFilterUpdatableOption: '可更新',
+        skillhubSearchBtn: '搜索',
+        skillhubRecommendedTitle: '推荐',
+        skillhubPersonalTitle: '个人',
+        createCustomExpertTitle: '创建自定义专家',
+        expertDescriptionLabel: '用自然语言描述专家角色',
+        expertDescriptionPlaceholder: '例如：我需要一个电商运营专家，擅长商品上架、店铺装修、营销活动策划',
+        expertPreviewTitle: '预览生成的专家：',
+        expertNameLabel: '专家名称',
+        expertRoleLabel: '角色描述',
+        expertExpertiseLabel: '专业领域（用逗号分隔）',
+        expertPromptLabel: '提示词模板',
+        expertNamePlaceholder: '例如：电商运营专家',
+        expertRolePlaceholder: '例如：专业电商运营专家',
+        expertExpertisePlaceholder: '例如：商品上架,店铺装修,营销策划',
+        saveExpertBtn: '保存专家',
+        expertsListTitle: '专家列表',
+        memoryTypeFilterAllOption: '所有类型',
+        memoryTypeFilterUserOption: '用户信息',
+        memoryTypeFilterFeedbackOption: '反馈建议',
+        memoryTypeFilterProjectOption: '项目信息',
+        memoryTypeFilterReferenceOption: '参考资料',
+        apiEndpointLabel: 'API 端点',
+        compressionSettingsTitle: '对话压缩设置',
+        compressionThresholdLabel: '自动压缩阈值 (%)',
+        contextLimitLabel: '上下文限制 (tokens)',
+        generateExpertBtnText: '生成专家',
+        selectTextFirst: '请先选择要保存的文本',
+        addToMemoryDialogTitle: '添加到记忆',
+        memoryTypeLabel: '类型',
+        suggestedPrefix: '建议',
+        memoryNameLabel: '名称',
+        memoryDescriptionLabel: '描述',
+        memoryContentLabel: '内容',
+        quickMemoryNamePlaceholder: '例如：我的角色',
+        quickMemoryDescriptionPlaceholder: '简短描述这个记忆的内容',
+        duplicateWarningTitle: '可能存在相似的记忆',
+        saveBtn: '保存',
+        createMemoryTitle: '创建记忆',
+        createBtn: '创建',
+        closeBtn: '关闭',
+        editBtn: '编辑',
+        editMemoryTitle: '编辑记忆',
+        fillAllFieldsMemory: '请填写所有字段',
+        memoryCreated: '记忆创建成功',
+        memoryUpdated: '记忆更新成功',
+        updatedAtLabel: '更新',
+        editTitle: '编辑',
+        deleteTitle: '删除',
+        loadingFailed: '加载失败: ',
+        sessionResetSuccess: '已清空当前会话与全部长期记忆',
+        sessionNewSuccess: '已清空当前会话上下文',
+        expertDescriptionRequired: '请输入专家描述',
+        webSearchConfigSaved: '工具设置（联网搜索）已保存！',
+        workspaceConfigSaved: '工作目录配置保存成功！',
+        selectSessionFirst: '请先在左侧选择要删除的会话',
+        deleteSessionConfirmPrefix: '确定要删除会话',
+        deleteSessionConfirmSuffix: '删除后不可恢复。',
+        sessionDeleted: '会话已删除',
+        extractMemoryConfirm: '确定要从当前对话中提取记忆吗？这将使用 AI 分析对话内容并创建长期记忆。',
+        extractMemoryFailed: '提取失败: ',
+        compressConversationConfirm: '确定要压缩对话历史吗？这将使用 AI 生成摘要来减少 token 使用。',
+        compressConversationFailed: '压缩失败: ',
+        contextLowNoNeedCompress: '上下文使用率较低，暂不需要压缩',
+        contextUsageCompressConfirm: '当前上下文使用率',
+        contextUsageCompressQuestion: '确定要压缩对话历史吗？',
+        deleteMemoryConfirm: '确定要删除这个记忆吗？',
+        memoryDeleted: '记忆已删除',
+        deleteFailed: '删除失败: ',
+        qrPreviewLoadFailed: '二维码预览加载失败，可复制链接后在外部应用或浏览器中打开。',
+        authPollingFailed: '轮询失败: ',
+        authPollingError: '轮询异常: ',
+        authFetchFailed: '获取失败: ',
+        extSensitiveConfiguredHint: '已配置敏感字段，留空表示不修改。',
+        toolsConfigHelp: '各工具独立配置，写入 ~/.squid/config.json 的 tools 对象，与大模型 API 无关。',
+        webSearchProviderHelp: '对应 tools.webSearch.provider。环境变量 WEB_SEARCH_PROVIDER（bing / duckduckgo）优先。',
+        compressionThresholdHelp: '当对话 token 使用率达到此阈值时自动触发压缩（建议 70-80%）',
+        contextLimitHelp: '模型的最大上下文窗口大小',
+        compressionStrategyTitle: '压缩策略：',
+        compressionStrategyItem70: '70%：微压缩 - 清除冗余内容',
+        compressionStrategyItem75: '75%：智能截断 - 保留最近消息',
+        compressionStrategyItem80: '80%：部分压缩 - AI 摘要中间部分',
+        compressionStrategyItem85: '85%：完整压缩 - AI 摘要全部历史',
+        agentLogsAutoRefreshLabel: '自动刷新',
+        agentLogsDescription: '记录本机 Agent 任务与工具调用（内存保留最近约 800 条，不含 API Key）。渠道队列触发的任务也会写入。',
+        imagePreviewAriaLabel: '图片预览',
+        imagePreviewCloseAriaLabel: '关闭图片预览',
+        debugCloseBtn: '关闭',
+        debugClearBtn: '清空',
+        debugConsoleTitle: '调试控制台',
+        skillhubStatusInstalled: '已安装',
+        skillhubStatusNotInstalled: '未安装',
+        skillhubStatusUpdatePrefix: '更新',
+        skillhubNoRecommended: '暂无推荐技能',
+        skillhubUninstallBtn: '卸载',
+        loginSuccess: '登录成功',
+        loginFailed: '登录失败',
+        refreshingConfig: '正在刷新配置...',
+        authCopyCompleteHint: '请复制认证链接，在对应客户端或浏览器中完成验证。',
+        saveFailedWithPrefix: '❌ 保存失败：',
+        errorWithPrefix: '❌ 错误：',
+        apiKeyRequired: '请先输入 API Key',
+        connectionTestFailed: '❌ 连接测试失败：',
+        wsTaskCompletedTitle: '任务完成通知',
+        wsTaskIdLabel: '任务 ID',
+        wsTaskNameLabel: '任务名称',
+        wsTaskDurationLabel: '耗时',
+        wsTaskStatusLabel: '状态',
+        wsTaskResultLabel: '结果',
+        wsTaskErrorLabel: '错误',
+        wsStatusSuccess: '✅ 成功',
+        wsStatusFailed: '❌ 失败',
+        wsConnectionLogPrefix: '[WebSocket] 连接状态:',
+        wsConnected: '已连接',
+        wsDisconnected: '已断开',
+        extConfigHeadingPrefix: '配置',
+        wsSystemNotificationTitle: '系统通知',
+      },
+    };
+
+    // Build missing locale packs from English baseline, then override key copy.
+    const UI_TEXT_OVERRIDES = {
+      ja: {
+        navTask: '新しいスレッド',
+        navSkills: 'スキル',
+        navExperts: 'エキスパート',
+        navMemory: 'メモリ',
+        navChannels: 'チャンネル',
+        navAgentLogs: 'エージェントログ',
+        navSettings: '設定',
+        taskPageTitle: '新しいスレッド',
+        settingsPageTitle: '設定',
+        uiLanguageTitle: 'インターフェース言語',
+        uiLanguageLabel: '表示言語',
+        saveUiLanguageBtn: '言語設定を保存',
+        languageSaved: '言語設定を保存しました。',
+      },
+      ru: {
+        navTask: 'Новый поток',
+        navSkills: 'Навыки',
+        navExperts: 'Эксперты',
+        navMemory: 'Память',
+        navChannels: 'Каналы',
+        navAgentLogs: 'Логи агента',
+        navSettings: 'Настройки',
+        taskPageTitle: 'Новый поток',
+        settingsPageTitle: 'Настройки',
+        uiLanguageTitle: 'Язык интерфейса',
+        uiLanguageLabel: 'Язык отображения',
+        saveUiLanguageBtn: 'Сохранить язык',
+        languageSaved: 'Язык интерфейса сохранен.',
+      },
+      it: {
+        navTask: 'Nuovo thread',
+        navSkills: 'Competenze',
+        navExperts: 'Esperti',
+        navMemory: 'Memoria',
+        navChannels: 'Canali',
+        navAgentLogs: 'Log agente',
+        navSettings: 'Impostazioni',
+        taskPageTitle: 'Nuovo thread',
+        settingsPageTitle: 'Impostazioni',
+        uiLanguageTitle: 'Lingua interfaccia',
+        uiLanguageLabel: 'Lingua di visualizzazione',
+        saveUiLanguageBtn: 'Salva lingua',
+        languageSaved: 'Impostazione lingua salvata.',
+      },
+      fr: {
+        navTask: 'Nouveau fil',
+        navSkills: 'Compétences',
+        navExperts: 'Experts',
+        navMemory: 'Mémoire',
+        navChannels: 'Canaux',
+        navAgentLogs: "Journaux de l'agent",
+        navSettings: 'Paramètres',
+        taskPageTitle: 'Nouveau fil',
+        settingsPageTitle: 'Paramètres',
+        uiLanguageTitle: "Langue de l'interface",
+        uiLanguageLabel: 'Langue affichée',
+        saveUiLanguageBtn: 'Enregistrer la langue',
+        languageSaved: 'Paramètre de langue enregistré.',
+      },
+      de: {
+        navTask: 'Neuer Thread',
+        navSkills: 'Fähigkeiten',
+        navExperts: 'Experten',
+        navMemory: 'Speicher',
+        navChannels: 'Kanäle',
+        navAgentLogs: 'Agent-Logs',
+        navSettings: 'Einstellungen',
+        taskPageTitle: 'Neuer Thread',
+        settingsPageTitle: 'Einstellungen',
+        uiLanguageTitle: 'Oberflächensprache',
+        uiLanguageLabel: 'Anzeigesprache',
+        saveUiLanguageBtn: 'Sprache speichern',
+        languageSaved: 'Spracheinstellung gespeichert.',
+      },
+    };
+
+    for (const locale of ['ja', 'ru', 'it', 'fr', 'de']) {
+      UI_TEXT[locale] = {
+        ...UI_TEXT.en,
+        ...(UI_TEXT_OVERRIDES[locale] || {}),
+      };
+    }
+
+    function normalizeUiLanguage(locale) {
+      return UI_SUPPORTED_LANGUAGES.includes(locale) ? locale : UI_FALLBACK_LANGUAGE;
+    }
+
+    function getUiText(key) {
+      const current = UI_TEXT[currentUiLanguage] || UI_TEXT[UI_FALLBACK_LANGUAGE];
+      return current[key] || UI_TEXT[UI_FALLBACK_LANGUAGE][key] || key;
+    }
+
+    function setTextById(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
+    }
+
+    function setPlaceholderById(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.placeholder = value;
+    }
+
+    function setTitleById(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.title = value;
+    }
+
+    function setAriaLabelById(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.setAttribute('aria-label', value);
+    }
+
+    function getBuildEmptyStateHtml() {
+      return `
+        <div class="empty-state">
+          <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
+          <h2>${getUiText('buildStartHeading')}</h2>
+          <p>${getUiText('buildStartDescription')}</p>
+        </div>
+      `;
+    }
+
+    function setNavLabel(page, label) {
+      const node = document.querySelector(`.nav-item[data-page="${page}"] span`);
+      if (node) node.textContent = label;
+    }
+
+    function applyUiLanguage(locale) {
+      currentUiLanguage = normalizeUiLanguage(locale);
+      document.documentElement.lang = currentUiLanguage;
+
+      setNavLabel('task', getUiText('navTask'));
+      setNavLabel('skills', getUiText('navSkills'));
+      setNavLabel('experts', getUiText('navExperts'));
+      setNavLabel('memory', getUiText('navMemory'));
+      setNavLabel('channels', getUiText('navChannels'));
+      setNavLabel('agent-logs', getUiText('navAgentLogs'));
+      setNavLabel('settings', getUiText('navSettings'));
+
+      setTextById('threadSectionTitle', getUiText('threadSectionTitle'));
+      setTitleById('refreshTaskBtn', getUiText('refreshTaskTitle'));
+      setTitleById('filterTaskBtn', getUiText('filterTaskTitle'));
+      setTitleById('contextIndicator', getUiText('contextIndicatorTitle'));
+      setTitleById('clearConversationBtn', getUiText('clearConversationTitle'));
+      setTextById('noExpertOptionLabel', getUiText('noExpertOptionLabel'));
+      setTextById('threadEmptyTitle', getUiText('threadEmptyTitle'));
+      setTextById('threadEmptySubtitle', getUiText('threadEmptySubtitle'));
+      setTextById('taskPageTitle', getUiText('taskPageTitle'));
+      setTextById('taskEmptyTitle', getUiText('taskEmptyTitle'));
+      setTextById('taskEmptySubtitle', getUiText('taskEmptySubtitle'));
+      setPlaceholderById('instruction', getUiText('instructionPlaceholder'));
+      const planOption = document.querySelector('#mode option[value="plan"]');
+      if (planOption) planOption.title = getUiText('planModeTitle');
+      setPlaceholderById('workspace', getUiText('workspacePlaceholder'));
+      setTitleById('workspacePickerBtn', getUiText('workspacePickerTitle'));
+      setTextById('skillsPageTitle', getUiText('skillsPageTitle'));
+      setTextById('createSkillBtn', getUiText('createSkillBtn'));
+      setTextById('installSkillBtn', getUiText('installSkillBtn'));
+      setTextById('previewSkillBtn', getUiText('previewSkillBtn'));
+      setTextById('createCustomSkillTitle', getUiText('createCustomSkillTitle'));
+      setTextById('generateSkillBtn', getUiText('generateSkillBtnText'));
+      setTextById('skillDescriptionLabel', getUiText('skillDescriptionLabel'));
+      setPlaceholderById('skillDescription', getUiText('skillDescriptionPlaceholder'));
+      setTextById('hideCreateSkillFormBtn', getUiText('cancelBtn'));
+      setTextById('skillPreviewTitle', getUiText('skillPreviewTitle'));
+      setTextById('saveSkillBtn', getUiText('saveSkillBtn'));
+      setTextById('installSkillTitle', getUiText('installSkillTitle'));
+      setTextById('skillUrlLabel', getUiText('skillUrlLabel'));
+      setPlaceholderById('skillUrl', getUiText('skillUrlPlaceholder'));
+      setTextById('hideInstallSkillFormBtn', getUiText('cancelBtn'));
+      setTextById('skillSecurityPreviewTitle', getUiText('skillSecurityPreviewTitle'));
+      setTextById('previewNameLabel', getUiText('previewNameLabel'));
+      setTextById('previewDescriptionLabel', getUiText('previewDescriptionLabel'));
+      setTextById('previewToolsLabel', getUiText('previewToolsLabel'));
+      setTextById('skillSecurityTipsTitle', getUiText('skillSecurityTipsTitle'));
+      setTextById('skillSecurityTip1', getUiText('skillSecurityTip1'));
+      setTextById('skillSecurityTip2', getUiText('skillSecurityTip2'));
+      setTextById('skillSecurityTip3', getUiText('skillSecurityTip3'));
+      setTextById('confirmInstallSkillBtn', getUiText('confirmInstallSkillBtn'));
+      setPlaceholderById('tencentSkillHubQuery', getUiText('skillhubSearchPlaceholder'));
+      setTextById('skillhubFilterAllOption', getUiText('skillhubFilterAllOption'));
+      setTextById('skillhubFilterNotInstalledOption', getUiText('skillhubFilterNotInstalledOption'));
+      setTextById('skillhubFilterInstalledOption', getUiText('skillhubFilterInstalledOption'));
+      setTextById('skillhubFilterUpdatableOption', getUiText('skillhubFilterUpdatableOption'));
+      setTextById('skillhubSearchBtn', getUiText('skillhubSearchBtn'));
+      setTextById('skillhubRecommendedTitle', getUiText('skillhubRecommendedTitle'));
+      setTextById('skillhubPersonalTitle', getUiText('skillhubPersonalTitle'));
+      setTextById('expertsPageTitle', getUiText('expertsPageTitle'));
+      setTextById('createExpertBtn', getUiText('createExpertBtn'));
+      setTextById('createCustomExpertTitle', getUiText('createCustomExpertTitle'));
+      setTextById('generateExpertBtn', getUiText('generateExpertBtnText'));
+      setTextById('expertDescriptionLabel', getUiText('expertDescriptionLabel'));
+      setPlaceholderById('expertDescription', getUiText('expertDescriptionPlaceholder'));
+      setTextById('hideCreateExpertFormBtn', getUiText('cancelBtn'));
+      setTextById('expertPreviewTitle', getUiText('expertPreviewTitle'));
+      setTextById('expertNameLabel', getUiText('expertNameLabel'));
+      setTextById('expertRoleLabel', getUiText('expertRoleLabel'));
+      setTextById('expertExpertiseLabel', getUiText('expertExpertiseLabel'));
+      setTextById('expertPromptLabel', getUiText('expertPromptLabel'));
+      setPlaceholderById('expertName', getUiText('expertNamePlaceholder'));
+      setPlaceholderById('expertRole', getUiText('expertRolePlaceholder'));
+      setPlaceholderById('expertExpertise', getUiText('expertExpertisePlaceholder'));
+      setTextById('saveExpertBtn', getUiText('saveExpertBtn'));
+      setTextById('expertsListTitle', getUiText('expertsListTitle'));
+      setTextById('memoryPageTitle', getUiText('memoryPageTitle'));
+      setTextById('createMemoryBtn', getUiText('createMemoryBtn'));
+      setPlaceholderById('memorySearchInput', getUiText('memorySearchPlaceholder'));
+      setTextById('memoryTypeFilterAllOption', getUiText('memoryTypeFilterAllOption'));
+      setTextById('memoryTypeFilterUserOption', getUiText('memoryTypeFilterUserOption'));
+      setTextById('memoryTypeFilterFeedbackOption', getUiText('memoryTypeFilterFeedbackOption'));
+      setTextById('memoryTypeFilterProjectOption', getUiText('memoryTypeFilterProjectOption'));
+      setTextById('memoryTypeFilterReferenceOption', getUiText('memoryTypeFilterReferenceOption'));
+      setTextById('memoryEmptyTitle', getUiText('memoryEmptyTitle'));
+      setTextById('memoryEmptySubtitle', getUiText('memoryEmptySubtitle'));
+      setTextById('channelsPageTitle', getUiText('channelsPageTitle'));
+      setTextById('channelsBackBtn', getUiText('channelsBackBtn'));
+      setTextById('channelsRefreshBtn', getUiText('channelsRefreshBtn'));
+      setTextById('channelsExtensionTitle', getUiText('channelsExtensionTitle'));
+      setTextById('channelsExtensionSaveBtn', getUiText('channelsExtensionSaveBtn'));
+      setTextById('extCfgHeading', getUiText('extCfgHeading'));
+      setTextById('extCfgSaveBtn', getUiText('extCfgSaveBtn'));
+      setTextById('agentLogsPageTitle', getUiText('agentLogsPageTitle'));
+      setTextById('agentLogsRefreshBtn', getUiText('agentLogsRefreshBtn'));
+      setTextById('agentLogsClearBtn', getUiText('agentLogsClearBtn'));
+      setTextById('settingsPageTitle', getUiText('settingsPageTitle'));
+      setTextById('uiLanguageTitle', getUiText('uiLanguageTitle'));
+      setTextById('uiLanguageLabel', getUiText('uiLanguageLabel'));
+      setTextById('uiLanguageHelp', getUiText('uiLanguageHelp'));
+      setTextById('saveUiLanguageBtn', getUiText('saveUiLanguageBtn'));
+      setTextById('modelConfigTitle', getUiText('modelConfigTitle'));
+      setTextById('apiProviderLabel', getUiText('apiProviderLabel'));
+      setTextById('customProviderOption', getUiText('customProviderOption'));
+      setTextById('modelNameLabel', getUiText('modelNameLabel'));
+      setTextById('apiEndpointLabel', getUiText('apiEndpointLabel'));
+      setTextById('apiProtocolLabel', getUiText('apiProtocolLabel'));
+      setTextById('apiProtocolOpenAIOption', getUiText('apiProtocolOpenAIOption'));
+      setTextById('apiProtocolAnthropicOption', getUiText('apiProtocolAnthropicOption'));
+      setTextById('temperatureLabel', getUiText('temperatureLabel'));
+      setTextById('maxTokensLabel', getUiText('maxTokensLabel'));
+      setTextById('saveModelConfigBtn', getUiText('saveModelConfigBtn'));
+      setTextById('testModelConfigBtn', getUiText('testModelConfigBtn'));
+      setTextById('workspaceConfigTitle', getUiText('workspaceConfigTitle'));
+      setTextById('defaultWorkspaceLabel', getUiText('defaultWorkspaceLabel'));
+      setTextById('saveWorkspaceConfigBtn', getUiText('saveWorkspaceConfigBtn'));
+      setTextById('toolsConfigTitle', getUiText('toolsConfigTitle'));
+      setTextById('toolsConfigHelp', getUiText('toolsConfigHelp'));
+      setTextById('webSearchSectionTitle', getUiText('webSearchSectionTitle'));
+      setTextById('webSearchProviderLabel', getUiText('webSearchProviderLabel'));
+      setTextById('webSearchProviderHelp', getUiText('webSearchProviderHelp'));
+      setTextById('saveWebSearchConfigBtn', getUiText('saveWebSearchConfigBtn'));
+      setTextById('saveCompressionConfigBtn', getUiText('saveCompressionConfigBtn'));
+      setTextById('compressionSettingsTitle', getUiText('compressionSettingsTitle'));
+      setTextById('compressionThresholdLabel', getUiText('compressionThresholdLabel'));
+      setTextById('compressionThresholdHelp', getUiText('compressionThresholdHelp'));
+      setTextById('contextLimitLabel', getUiText('contextLimitLabel'));
+      setTextById('contextLimitHelp', getUiText('contextLimitHelp'));
+      setTextById('compressionStrategyTitle', getUiText('compressionStrategyTitle'));
+      setTextById('compressionStrategyItem70', getUiText('compressionStrategyItem70'));
+      setTextById('compressionStrategyItem75', getUiText('compressionStrategyItem75'));
+      setTextById('compressionStrategyItem80', getUiText('compressionStrategyItem80'));
+      setTextById('compressionStrategyItem85', getUiText('compressionStrategyItem85'));
+      setTextById('agentLogsAutoRefreshLabel', getUiText('agentLogsAutoRefreshLabel'));
+      setTextById('agentLogsDescription', getUiText('agentLogsDescription'));
+      setAriaLabelById('imagePreviewDialog', getUiText('imagePreviewAriaLabel'));
+      setAriaLabelById('imagePreviewCloseBtn', getUiText('imagePreviewCloseAriaLabel'));
+      setTextById('debugCloseBtn', getUiText('debugCloseBtn'));
+      setTextById('debugClearBtn', getUiText('debugClearBtn'));
+      setTextById('debugConsoleTitle', getUiText('debugConsoleTitle'));
+      updateProviderFields();
+    }
+
+    function initUiLanguage() {
+      const picker = document.getElementById('uiLanguageSelect');
+      const stored = normalizeUiLanguage(window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) || UI_FALLBACK_LANGUAGE);
+      if (picker) {
+        picker.value = stored;
+      }
+      applyUiLanguage(stored);
+    }
+
+    function saveUiLanguage() {
+      const picker = document.getElementById('uiLanguageSelect');
+      const selected = normalizeUiLanguage(picker ? picker.value : UI_FALLBACK_LANGUAGE);
+      window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, selected);
+      applyUiLanguage(selected);
+      showNotification(getUiText('languageSaved'), 'success');
     }
 
     // Model configuration functions
@@ -4799,18 +5709,19 @@
         protocolGroup.style.display = 'none';
       }
 
-      // 设置默认模型名称
+      // Set default model name
       if (provider === 'openai') {
         modelName.placeholder = 'gpt-4-turbo';
       } else if (provider === 'anthropic') {
         modelName.placeholder = 'claude-3-5-sonnet-20241022';
       } else {
-        modelName.placeholder = '输入模型名称';
+        modelName.placeholder = getUiText('modelNamePlaceholderCustom');
       }
     }
 
     async function saveModelConfig() {
       console.log('saveModelConfig called');
+      const uiLanguageSelect = document.getElementById('uiLanguageSelect');
       const config = {
         provider: document.getElementById('apiProvider').value,
         apiKey: document.getElementById('apiKey').value,
@@ -4818,14 +5729,15 @@
         apiEndpoint: document.getElementById('apiEndpoint').value,
         apiProtocol: document.getElementById('apiProtocol').value,
         temperature: parseFloat(document.getElementById('temperature').value),
-        maxTokens: parseInt(document.getElementById('maxTokens').value)
+        maxTokens: parseInt(document.getElementById('maxTokens').value),
+        uiLanguage: normalizeUiLanguage(uiLanguageSelect ? uiLanguageSelect.value : UI_FALLBACK_LANGUAGE),
       };
 
       console.log('Config:', config);
 
       const saveBtn = document.getElementById('saveModelConfigBtn');
       const originalText = saveBtn.textContent;
-      saveBtn.textContent = '保存中...';
+      saveBtn.textContent = getUiText('modelConfigSaving');
       saveBtn.disabled = true;
 
       try {
@@ -4839,13 +5751,15 @@
         console.log('Result:', result);
 
         if (result.success) {
-          showTestResult('✅ 模型配置保存成功！', true);
+          window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, config.uiLanguage);
+          applyUiLanguage(config.uiLanguage);
+          showTestResult(getUiText('modelConfigSaved'), true);
         } else {
-          showTestResult('❌ 保存失败：' + result.error, false);
+          showTestResult(getUiText('saveFailedWithPrefix') + result.error, false);
         }
       } catch (error) {
         console.error('Error:', error);
-        showTestResult('❌ 错误：' + error.message, false);
+        showTestResult(getUiText('errorWithPrefix') + error.message, false);
       } finally {
         saveBtn.textContent = originalText;
         saveBtn.disabled = false;
@@ -4863,7 +5777,7 @@
       };
 
       if (!config.apiKey) {
-        showTestResult('请先输入 API Key', false);
+        showTestResult(getUiText('apiKeyRequired'), false);
         return;
       }
 
@@ -4871,7 +5785,7 @@
 
       const testBtn = document.getElementById('testModelConfigBtn');
       const originalText = testBtn.textContent;
-      testBtn.textContent = '测试中...';
+      testBtn.textContent = getUiText('testConfigRunning');
       testBtn.disabled = true;
 
       try {
@@ -4887,11 +5801,11 @@
         if (result.success) {
           showTestResult('✅ ' + result.message, true);
         } else {
-          showTestResult('❌ 连接测试失败：' + result.error, false);
+          showTestResult(getUiText('connectionTestFailed') + result.error, false);
         }
       } catch (error) {
         console.error('Test error:', error);
-        showTestResult('❌ 错误：' + error.message, false);
+        showTestResult(getUiText('errorWithPrefix') + error.message, false);
       } finally {
         testBtn.textContent = originalText;
         testBtn.disabled = false;
@@ -4906,7 +5820,7 @@
       resultDiv.style.color = success ? '#2e7d32' : '#c62828';
       resultDiv.style.border = success ? '1px solid #a5d6a7' : '1px solid #ef9a9a';
 
-      // 3秒后自动隐藏
+      // Auto-hide after 3 seconds
       setTimeout(() => {
         resultDiv.style.display = 'none';
       }, 3000);
@@ -4922,12 +5836,12 @@
         });
         const result = await response.json();
         if (result.success) {
-          alert('工具设置（联网搜索）已保存！');
+          alert(getUiText('webSearchConfigSaved'));
         } else {
-          alert('保存失败: ' + (result.error || '未知错误'));
+          alert(getUiText('saveFailed') + (result.error || 'unknown'));
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -4944,13 +5858,13 @@
         const result = await response.json();
 
         if (result.success) {
-          alert('工作目录配置保存成功！');
+          alert(getUiText('workspaceConfigSaved'));
           document.getElementById('workspace').value = workspace;
         } else {
-          alert('保存失败: ' + result.error);
+          alert(getUiText('saveFailed') + result.error);
         }
       } catch (error) {
-        alert('错误: ' + error.message);
+        alert(getUiText('genericError') + error.message);
       }
     }
 
@@ -4969,6 +5883,13 @@
             document.getElementById('maxTokens').value = config.maxTokens || 4096;
             updateProviderFields();
           }
+          const localeFromConfig = normalizeUiLanguage(config.uiLanguage || window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY));
+          const uiLanguageSelect = document.getElementById('uiLanguageSelect');
+          if (uiLanguageSelect) {
+            uiLanguageSelect.value = localeFromConfig;
+          }
+          window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, localeFromConfig);
+          applyUiLanguage(localeFromConfig);
         }
 
         const webSearchResponse = await fetch('http://localhost:50001/api/config/web-search');
@@ -4995,14 +5916,14 @@
 
     function resolveThreadToDelete() {
       if (currentThreadId) {
-        return tasks.find(task => task.id === currentThreadId) || { id: currentThreadId, title: '当前会话' };
+        return tasks.find(task => task.id === currentThreadId) || { id: currentThreadId, title: 'Current Session' };
       }
       const activeThreadNode = document.querySelector('#taskList .task-item.active');
       if (activeThreadNode) {
         const id = activeThreadNode.getAttribute('data-thread-id');
         if (id) {
           const matched = tasks.find(task => task.id === id);
-          return matched || { id, title: '当前会话' };
+          return matched || { id, title: 'Current Session' };
         }
       }
       if (tasks.length === 1) {
@@ -5014,12 +5935,12 @@
     async function clearConversation() {
       const thread = resolveThreadToDelete();
       if (!thread?.id) {
-        showNotification('请先在左侧选择要删除的会话', 'error');
+        showNotification(getUiText('selectSessionFirst'), 'error');
         return;
       }
 
-      const title = (thread.title || '当前会话').trim();
-      if (!confirm(`确定要删除会话「${title}」吗？删除后不可恢复。`)) {
+      const title = (thread.title || 'Current Session').trim();
+      if (!confirm(`${getUiText('deleteSessionConfirmPrefix')} "${title}"?\n${getUiText('deleteSessionConfirmSuffix')}`)) {
         return;
       }
 
@@ -5034,28 +5955,22 @@
         if (result.success) {
           currentThreadId = null;
           currentTaskId = null;
-          // 清空聊天容器
+          // Clear chat container
           const chatContainer = document.getElementById('chatContainer');
-          chatContainer.innerHTML = `
-            <div class="empty-state">
-              <div style="font-size: 48px; margin-bottom: 16px;">💬</div>
-              <h2>开始构建</h2>
-              <p>在下方输入你的需求，开始创建任务</p>
-            </div>
-          `;
+          chatContainer.innerHTML = getBuildEmptyStateHtml();
           await refreshTaskList();
-          showNotification('会话已删除', 'success');
+          showNotification(getUiText('sessionDeleted'), 'success');
         } else {
-          showNotification('删除失败: ' + (result.error || '未知错误'), 'error');
+          showNotification(getUiText('deleteFailed') + (result.error || 'unknown'), 'error');
         }
       } catch (error) {
         console.error('Delete conversation error:', error);
-        showNotification('错误: ' + error.message, 'error');
+        showNotification(getUiText('genericError') + error.message, 'error');
       }
     }
 
     async function extractMemories() {
-      if (!confirm('确定要从当前对话中提取记忆吗？这将使用 AI 分析对话内容并创建长期记忆。')) {
+      if (!confirm(getUiText('extractMemoryConfirm'))) {
         return;
       }
 
@@ -5077,7 +5992,7 @@
         align-items: center;
         gap: 10px;
       `;
-      loadingNotif.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>正在提取记忆...';
+      loadingNotif.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>Extracting memories...';
       document.body.appendChild(loadingNotif);
 
       try {
@@ -5090,23 +6005,23 @@
         loadingNotif.remove();
 
         if (result.success) {
-          showNotification(`记忆提取成功！创建了 ${result.created} 个记忆，跳过了 ${result.skipped} 个重复记忆`, 'success');
+          showNotification(`Memory extraction complete: created ${result.created}, skipped ${result.skipped} duplicates`, 'success');
 
           if (result.errors && result.errors.length > 0) {
-            console.warn('提取过程中的错误:', result.errors);
+            console.warn('Errors during extraction:', result.errors);
           }
         } else {
-          showNotification('提取失败: ' + (result.errors?.[0] || '未知错误'), 'error');
+          showNotification(getUiText('extractMemoryFailed') + (result.errors?.[0] || 'unknown'), 'error');
         }
       } catch (error) {
         loadingNotif.remove();
         console.error('Extract memories error:', error);
-        showNotification('提取失败: ' + error.message, 'error');
+        showNotification(getUiText('extractMemoryFailed') + error.message, 'error');
       }
     }
 
     async function compressConversation() {
-      if (!confirm('确定要压缩对话历史吗？这将使用 AI 生成摘要来减少 token 使用。')) {
+      if (!confirm(getUiText('compressConversationConfirm'))) {
         return;
       }
 
@@ -5128,7 +6043,7 @@
         align-items: center;
         gap: 10px;
       `;
-      loadingNotif.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>正在压缩对话...';
+      loadingNotif.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>Compressing conversation...';
       document.body.appendChild(loadingNotif);
 
       try {
@@ -5142,7 +6057,7 @@
         loadingNotif.remove();
 
         if (result.success) {
-          showNotification(`压缩成功！使用 ${result.strategy} 策略，节省了 ${result.tokensSaved} tokens`, 'success');
+          showNotification(`Compression complete using ${result.strategy}, saved ${result.tokensSaved} tokens`, 'success');
 
           // Add compression marker to chat
           const chatContainer = document.getElementById('chatContainer');
@@ -5157,15 +6072,15 @@
             font-size: 13px;
             text-align: center;
           `;
-          marker.textContent = `📦 对话已压缩 - 使用率: ${result.usage?.toFixed(1)}%`;
+          marker.textContent = `📦 Conversation compressed - usage: ${result.usage?.toFixed(1)}%`;
           chatContainer.appendChild(marker);
         } else {
-          showNotification('压缩失败: ' + (result.error || '未知错误'), 'error');
+          showNotification(getUiText('compressConversationFailed') + (result.error || 'unknown'), 'error');
         }
       } catch (error) {
         loadingNotif.remove();
         console.error('Compress conversation error:', error);
-        showNotification('压缩失败: ' + error.message, 'error');
+        showNotification(getUiText('compressConversationFailed') + error.message, 'error');
       }
     }
 
@@ -5188,10 +6103,10 @@
     }
 
     function startContextMonitoring() {
-      // 立即更新一次
+      // Trigger an immediate refresh
       updateContextUsage();
 
-      // 每 5 秒更新一次
+      // Refresh every 5 seconds
       if (contextUsageInterval) {
         clearInterval(contextUsageInterval);
       }
@@ -5211,39 +6126,39 @@
 
       if (!circle || !tooltip) return;
 
-      // 计算圆环进度（周长 = 2 * π * r = 2 * 3.14159 * 12 ≈ 75.4）
+      // Calculate circular progress (circumference ~= 75.4)
       const circumference = 75.4;
       const offset = circumference - (usage / 100) * circumference;
 
       circle.style.strokeDashoffset = offset;
 
-      // 根据使用率改变颜色
-      let color = '#10b981'; // 绿色
+      // Adjust color by usage
+      let color = '#10b981'; // green
       if (usage >= 85) {
-        color = '#ef4444'; // 红色
+        color = '#ef4444'; // red
       } else if (usage >= 70) {
-        color = '#f59e0b'; // 黄色
+        color = '#f59e0b'; // yellow
       }
       circle.style.stroke = color;
 
-      // 更新 tooltip
+      // Update tooltip
       tooltip.textContent = `${usage.toFixed(1)}%`;
     }
 
     async function handleContextClick() {
       if (currentContextUsage < 70) {
-        showNotification('上下文使用率较低，暂不需要压缩', 'info');
+        showNotification(getUiText('contextLowNoNeedCompress'), 'info');
         return;
       }
 
-      if (!confirm(`当前上下文使用率: ${currentContextUsage.toFixed(1)}%\n\n确定要压缩对话历史吗？`)) {
+      if (!confirm(`${getUiText('contextUsageCompressConfirm')}: ${currentContextUsage.toFixed(1)}%\n\n${getUiText('contextUsageCompressQuestion')}`)) {
         return;
       }
 
-      // 复用现有的压缩逻辑
+      // Reuse existing compression logic
       await compressConversation();
 
-      // 压缩后立即更新显示
+      // Refresh indicator after compression
       setTimeout(updateContextUsage, 1000);
     }
 
@@ -5262,7 +6177,7 @@
     function showAddToMemoryDialog(content = null) {
       const textToSave = content || selectedText;
       if (!textToSave) {
-        showNotification('请先选择要保存的文本', 'error');
+        showNotification(getUiText('selectTextFirst'), 'error');
         return;
       }
 
@@ -5276,34 +6191,34 @@
       modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
       modal.innerHTML = `
         <div class="card" style="width: 600px; max-width: 90%; max-height: 90vh; overflow-y: auto;">
-          <h3 style="margin-bottom: 20px;">添加到记忆</h3>
+          <h3 style="margin-bottom: 20px;">${getUiText('addToMemoryDialogTitle')}</h3>
           <div class="form-group">
-            <label>类型 <span style="color: #3b82f6; font-size: 12px;">(建议: ${getTypeLabel(suggestedType)})</span></label>
+            <label>${getUiText('memoryTypeLabel')} <span style="color: #3b82f6; font-size: 12px;">(${getUiText('suggestedPrefix')}: ${getTypeLabel(suggestedType)})</span></label>
             <select id="quickMemoryType">
-              <option value="user" ${suggestedType === 'user' ? 'selected' : ''}>用户信息</option>
-              <option value="feedback" ${suggestedType === 'feedback' ? 'selected' : ''}>反馈建议</option>
-              <option value="project" ${suggestedType === 'project' ? 'selected' : ''}>项目信息</option>
-              <option value="reference" ${suggestedType === 'reference' ? 'selected' : ''}>参考资料</option>
+              <option value="user" ${suggestedType === 'user' ? 'selected' : ''}>${getUiText('memoryTypeFilterUserOption')}</option>
+              <option value="feedback" ${suggestedType === 'feedback' ? 'selected' : ''}>${getUiText('memoryTypeFilterFeedbackOption')}</option>
+              <option value="project" ${suggestedType === 'project' ? 'selected' : ''}>${getUiText('memoryTypeFilterProjectOption')}</option>
+              <option value="reference" ${suggestedType === 'reference' ? 'selected' : ''}>${getUiText('memoryTypeFilterReferenceOption')}</option>
             </select>
           </div>
           <div class="form-group">
-            <label>名称</label>
-            <input type="text" id="quickMemoryName" value="${escapeHtml(suggestedName)}" placeholder="例如：我的角色">
+            <label>${getUiText('memoryNameLabel')}</label>
+            <input type="text" id="quickMemoryName" value="${escapeHtml(suggestedName)}" placeholder="${escapeHtml(getUiText('quickMemoryNamePlaceholder'))}">
           </div>
           <div class="form-group">
-            <label>描述</label>
-            <input type="text" id="quickMemoryDescription" placeholder="简短描述这个记忆的内容">
+            <label>${getUiText('memoryDescriptionLabel')}</label>
+            <input type="text" id="quickMemoryDescription" placeholder="${escapeHtml(getUiText('quickMemoryDescriptionPlaceholder'))}">
           </div>
           <div class="form-group">
-            <label>内容</label>
+            <label>${getUiText('memoryContentLabel')}</label>
             <textarea id="quickMemoryContent" rows="8">${escapeHtml(textToSave)}</textarea>
           </div>
           <div id="duplicateWarning" style="display: none; padding: 12px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px; margin-bottom: 12px; font-size: 13px; color: #92400e;">
-            ⚠️ 可能存在相似的记忆
+            ⚠️ ${getUiText('duplicateWarningTitle')}
           </div>
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
-            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
-            <button class="btn" onclick="createQuickMemory()">保存</button>
+            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">${getUiText('cancelBtn')}</button>
+            <button class="btn" onclick="createQuickMemory()">${getUiText('saveBtn')}</button>
           </div>
         </div>
       `;
@@ -5318,17 +6233,17 @@
       const lower = content.toLowerCase();
 
       // User-related keywords
-      if (lower.match(/我是|我的|我会|我喜欢|我擅长|我负责/)) {
+      if (lower.match(/我是|我的|我会|我喜欢|我擅长|我负责|i am|my|i can|i like|i am good at|i handle/)) {
         return 'user';
       }
 
       // Feedback-related keywords
-      if (lower.match(/建议|不要|应该|最好|推荐|避免|记住/)) {
+      if (lower.match(/建议|不要|应该|最好|推荐|避免|记住|suggest|should|must|avoid|remember|recommend/)) {
         return 'feedback';
       }
 
       // Project-related keywords
-      if (lower.match(/项目|任务|功能|需求|开发|实现|计划/)) {
+      if (lower.match(/项目|任务|功能|需求|开发|实现|计划|project|task|feature|requirement|develop|implement|plan/)) {
         return 'project';
       }
 
@@ -5339,28 +6254,27 @@
     // Generate memory name from content (kebab-case)
     function generateMemoryName(content) {
       // Take first sentence or first 50 chars
-      let name = content.split(/[。！？\n]/)[0].substring(0, 50);
+      let name = content.split(/[。！？.!?\n]/)[0].substring(0, 50);
 
       // Remove common prefixes
-      name = name.replace(/^(我是|我的|关于|这是|请记住|记住)/g, '').trim();
+      name = name.replace(/^(我是|我的|关于|这是|请记住|记住|i am|my|about|this is|remember)/gi, '').trim();
 
       // Convert to title case
       if (name.length > 20) {
         name = name.substring(0, 20) + '...';
       }
 
-      return name || '新记忆';
+      return name || 'New Memory';
     }
 
-    // Get type label in Chinese
     function getTypeLabel(type) {
       const labels = {
-        user: '用户信息',
-        feedback: '反馈建议',
-        project: '项目信息',
-        reference: '参考资料'
+        user: getUiText('memoryTypeFilterUserOption'),
+        feedback: getUiText('memoryTypeFilterFeedbackOption'),
+        project: getUiText('memoryTypeFilterProjectOption'),
+        reference: getUiText('memoryTypeFilterReferenceOption')
       };
-      return labels[type] || '参考资料';
+      return labels[type] || getUiText('memoryTypeFilterReferenceOption');
     }
 
     // Check for duplicate memories
@@ -5374,7 +6288,7 @@
         const warning = document.getElementById('duplicateWarning');
         if (warning) {
           warning.style.display = 'block';
-          warning.innerHTML = `⚠️ 发现 ${similar.length} 个相似的记忆：${similar.map(m => m.metadata.name).join(', ')}`;
+          warning.innerHTML = `⚠️ ${similar.length} similar memory item(s): ${similar.map(m => m.metadata.name).join(', ')}`;
         }
       }
     }
@@ -5398,7 +6312,7 @@
       const content = document.getElementById('quickMemoryContent').value.trim();
 
       if (!name || !description || !content) {
-        showNotification('请填写所有字段', 'error');
+        showNotification(getUiText('fillAllFieldsMemory'), 'error');
         return;
       }
 
@@ -5412,18 +6326,18 @@
         const result = await response.json();
         if (result.success) {
           document.querySelector('div[style*=fixed]').remove();
-          showNotification('记忆创建成功', 'success');
+          showNotification(getUiText('memoryCreated'), 'success');
 
           // Reload memories if on memory page
           if (document.getElementById('memory-page').style.display !== 'none') {
             loadMemories();
           }
         } else {
-          showNotification('创建失败: ' + result.error, 'error');
+          showNotification(getUiText('createFailed') + result.error, 'error');
         }
       } catch (error) {
         console.error('Create memory error:', error);
-        showNotification('创建失败: ' + error.message, 'error');
+        showNotification(getUiText('createFailed') + error.message, 'error');
       }
     }
 
@@ -5457,7 +6371,7 @@
       const emptyState = document.getElementById('memoryEmptyState');
 
       // Show loading state
-      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #999;"><div style="width: 32px; height: 32px; border: 3px solid #f0f0f0; border-top-color: #666; border-radius: 50%; margin: 0 auto 12px; animation: spin 1s linear infinite;"></div>加载中...</div>';
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #999;"><div style="width: 32px; height: 32px; border: 3px solid #f0f0f0; border-top-color: #666; border-radius: 50%; margin: 0 auto 12px; animation: spin 1s linear infinite;"></div>${getUiText('loading')}</div>`;
       grid.style.display = 'block';
       emptyState.style.display = 'none';
 
@@ -5471,12 +6385,12 @@
           filteredMemories = memories;
           renderMemoriesGrid();
         } else {
-          showNotification('加载失败: ' + result.error, 'error');
+          showNotification(getUiText('loadingFailed') + result.error, 'error');
           grid.innerHTML = '';
         }
       } catch (error) {
         console.error('Failed to load memories:', error);
-        showNotification('加载失败: ' + error.message, 'error');
+        showNotification(getUiText('loadingFailed') + error.message, 'error');
         grid.innerHTML = '';
       }
     }
@@ -5503,10 +6417,10 @@
       };
 
       const typeLabels = {
-        user: '用户信息',
-        feedback: '反馈建议',
-        project: '项目信息',
-        reference: '参考资料'
+        user: getUiText('memoryTypeFilterUserOption'),
+        feedback: getUiText('memoryTypeFilterFeedbackOption'),
+        project: getUiText('memoryTypeFilterProjectOption'),
+        reference: getUiText('memoryTypeFilterReferenceOption')
       };
 
       grid.innerHTML = filteredMemories.map(memory => `
@@ -5521,12 +6435,12 @@
             </div>
           </div>
           <div style="font-size: 13px; color: #999; border-top: 1px solid #f0f0f0; padding-top: 12px; display: flex; justify-content: space-between;">
-            <span>更新: ${new Date(memory.updated).toLocaleDateString()}</span>
+            <span>${getUiText('updatedAtLabel')}: ${new Date(memory.updated).toLocaleDateString()}</span>
             <div style="display: flex; gap: 8px;">
-              <button class="icon-btn" onclick="event.stopPropagation(); editMemory('${memory.id}')" title="编辑">
+              <button class="icon-btn" onclick="event.stopPropagation(); editMemory('${memory.id}')" title="${escapeHtml(getUiText('editTitle'))}">
                 <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i>
               </button>
-              <button class="icon-btn" onclick="event.stopPropagation(); deleteMemory('${memory.id}')" title="删除">
+              <button class="icon-btn" onclick="event.stopPropagation(); deleteMemory('${memory.id}')" title="${escapeHtml(getUiText('deleteTitle'))}">
                 <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
               </button>
             </div>
@@ -5542,31 +6456,31 @@
       modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
       modal.innerHTML = `
         <div class="card" style="width: 600px; max-width: 90%; max-height: 90vh; overflow-y: auto;">
-          <h3 style="margin-bottom: 20px;">创建记忆</h3>
+          <h3 style="margin-bottom: 20px;">${getUiText('createMemoryTitle')}</h3>
           <div class="form-group">
-            <label>类型</label>
+            <label>${getUiText('memoryTypeLabel')}</label>
             <select id="newMemoryType">
-              <option value="user">用户信息</option>
-              <option value="feedback">反馈建议</option>
-              <option value="project">项目信息</option>
-              <option value="reference">参考资料</option>
+              <option value="user">${getUiText('memoryTypeFilterUserOption')}</option>
+              <option value="feedback">${getUiText('memoryTypeFilterFeedbackOption')}</option>
+              <option value="project">${getUiText('memoryTypeFilterProjectOption')}</option>
+              <option value="reference">${getUiText('memoryTypeFilterReferenceOption')}</option>
             </select>
           </div>
           <div class="form-group">
-            <label>名称</label>
-            <input type="text" id="newMemoryName" placeholder="例如：我的角色">
+            <label>${getUiText('memoryNameLabel')}</label>
+            <input type="text" id="newMemoryName" placeholder="${escapeHtml(getUiText('quickMemoryNamePlaceholder'))}">
           </div>
           <div class="form-group">
-            <label>描述</label>
-            <input type="text" id="newMemoryDescription" placeholder="简短描述这个记忆的内容">
+            <label>${getUiText('memoryDescriptionLabel')}</label>
+            <input type="text" id="newMemoryDescription" placeholder="${escapeHtml(getUiText('quickMemoryDescriptionPlaceholder'))}">
           </div>
           <div class="form-group">
-            <label>内容</label>
-            <textarea id="newMemoryContent" rows="8" placeholder="记忆的详细内容..."></textarea>
+            <label>${getUiText('memoryContentLabel')}</label>
+            <textarea id="newMemoryContent" rows="8" placeholder="Memory content details..."></textarea>
           </div>
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
-            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
-            <button class="btn" onclick="createMemory()">创建</button>
+            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">${getUiText('cancelBtn')}</button>
+            <button class="btn" onclick="createMemory()">${getUiText('createBtn')}</button>
           </div>
         </div>
       `;
@@ -5580,7 +6494,7 @@
       const content = document.getElementById('newMemoryContent').value.trim();
 
       if (!name || !description || !content) {
-        showNotification('请填写所有字段', 'error');
+        showNotification(getUiText('fillAllFieldsMemory'), 'error');
         return;
       }
 
@@ -5595,13 +6509,13 @@
         if (result.success) {
           document.querySelector('div[style*=fixed]').remove();
           loadMemories();
-          showNotification('记忆创建成功', 'success');
+          showNotification(getUiText('memoryCreated'), 'success');
         } else {
-          showNotification('创建失败: ' + result.error, 'error');
+          showNotification(getUiText('createFailed') + result.error, 'error');
         }
       } catch (error) {
         console.error('Create memory error:', error);
-        showNotification('创建失败: ' + error.message, 'error');
+        showNotification(getUiText('createFailed') + error.message, 'error');
       }
     }
 
@@ -5619,8 +6533,8 @@
 ${escapeHtml(memory.content)}
           </div>
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
-            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">关闭</button>
-            <button class="btn" onclick="this.closest('div[style*=fixed]').remove(); editMemory('${memory.id}')">编辑</button>
+            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">${getUiText('closeBtn')}</button>
+            <button class="btn" onclick="this.closest('div[style*=fixed]').remove(); editMemory('${memory.id}')">${getUiText('editBtn')}</button>
           </div>
         </div>
       `;
@@ -5635,31 +6549,31 @@ ${escapeHtml(memory.content)}
       modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
       modal.innerHTML = `
         <div class="card" style="width: 600px; max-width: 90%; max-height: 90vh; overflow-y: auto;">
-          <h3 style="margin-bottom: 20px;">编辑记忆</h3>
+          <h3 style="margin-bottom: 20px;">${getUiText('editMemoryTitle')}</h3>
           <div class="form-group">
-            <label>类型</label>
+            <label>${getUiText('memoryTypeLabel')}</label>
             <select id="editMemoryType">
-              <option value="user" ${memory.type === 'user' ? 'selected' : ''}>用户信息</option>
-              <option value="feedback" ${memory.type === 'feedback' ? 'selected' : ''}>反馈建议</option>
-              <option value="project" ${memory.type === 'project' ? 'selected' : ''}>项目信息</option>
-              <option value="reference" ${memory.type === 'reference' ? 'selected' : ''}>参考资料</option>
+              <option value="user" ${memory.type === 'user' ? 'selected' : ''}>${getUiText('memoryTypeFilterUserOption')}</option>
+              <option value="feedback" ${memory.type === 'feedback' ? 'selected' : ''}>${getUiText('memoryTypeFilterFeedbackOption')}</option>
+              <option value="project" ${memory.type === 'project' ? 'selected' : ''}>${getUiText('memoryTypeFilterProjectOption')}</option>
+              <option value="reference" ${memory.type === 'reference' ? 'selected' : ''}>${getUiText('memoryTypeFilterReferenceOption')}</option>
             </select>
           </div>
           <div class="form-group">
-            <label>名称</label>
+            <label>${getUiText('memoryNameLabel')}</label>
             <input type="text" id="editMemoryName" value="${escapeHtml(memory.name)}">
           </div>
           <div class="form-group">
-            <label>描述</label>
+            <label>${getUiText('memoryDescriptionLabel')}</label>
             <input type="text" id="editMemoryDescription" value="${escapeHtml(memory.description)}">
           </div>
           <div class="form-group">
-            <label>内容</label>
+            <label>${getUiText('memoryContentLabel')}</label>
             <textarea id="editMemoryContent" rows="8">${escapeHtml(memory.content)}</textarea>
           </div>
           <div style="display: flex; gap: 10px; justify-content: flex-end;">
-            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
-            <button class="btn" onclick="updateMemory('${id}')">保存</button>
+            <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">${getUiText('cancelBtn')}</button>
+            <button class="btn" onclick="updateMemory('${id}')">${getUiText('saveBtn')}</button>
           </div>
         </div>
       `;
@@ -5673,7 +6587,7 @@ ${escapeHtml(memory.content)}
       const content = document.getElementById('editMemoryContent').value.trim();
 
       if (!name || !description || !content) {
-        showNotification('请填写所有字段', 'error');
+        showNotification(getUiText('fillAllFieldsMemory'), 'error');
         return;
       }
 
@@ -5688,18 +6602,18 @@ ${escapeHtml(memory.content)}
         if (result.success) {
           document.querySelector('div[style*=fixed]').remove();
           loadMemories();
-          showNotification('记忆更新成功', 'success');
+          showNotification(getUiText('memoryUpdated'), 'success');
         } else {
-          showNotification('更新失败: ' + result.error, 'error');
+          showNotification(getUiText('saveFailed') + result.error, 'error');
         }
       } catch (error) {
         console.error('Update memory error:', error);
-        showNotification('更新失败: ' + error.message, 'error');
+        showNotification(getUiText('saveFailed') + error.message, 'error');
       }
     }
 
     async function deleteMemory(id) {
-      if (!confirm('确定要删除这个记忆吗？')) {
+      if (!confirm(getUiText('deleteMemoryConfirm'))) {
         return;
       }
 
@@ -5711,13 +6625,13 @@ ${escapeHtml(memory.content)}
         const result = await response.json();
         if (result.success) {
           loadMemories();
-          showNotification('记忆已删除', 'success');
+          showNotification(getUiText('memoryDeleted'), 'success');
         } else {
-          showNotification('删除失败: ' + result.error, 'error');
+          showNotification(getUiText('deleteFailed') + result.error, 'error');
         }
       } catch (error) {
         console.error('Delete memory error:', error);
-        showNotification('删除失败: ' + error.message, 'error');
+        showNotification(getUiText('deleteFailed') + error.message, 'error');
       }
     }
 
@@ -5762,11 +6676,11 @@ ${escapeHtml(memory.content)}
         });
       }
 
-      // ========== WebSocket 任务通知处理 ==========
+      // ========== WebSocket task notifications ==========
       let hasSkippedInitialWsNotice = false;
 
       /**
-       * 在聊天界面显示任务完成通知
+       * Show task completion notification in chat
        */
       function showTaskNotification(event) {
         const taskId = String(event?.taskId || '');
@@ -5774,13 +6688,20 @@ ${escapeHtml(memory.content)}
         const resultText = typeof event?.result === 'string'
           ? event.result
           : JSON.stringify(event?.result || '');
+        const taskNameLower = taskName.toLowerCase();
+        const resultTextLower = resultText.toLowerCase();
+        const looksLikeSystemNotice =
+          taskName.includes('系统通知') ||
+          taskNameLower.includes('system notification') ||
+          taskNameLower.includes('notification');
+        const looksLikeWsConnectedNotice =
+          resultText.includes('WebSocket 连接成功') ||
+          resultText.includes('WebSocket连接成功') ||
+          resultTextLower.includes('websocket connected');
         const isWebSocketConnectedNotice =
           taskId === 'notification' &&
-          (taskName.includes('系统通知') || taskName.toLowerCase().includes('notification')) &&
-          (
-            resultText.includes('WebSocket 连接成功') ||
-            resultText.includes('WebSocket连接成功')
-          );
+          looksLikeSystemNotice &&
+          looksLikeWsConnectedNotice;
         if (isWebSocketConnectedNotice) {
           return;
         }
@@ -5788,13 +6709,13 @@ ${escapeHtml(memory.content)}
         const chatContainer = document.getElementById('chatContainer');
         if (!chatContainer) return;
 
-        // 移除空状态
+        // Remove empty state
         const emptyState = chatContainer.querySelector('.empty-state');
         if (emptyState) {
           emptyState.remove();
         }
 
-        // 创建通知消息
+        // Create notification message
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
 
@@ -5805,22 +6726,22 @@ ${escapeHtml(memory.content)}
         const content = document.createElement('div');
         content.className = 'message-content';
 
-        // 格式化通知内容
-        let notificationText = `**任务完成通知**\n\n`;
-        notificationText += `- 任务 ID: ${event.taskId}\n`;
+        // Format notification payload
+        let notificationText = `**${getUiText('wsTaskCompletedTitle')}**\n\n`;
+        notificationText += `- ${getUiText('wsTaskIdLabel')}: ${event.taskId}\n`;
         if (event.taskName) {
-          notificationText += `- 任务名称: ${event.taskName}\n`;
+          notificationText += `- ${getUiText('wsTaskNameLabel')}: ${event.taskName}\n`;
         }
         if (event.duration) {
-          notificationText += `- 耗时: ${event.duration}ms\n`;
+          notificationText += `- ${getUiText('wsTaskDurationLabel')}: ${event.duration}ms\n`;
         }
         if (event.error) {
-          notificationText += `- 状态: ❌ 失败\n`;
-          notificationText += `- 错误: ${event.error}\n`;
+          notificationText += `- ${getUiText('wsTaskStatusLabel')}: ${getUiText('wsStatusFailed')}\n`;
+          notificationText += `- ${getUiText('wsTaskErrorLabel')}: ${event.error}\n`;
         } else {
-          notificationText += `- 状态: ✅ 成功\n`;
+          notificationText += `- ${getUiText('wsTaskStatusLabel')}: ${getUiText('wsStatusSuccess')}\n`;
           if (event.result) {
-            notificationText += `- 结果: ${JSON.stringify(event.result, null, 2)}\n`;
+            notificationText += `- ${getUiText('wsTaskResultLabel')}: ${JSON.stringify(event.result, null, 2)}\n`;
           }
         }
 
@@ -5837,40 +6758,47 @@ ${escapeHtml(memory.content)}
         chatContainer.appendChild(messageDiv);
         chatContainer.scrollTop = chatContainer.scrollHeight;
 
-        // 初始化图标
+        // Initialize icons
         if (window.lucide) {
           lucide.createIcons();
         }
       }
 
       /**
-       * 显示连接状态
+       * Show connection status
        */
       function showConnectionStatus(connected) {
-        console.log('[WebSocket] 连接状态:', connected ? '已连接' : '已断开');
-        // 可以在这里添加 UI 状态指示器
+        console.log(getUiText('wsConnectionLogPrefix'), connected ? getUiText('wsConnected') : getUiText('wsDisconnected'));
+        // UI status indicator can be added here if needed.
       }
 
-      // 注册 WebSocket 事件处理器
+      // Register WebSocket event handlers
       if (window.wsClient) {
-        // 监听任务完成事件
+        // Listen for task completion
         window.wsClient.on('task:complete', showTaskNotification);
 
-        // 监听连接状态变化
+        // Listen for connection state changes
         window.wsClient.on('connection', (data) => {
           showConnectionStatus(data.connected);
         });
 
-        // 监听通知消息
+        // Listen for notification messages
         window.wsClient.on('notification', (data) => {
           const title = String(data?.title || '');
           const contentText = String(data?.content || '');
+          const titleLower = title.toLowerCase();
+          const contentLower = contentText.toLowerCase();
           const isInitialWsSuccessNotice =
             !hasSkippedInitialWsNotice &&
-            (title.includes('系统通知') || title.includes('notification')) &&
+            (
+              title.includes('系统通知') ||
+              titleLower.includes('system notification') ||
+              titleLower.includes('notification')
+            ) &&
             (
               contentText.includes('WebSocket 连接成功') ||
-              contentText.includes('WebSocket连接成功')
+              contentText.includes('WebSocket连接成功') ||
+              contentLower.includes('websocket connected')
             );
           if (isInitialWsSuccessNotice) {
             hasSkippedInitialWsNotice = true;
@@ -5880,14 +6808,14 @@ ${escapeHtml(memory.content)}
           if (data.content) {
             showTaskNotification({
               taskId: 'notification',
-              taskName: data.title || '系统通知',
+              taskName: data.title || getUiText('wsSystemNotificationTitle'),
               result: data.content,
               timestamp: Date.now(),
             });
           }
         });
 
-        console.log('[WebSocket] 事件处理器已注册');
+        console.log('[WebSocket] event handlers registered');
       }
 
     });

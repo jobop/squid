@@ -1,6 +1,6 @@
 {
   "id": "echo-demo",
-  "name": "Echo Demo（示例扩展）",
+  "name": "Echo Demo (Sample Extension)",
   "version": "1.0.0",
   "main": "./plugin.ts"
 }

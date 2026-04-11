@@ -1,10 +1,10 @@
 export interface TelegramChannelFileConfig {
-  /** BotFather 下发的 token */
+  /** Token issued by BotFather */
   botToken?: string;
-  /** 可选；系统通知等出站未带 chat 时使用 */
+  /** Optional; used when outbound notifications do not include a chat target */
   defaultChatId?: string;
-  /** 若设置，仅处理这些 chat（字符串形式 id，含负数群 id） */
+  /** If set, only process these chats (string IDs, including negative group IDs) */
   allowedChatIds?: string[];
-  /** 默认 https://api.telegram.org */
+  /** Default is https://api.telegram.org */
   apiBase?: string;
 }

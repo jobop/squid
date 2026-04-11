@@ -328,7 +328,7 @@ export async function loadChannelExtensions(
         if (plugin.setup?.initialize) {
           await plugin.setup.initialize();
         }
-        console.log(`[ChannelExtensions] 已注册扩展: ${plugin.id} (${plugin.meta.name})`);
+        console.log(`[ChannelExtensions] Registered extension: ${plugin.id} (${plugin.meta.name})`);
       } catch (e: any) {
         pushError({
           pluginId: manifest.id,

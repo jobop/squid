@@ -205,7 +205,10 @@ describe('Cron Tools', () => {
 
   describe('CronRunsTool', () => {
     it('没有记录时返回空分页', async () => {
-      const result = await CronRunsTool.call({}, mockContext);
+      const result = await CronRunsTool.call(
+        { task_id: `cron-non-existent-${Date.now()}` },
+        mockContext
+      );
       expect(result.data.success).toBe(true);
       expect(result.data.page.total).toBe(0);
       expect(result.data.page.entries).toHaveLength(0);

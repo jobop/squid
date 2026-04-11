@@ -30,7 +30,7 @@ export interface TencentSkillHubCatalogResponse {
 
 export interface TencentSkillHubSkillDetail extends TencentSkillHubCatalogItem {
   versions?: TencentSkillHubVersion[];
-  latestVersion?: TencentSkillHubVersion;
+  latestVersionInfo?: TencentSkillHubVersion;
   packageUrl?: string;
 }
 

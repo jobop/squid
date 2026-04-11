@@ -291,7 +291,7 @@ class CronManager {
     const taskId = taskInfo.id;
     const conversationId = `cron:${taskId}`;
     if (taskInfo.isRunning || taskInfo.runningAtMs) {
-      console.warn(`[Cron ${taskId}] 任务仍在运行，跳过 ${trigger} 触发`);
+      console.warn(`[Cron ${taskId}] Task is still running; skip ${trigger} trigger`);
       return;
     }
 
@@ -300,10 +300,10 @@ class CronManager {
     taskInfo.isRunning = true;
     taskInfo.runningAtMs = startedAt;
     await this.persistTasks().catch((error) => {
-      console.error(`[Cron ${taskId}] 持久化 runningAtMs 失败:`, error);
+      console.error(`[Cron ${taskId}] Failed to persist runningAtMs:`, error);
     });
 
-    console.log(`[Cron ${taskId}] 任务触发(${trigger}): ${taskInfo.content}`);
+    console.log(`[Cron ${taskId}] Task triggered (${trigger}): ${taskInfo.content}`);
     try {
       enqueuePendingNotification({
         conversationId,
@@ -314,7 +314,7 @@ class CronManager {
         taskId,
       });
       console.log(
-        `[Cron ${taskId}] 已入队 conversationId=%s，等待 TaskAPI drain`,
+        `[Cron ${taskId}] Enqueued conversationId=%s, waiting for TaskAPI drain`,
         conversationId
       );
       this.enqueueDrainNotifier?.(conversationId);
@@ -332,13 +332,13 @@ class CronManager {
         content: taskInfo.content,
         durationMs: Date.now() - startMs,
       }).catch((error) => {
-        console.error(`[Cron ${taskId}] 写入 run log 失败:`, error);
+        console.error(`[Cron ${taskId}] Failed to write run log:`, error);
       });
     } catch (error) {
       taskInfo.lastStatus = 'error';
       taskInfo.lastError = (error as Error).message;
       taskInfo.consecutiveErrors = (taskInfo.consecutiveErrors ?? 0) + 1;
-      console.error(`[Cron ${taskId}] 入队失败:`, error);
+      console.error(`[Cron ${taskId}] Enqueue failed:`, error);
       void this.appendRunLog({
         id: `${taskId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
         ts: new Date().toISOString(),
@@ -349,14 +349,14 @@ class CronManager {
         content: taskInfo.content,
         durationMs: Date.now() - startMs,
       }).catch((runLogError) => {
-        console.error(`[Cron ${taskId}] 写入 run log 失败:`, runLogError);
+        console.error(`[Cron ${taskId}] Failed to write run log:`, runLogError);
       });
       this.scheduleRetry(taskInfo);
     } finally {
       taskInfo.isRunning = false;
       taskInfo.runningAtMs = undefined;
       await this.persistTasks().catch((error) => {
-        console.error(`[Cron ${taskId}] 持久化 lastRun 失败:`, error);
+        console.error(`[Cron ${taskId}] Failed to persist lastRun:`, error);
       });
     }
   }
@@ -374,7 +374,7 @@ class CronManager {
 
       if (options?.persist !== false) {
         void this.persistTasks().catch((error) => {
-          console.error(`[Cron ${taskId}] 持久化失败:`, error);
+          console.error(`[Cron ${taskId}] Persist failed:`, error);
         });
       }
       return { success: true };
@@ -416,7 +416,7 @@ class CronManager {
           restored += 1;
           if (normalized.runningAtMs) {
             normalized.lastStatus = 'error';
-            normalized.lastError = '任务在上次运行中断，已在启动后补跑';
+            normalized.lastError = 'Task was interrupted in previous run; replay scheduled after startup';
             normalized.runningAtMs = undefined;
             replayCandidates.push(normalized);
           }
@@ -431,7 +431,7 @@ class CronManager {
 
       this.lastRestoreAt = new Date();
       await this.persistTasks().catch((error) => {
-        console.error('[Cron] 启动恢复后持久化失败:', error);
+        console.error('[Cron] Persist failed after startup restore:', error);
       });
       return { restored, failed, replayScheduled: this.scheduledReplayCount };
     } catch {
@@ -473,7 +473,9 @@ class CronManager {
     const limit = Math.max(1, Math.min(200, Math.floor(opts?.limit ?? 50)));
     const all = await this.loadRunLogEntries(opts?.taskId);
     const filtered = all.filter((entry) => (status === 'all' ? true : entry.status === status));
-    const sorted = filtered.toSorted((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
+    const sorted = [...filtered].sort(
+      (a: CronRunLogEntry, b: CronRunLogEntry) => Date.parse(b.ts) - Date.parse(a.ts)
+    );
     const total = sorted.length;
     const offset = Math.max(0, Math.min(total, Math.floor(opts?.offset ?? 0)));
     const entries = sorted.slice(offset, offset + limit);
@@ -495,7 +497,7 @@ class CronManager {
     if (!cron.validate(expression)) {
       return {
         success: false,
-        error: `无效的 cron 表达式: ${expression}`,
+        error: `Invalid cron expression: ${expression}`,
       };
     }
 
@@ -526,7 +528,7 @@ class CronManager {
     if (!taskEntry) {
       return {
         success: false,
-        error: `任务不存在: ${taskId}`,
+        error: `Task does not exist: ${taskId}`,
       };
     }
 
@@ -539,7 +541,7 @@ class CronManager {
       }
       this.tasks.delete(taskId);
       void this.persistTasks().catch((error) => {
-        console.error(`[Cron ${taskId}] 删除后持久化失败:`, error);
+        console.error(`[Cron ${taskId}] Persist failed after deletion:`, error);
       });
 
       return {
@@ -571,7 +573,7 @@ class CronManager {
     this.retryTimers.clear();
     this.runLogEntries = [];
     void this.persistTasks().catch((error) => {
-      console.error('[Cron] clear 后持久化失败:', error);
+      console.error('[Cron] Persist failed after clear:', error);
     });
   }
 }

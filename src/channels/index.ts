@@ -29,12 +29,12 @@ export async function initializeBuiltinChannels(taskAPI: TaskAPI): Promise<void>
   const webuiPlugin = new WebUIChannelPlugin();
   channelRegistry.register(webuiPlugin);
 
-  // 初始化插件
+  // Initialize plugin
   if (webuiPlugin.setup) {
     await webuiPlugin.setup.initialize();
   }
 
-  console.log('[Channels] 内置 channel 插件初始化完成');
+  console.log('[Channels] Built-in channel plugins initialized');
 
   await loadChannelExtensionsFromDisk(channelRegistry, taskAPI);
 }
@@ -46,21 +46,21 @@ export async function reloadChannelExtensions(
 ): Promise<void> {
   if (hasExtensionAuthPending()) {
     console.warn(
-      '[ChannelExtensions] 存在进行中的配置页 Auth 登录会话，已跳过扩展热重载（避免注销扩展导致轮询失败）。完成或失败后再保存配置/切换启用即可重载。'
+      '[ChannelExtensions] Active auth session detected in config page. Skip hot reload to avoid breaking polling. Reload after auth completes or fails.'
     );
     return;
   }
   const api = taskAPI ?? channelHostTaskAPI;
   if (!api) {
     console.warn(
-      '[Channels] reloadChannelExtensions: 无 TaskAPI，扩展将无法注册 squid-bridge（请先 initializeBuiltinChannels(taskAPI) 或传入 taskAPI）'
+      '[Channels] reloadChannelExtensions: missing TaskAPI, extensions cannot register squid-bridge (initializeBuiltinChannels(taskAPI) first or pass taskAPI)'
     );
   }
   await loadChannelExtensionsFromDisk(registry, api);
 }
 
 /**
- * 清理所有 channel 插件
+ * Cleanup all channel plugins
  */
 const EXTENSION_CLEANUP_TIMEOUT_MS = 5000;
 
@@ -75,7 +75,7 @@ export async function cleanupChannels(): Promise<void> {
         await Promise.race([
           plugin.setup.cleanup(),
           new Promise<void>((_, rej) =>
-            setTimeout(() => rej(new Error('cleanup 超时')), EXTENSION_CLEANUP_TIMEOUT_MS)
+            setTimeout(() => rej(new Error('cleanup timeout')), EXTENSION_CLEANUP_TIMEOUT_MS)
           ),
         ]);
       } else {
@@ -87,7 +87,7 @@ export async function cleanupChannels(): Promise<void> {
   }
 
   channelRegistry.clear();
-  console.log('[Channels] 所有 channel 插件已清理');
+  console.log('[Channels] All channel plugins cleaned up');
 }
 
 export { getChannelsOverview } from './channel-overview';

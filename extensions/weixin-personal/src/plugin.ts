@@ -161,7 +161,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
   id = CHANNEL_ID;
 
   meta = {
-    name: '微信（个人）',
+    name: 'WeChat (Personal)',
     description: 'iLink Bot 私聊：长轮询入站 + 文本回复（需 ClawBot 与腾讯灰度）',
     icon: '💬',
     category: 'third-party' as const,
@@ -186,7 +186,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
     startAuthLink: async () => {
       const r = await startWeixinPersonalQrLogin();
       if (!r.qrcodeUrl?.trim()) {
-        throw new Error(r.message || '未获取到认证链接');
+        throw new Error(r.message || 'Failed to get authentication link');
       }
       return { authUrl: r.qrcodeUrl.trim(), sessionKey: r.sessionKey };
     },
@@ -220,7 +220,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
       const baseUrl = c?.baseUrl?.trim();
       const to = c?.allowedUserIds?.[0]?.trim();
       if (!token || !baseUrl) {
-        return { success: false, error: '未配置 ~/.squid/weixin-personal-channel.json 的 botToken/baseUrl' };
+        return { success: false, error: 'botToken/baseUrl is not configured in ~/.squid/weixin-personal-channel.json' };
       }
       if (!to) {
         return {
@@ -239,8 +239,8 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
       const token = c?.botToken?.trim();
       const baseUrl = c?.baseUrl?.trim();
       const to = c?.allowedUserIds?.[0]?.trim();
-      if (!token || !baseUrl) return { success: false, error: '未配置 botToken/baseUrl' };
-      if (!to) return { success: false, error: '未配置 allowedUserIds[0] 作为默认收件人' };
+      if (!token || !baseUrl) return { success: false, error: 'botToken/baseUrl is not configured' };
+      if (!to) return { success: false, error: 'allowedUserIds[0] is not configured as default recipient' };
       let text = message.content;
       if (message.title) text = `${message.title}\n\n${text}`;
       const r = await ilinkSendTextMessage({ baseUrl, token, toUserId: to, text });
@@ -250,7 +250,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
 
   inbound = {
     onMessage: () => {
-      console.warn('[WeixinPersonal] 入站由 setup 中长轮询处理；可订阅 eventBridge.onChannelInbound');
+      console.warn('[WeixinPersonal] Inbound is handled by long polling in setup; subscribe to eventBridge.onChannelInbound if needed');
     },
   };
 
@@ -282,11 +282,11 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
             message: `getUpdates: ret=${resp.ret} errcode=${resp.errcode} ${resp.errmsg ?? ''}`,
           };
         }
-        return { healthy: true, message: 'iLink getUpdates 可访问' };
+        return { healthy: true, message: 'iLink getUpdates reachable' };
       } catch (e: unknown) {
         clearTimeout(t);
         const msg = e instanceof Error ? e.message : String(e);
-        return { healthy: false, message: `连通性检查失败: ${msg}` };
+        return { healthy: false, message: `Connectivity check failed: ${msg}` };
       }
     },
   };
@@ -304,10 +304,10 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
         const to = c?.allowedUserIds?.[0]?.trim();
         if (!token || !baseUrl || !to) return;
         const text = event.error
-          ? `❌ 任务失败\n任务: ${event.taskId}\n错误: ${event.error}`
-          : `✅ 任务完成\n任务: ${event.taskId}`;
+          ? `❌ Task failed\nTask: ${event.taskId}\nError: ${event.error}`
+          : `✅ Task completed\nTask: ${event.taskId}`;
         void ilinkSendTextMessage({ baseUrl, token, toUserId: to, text }).catch((err) => {
-          console.error('[WeixinPersonal] 任务完成通知发送失败:', err);
+          console.error('[WeixinPersonal] Failed to send task completion notification:', err);
         });
       };
       this.bridge.onTaskComplete(this.taskCompleteHandler);
@@ -315,7 +315,7 @@ export class WeixinPersonalChannelPlugin implements ChannelPlugin {
       const c = loadWeixinPersonalChannelConfigSync();
       if (!c?.botToken?.trim() || !c?.baseUrl?.trim()) {
         console.warn(
-          '[WeixinPersonal] 未配置 botToken/baseUrl，跳过 getUpdates。请在渠道配置页使用「获取认证链接」完成登录，或运行 npm run weixin-personal:login'
+          '[WeixinPersonal] botToken/baseUrl is not configured, skipping getUpdates. Use "Get auth link" in channel config to login, or run npm run weixin-personal:login'
         );
         return;
       }

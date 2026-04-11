@@ -25,7 +25,10 @@ function createFeishuWsHttpInstance() {
   }, undefined);
   inst.interceptors.response.use(
     (resp) => {
-      if (resp.config['$return_headers']) {
+      const configWithFlags = resp.config as InternalAxiosRequestConfig & {
+        $return_headers?: boolean;
+      };
+      if (configWithFlags.$return_headers) {
         return { data: resp.data, headers: resp.headers };
       }
       return resp.data;

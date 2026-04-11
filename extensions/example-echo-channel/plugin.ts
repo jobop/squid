@@ -2,9 +2,9 @@ import type { ChannelExtensionFactoryContext } from '../../src/channels/extensio
 import type { ChannelPlugin } from '../../src/channels/types';
 
 /**
- * 示例 Channel 扩展：注册后可在「渠道」页看到来源为「扩展」。
- * 启用方式：在 config/channel-extensions.json 或 ~/.squid/channel-extensions.json 中设置
- * "roots": ["extensions"]（相对 squid 仓库根目录）并重启。
+ * Example channel extension: after registration it appears as an extension source in Channels.
+ * Enable it by setting "roots": ["extensions"] in config/channel-extensions.json
+ * or ~/.squid/channel-extensions.json (relative to the squid repository root), then restart.
  */
 export default async function createChannelPlugin(
   _ctx?: ChannelExtensionFactoryContext
@@ -12,8 +12,8 @@ export default async function createChannelPlugin(
   return {
     id: 'echo-demo',
     meta: {
-      name: 'Echo Demo（示例扩展）',
-      description: 'OpenSpec channel-plugins-discovery-sandbox 示例；无实际消息能力',
+      name: 'Echo Demo (Sample Extension)',
+      description: 'OpenSpec channel-plugins-discovery-sandbox sample; no real messaging capability',
       category: 'third-party',
     },
     capabilities: {
@@ -31,7 +31,7 @@ export default async function createChannelPlugin(
       sendNotification: async () => ({ success: true }),
     },
     status: {
-      check: async () => ({ healthy: true, message: '示例扩展已加载' }),
+      check: async () => ({ healthy: true, message: 'Sample extension loaded' }),
     },
   };
 }

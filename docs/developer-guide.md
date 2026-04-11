@@ -203,6 +203,13 @@ npm run build:electron:release
 
 ## 贡献指南
 
+### 语言与提示词约束（i18n 基线）
+
+1. 新增或修改的代码注释统一使用英文。
+2. 新增或修改的 system prompt / promptTemplate 统一使用英文。
+3. 用户可见文案优先写入 i18n 词条，不再在业务逻辑中硬编码。
+4. 文档新增内容需要进入 `docs/locales/<locale>/` 结构，未翻译页面回退英文。
+
 1. Fork 项目
 2. 创建特性分支
 3. 提交变更

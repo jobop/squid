@@ -22,7 +22,7 @@ export async function telegramSendMessage(
 ): Promise<{ success: boolean; error?: string }> {
   const base = apiRoot(options?.apiBase);
   const token = botToken.trim();
-  const chunks = splitTelegramText(text.trim() || '(空回复)');
+  const chunks = splitTelegramText(text.trim() || '(empty reply)');
   for (const part of chunks) {
     const res = await fetch(`${base}/bot${token}/sendMessage`, {
       method: 'POST',

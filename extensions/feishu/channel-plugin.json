@@ -5,7 +5,7 @@
   "main": "./extension-entry.ts",
   "configForm": {
     "userConfigFile": "feishu-channel.json",
-    "intro": "保存至 ~/.squid/feishu-channel.json。敏感字段不会在界面中回显，留空表示不修改。保存后会重新加载扩展。",
+    "intro": "Saved to ~/.squid/feishu-channel.json. Sensitive fields are not echoed in UI; leave empty to keep unchanged. Saving reloads the extension.",
     "fields": [
       {
         "key": "appId",
@@ -18,15 +18,15 @@
         "label": "App Secret",
         "type": "password",
         "secret": true,
-        "placeholder": "留空则不修改"
+        "placeholder": "Leave empty to keep unchanged"
       },
       {
         "key": "encryptKey",
-        "label": "Encrypt Key（事件订阅）",
+        "label": "Encrypt Key (event subscription)",
         "type": "password",
         "secret": true,
         "optional": true,
-        "placeholder": "留空则不修改"
+        "placeholder": "Leave empty to keep unchanged"
       },
       {
         "key": "verificationToken",
@@ -34,37 +34,37 @@
         "type": "password",
         "secret": true,
         "optional": true,
-        "placeholder": "可选；留空则不修改"
+        "placeholder": "Optional; leave empty to keep unchanged"
       },
       {
         "key": "connectionMode",
-        "label": "连接模式",
+        "label": "Connection mode",
         "type": "select",
         "options": [
-          { "value": "websocket", "label": "websocket（长连接）" },
+          { "value": "websocket", "label": "websocket (long connection)" },
           { "value": "webhook", "label": "webhook" }
         ]
       },
       {
         "key": "feishuDomain",
-        "label": "域名",
+        "label": "Domain",
         "type": "select",
         "options": [
-          { "value": "feishu", "label": "feishu（国内）" },
-          { "value": "lark", "label": "lark（国际）" }
+          { "value": "feishu", "label": "feishu (mainland China)" },
+          { "value": "lark", "label": "lark (international)" }
         ]
       },
       {
         "key": "defaultReceiveId",
-        "label": "默认接收方 ID（出站）",
+        "label": "Default receiver ID (outbound)",
         "type": "text",
         "secret": true,
         "optional": true,
-        "placeholder": "群 chat_id 等；已配置时不显示，修改请重新填写"
+        "placeholder": "Group chat_id etc.; hidden when configured, re-enter to update"
       },
       {
         "key": "defaultReceiveIdType",
-        "label": "接收方 ID 类型",
+        "label": "Receiver ID type",
         "type": "select",
         "options": [
           { "value": "chat_id", "label": "chat_id" },
