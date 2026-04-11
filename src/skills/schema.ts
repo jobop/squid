@@ -21,4 +21,5 @@ export type SkillYAML = z.infer<typeof SkillYAMLSchema>;
 export interface SkillDefinition {
   metadata: SkillYAML;
   systemPrompt: string;
+  skillRoot?: string;
 }

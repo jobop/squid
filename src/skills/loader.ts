@@ -63,7 +63,8 @@ export class SkillLoader {
 
     return {
       metadata,
-      systemPrompt
+      systemPrompt,
+      skillRoot: dirname(filePath),
     };
   }
 

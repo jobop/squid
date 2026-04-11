@@ -28,6 +28,10 @@ import {
   type ToolExecutionRecord,
   type ToolSelectionRecord,
 } from './tool-invocation-consistency';
+import {
+  mergeOpenAIStreamToolCallDelta,
+  normalizeOpenAIMessageToolCalls,
+} from './openai-tool-call-normalizer';
 import { contentCharLength } from '../tools/tool-output-format';
 
 /** 从工具 raw JSON 参数中提取 file_path，便于并发场景下对照日志与 tool_call 顺序 */
@@ -54,6 +58,48 @@ function parseToolArgs(raw: string): Record<string, unknown> {
     return {};
   }
 }
+
+function buildToolInvocationHardBlockMessage(reason?: string): string {
+  const reasonText = reason ? `归因: ${reason}` : '归因: unknown';
+  return [
+    '⚠️ 检测到“声明已调用工具”与执行事实不一致，已阻断本轮结论。',
+    reasonText,
+    '请先发起真实工具调用并基于工具结果作答，禁止“只提不调”。',
+  ].join('\n');
+}
+
+function isLlmIoFullLogEnabled(): boolean {
+  const raw = (process.env.SQUID_LOG_LLM_IO_FULL || '').trim().toLowerCase();
+  if (!raw) return true;
+  return !['0', 'false', 'off', 'no'].includes(raw);
+}
+
+function llmIoLogMaxChars(): number {
+  const parsed = Number(process.env.SQUID_LOG_LLM_IO_MAX_CHARS || '6000');
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 6000;
+}
+
+function formatJsonForLog(value: unknown): string {
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw) return '';
+    if (isLlmIoFullLogEnabled()) return raw;
+    const max = llmIoLogMaxChars();
+    return raw.length <= max ? raw : `${raw.slice(0, max)}…`;
+  } catch {
+    return '[unserializable]';
+  }
+}
+
+const SKILL_INVOCATION_BLOCKING_POLICY =
+  '\n\nSkill invocation policy (blocking): ' +
+  'Before answering, first decide whether tool-obtained evidence is required. ' +
+  'When a skill matches the user request, this is a BLOCKING REQUIREMENT: invoke the `skill` tool BEFORE generating any other response about the task. ' +
+  'If a tool call is required, the next action MUST be a tool call instead of plain-text conclusions. ' +
+  'Do not claim completion/verification/success without a corresponding tool call and tool result in this turn. ' +
+  'NEVER mention a skill without actually calling the `skill` tool. ' +
+  'Do not invoke a skill that is already running. ' +
+  'Do not use the `skill` tool for built-in CLI commands (like /help, /clear, etc.).';
 
 function parseSkillSelection(rawArgs: string): { skillName: string; skillArgs?: string } | null {
   const args = parseToolArgs(rawArgs);
@@ -328,11 +374,9 @@ export class TaskExecutor {
           systemContent += 'Installed and invocable local skills (aligned with skill center):\n';
           systemContent += invocableSkills.join('\n');
           systemContent +=
-            '\n\nWhen users ask to list currently available skills, you must call the `skill` tool with `skill_name` set to `list-skills` and return local installed skills from the list above. ' +
-            'Do not use `find-skills-in-tencent-skillhub` or other SkillHub/skillhub CLI skills for this purpose (those are only for searching/installing remote marketplace skills and depend on local skillhub/jq).';
-          systemContent +=
-            '\n\nIf a user request clearly matches one of the available skills, invoking the `skill` tool is mandatory before giving final conclusions. ' +
-            'Never claim a skill was used unless there is an actual `skill` tool call in this turn.';
+            '\n\nFor local skill listing requests, rely on the locally installed skills shown above. ' +
+            'Avoid remote marketplace/search skills unless the user explicitly asks for remote discovery or installation.';
+          systemContent += SKILL_INVOCATION_BLOCKING_POLICY;
         } else {
           systemContent += '\n\n# Available Skills\nThere are currently no invocable installed skills.';
         }
@@ -427,21 +471,26 @@ export class TaskExecutor {
     const maxToolRounds = 20;
     let finalText = '';
     let remediationAttempts = 0;
-
     for (let round = 0; round < maxToolRounds; round++) {
+      const requestPayload = {
+        model: config.modelName || 'gpt-4-turbo',
+        messages,
+        temperature: config.temperature || 0.7,
+        max_tokens: config.maxTokens || 4096,
+        tools: toolsParam,
+      };
+      console.debug(
+        '[LLM-IO] OpenAI request payload | round=%d payload=%s',
+        round + 1,
+        formatJsonForLog(requestPayload)
+      );
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model: config.modelName || 'gpt-4-turbo',
-          messages,
-          temperature: config.temperature || 0.7,
-          max_tokens: config.maxTokens || 4096,
-          tools: toolsParam
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {
@@ -450,6 +499,11 @@ export class TaskExecutor {
       }
 
       const result = await response.json();
+      console.debug(
+        '[LLM-IO] OpenAI response payload | round=%d payload=%s',
+        round + 1,
+        formatJsonForLog(result)
+      );
       const message = result.choices?.[0]?.message || {};
       const assistantContent = typeof message.content === 'string' ? message.content : '';
       const assistantReasoning =
@@ -458,7 +512,7 @@ export class TaskExecutor {
         finalText += assistantContent;
       }
 
-      const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+      const rawToolCalls = normalizeOpenAIMessageToolCalls(message);
       const assistantMsg: Record<string, unknown> = {
         role: 'assistant',
         content: assistantContent || null,
@@ -470,13 +524,11 @@ export class TaskExecutor {
       messages.push(assistantMsg);
 
       const toolMetas: Array<{ toolName: string; rawArguments: string; toolCallId: string }> = rawToolCalls.map(
-        (toolCall: Record<string, unknown>) => ({
-        toolName: (toolCall?.function as { name?: string } | undefined)?.name || '',
-        rawArguments: (toolCall?.function as { arguments?: string } | undefined)?.arguments || '',
-        toolCallId:
-          (toolCall?.id as string | undefined) ||
-          `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      })
+        (toolCall) => ({
+          toolName: toolCall.function?.name || '',
+          rawArguments: toolCall.function?.arguments || '',
+          toolCallId: toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        })
       );
       const selectedTools: ToolSelectionRecord[] = toolMetas.map(
         (m: { toolName: string; rawArguments: string; toolCallId: string }) =>
@@ -512,6 +564,17 @@ export class TaskExecutor {
             });
             continue;
           }
+          const hardBlockMessage = buildToolInvocationHardBlockMessage(consistency.reason);
+          appendAgentLog('executor', 'warn', 'Tool invocation hard block', {
+            provider: 'openai',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+            remediationAttempts,
+          });
+          return hardBlockMessage;
         }
         return finalText || '';
       }
@@ -649,6 +712,19 @@ export class TaskExecutor {
       appendAgentLog('executor', 'debug', `OpenAI stream round ${round + 1} request`, {
         toolCount: tools.length,
       });
+      const requestPayload = {
+        model: config.modelName || 'gpt-4-turbo',
+        messages,
+        temperature: config.temperature || 0.7,
+        max_tokens: config.maxTokens || 4096,
+        tools: toolsParam,
+        stream: true,
+      };
+      console.debug(
+        '[LLM-IO] OpenAI stream request payload | round=%d payload=%s',
+        round + 1,
+        formatJsonForLog(requestPayload)
+      );
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -656,14 +732,7 @@ export class TaskExecutor {
           'Content-Type': 'application/json'
         },
         signal: abortSignal,
-        body: JSON.stringify({
-          model: config.modelName || 'gpt-4-turbo',
-          messages,
-          temperature: config.temperature || 0.7,
-          max_tokens: config.maxTokens || 4096,
-          tools: toolsParam,
-          stream: true
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {
@@ -685,6 +754,7 @@ export class TaskExecutor {
       /** Reasoning content for models that emit thinking in tool-call rounds. */
       let assistantReasoning = '';
       const toolCalls: any[] = [];
+      let streamResponseRaw = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -698,6 +768,11 @@ export class TaskExecutor {
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6);
           if (data === '[DONE]') continue;
+          if (isLlmIoFullLogEnabled()) {
+            streamResponseRaw += `${data}\n`;
+          } else if (streamResponseRaw.length < llmIoLogMaxChars() * 2) {
+            streamResponseRaw += `${data}\n`;
+          }
 
           try {
             const parsed = JSON.parse(data);
@@ -716,27 +791,11 @@ export class TaskExecutor {
 
             if (delta?.tool_calls) {
               for (const toolCall of delta.tool_calls) {
-                if (toolCall.index === undefined) continue;
-                if (!toolCalls[toolCall.index]) {
-                  toolCalls[toolCall.index] = {
-                    id: toolCall.id || '',
-                    type: 'function',
-                    function: {
-                      name: toolCall.function?.name || '',
-                      arguments: ''
-                    }
-                  };
-                }
-
-                if (toolCall.id) {
-                  toolCalls[toolCall.index].id = toolCall.id;
-                }
-                if (toolCall.function?.name) {
-                  toolCalls[toolCall.index].function.name = toolCall.function.name;
-                }
-                if (toolCall.function?.arguments) {
-                  toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
-                }
+                if (!toolCall || typeof toolCall !== 'object') continue;
+                mergeOpenAIStreamToolCallDelta(
+                  toolCalls,
+                  toolCall as Record<string, unknown>
+                );
               }
             }
           } catch {
@@ -746,6 +805,16 @@ export class TaskExecutor {
       }
 
       const resolvedToolCalls = toolCalls.filter(Boolean);
+      console.debug(
+        '[LLM-IO] OpenAI stream response payload | round=%d resolvedToolCallCount=%d payload=%s',
+        round + 1,
+        resolvedToolCalls.length,
+        streamResponseRaw.length > 0
+          ? (isLlmIoFullLogEnabled()
+              ? streamResponseRaw
+              : truncateMiddleText(streamResponseRaw, llmIoLogMaxChars()))
+          : '(empty stream payload)'
+      );
       const selectedTools: ToolSelectionRecord[] = resolvedToolCalls.map((toolCall) =>
         makeToolSelectionRecord(
           toolCall.function?.name || '',
@@ -780,6 +849,17 @@ export class TaskExecutor {
             onChunk('\n\n[Detected tool-claim inconsistency, requesting tool invocation...]\n');
             continue;
           }
+          const hardBlockMessage = buildToolInvocationHardBlockMessage(consistency.reason);
+          appendAgentLog('executor', 'warn', 'Tool invocation hard block', {
+            provider: 'openai-stream',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            remediationAttempts,
+          });
+          onChunk(`\n\n${hardBlockMessage}\n`);
+          return;
         }
         console.log(`[Executor] No tool calls detected in round ${round + 1}, stream completed`);
         appendAgentLog('executor', 'info', `OpenAI stream round ${round + 1} finished (no tool calls)`, {
@@ -787,7 +867,6 @@ export class TaskExecutor {
         });
         return;
       }
-
       console.log(`[Executor] Detected ${resolvedToolCalls.length} tool calls in round ${round + 1}`);
       appendAgentLog('executor', 'info', `OpenAI stream round ${round + 1}: tool calls`, {
         tools: resolvedToolCalls.map((c) => c.function?.name || '(unknown)').join(', '),
@@ -993,7 +1072,6 @@ export class TaskExecutor {
     const maxToolRounds = 20;
     let finalText = '';
     let remediationAttempts = 0;
-
     let anthropicSystem = `You are a professional AI assistant that helps users complete tasks accurately. You can remember relevant prior conversation context.
 Current working directory (must be respected): ${workspace || process.cwd()}
 All filesystem and command-line operations must be executed within this working directory.
@@ -1017,10 +1095,7 @@ When running git clone without a user-specified destination, explicitly clone in
           anthropicSystem += invocableSkills
             .map((skill) => `- ${skill.name}: ${skill.description}`)
             .join('\n');
-          anthropicSystem +=
-            '\n\nIf a request matches an available skill, you MUST call the `skill` tool before giving final conclusions. ' +
-            'Never claim a skill was used unless there is an actual `skill` tool call in this turn. ' +
-            'When users ask to list local installed skills, call `skill` with `skill_name` set to `list-skills`.';
+          anthropicSystem += SKILL_INVOCATION_BLOCKING_POLICY;
         }
       } catch {
         invocableSkillNames = [];
@@ -1046,6 +1121,19 @@ When running git clone without a user-specified destination, explicitly clone in
     );
 
     for (let round = 0; round < maxToolRounds; round++) {
+      const requestPayload = {
+        model: config.modelName || 'claude-3-5-sonnet-20241022',
+        max_tokens: config.maxTokens || 4096,
+        temperature: config.temperature || 0.7,
+        system: anthropicSystem,
+        messages,
+        tools: toolsParam,
+      };
+      console.debug(
+        '[LLM-IO] Anthropic request payload | round=%d payload=%s',
+        round + 1,
+        formatJsonForLog(requestPayload)
+      );
       const response = await fetch(`${endpoint}/messages`, {
         method: 'POST',
         headers: {
@@ -1054,14 +1142,7 @@ When running git clone without a user-specified destination, explicitly clone in
           'content-type': 'application/json'
         },
         signal: abortSignal,
-        body: JSON.stringify({
-          model: config.modelName || 'claude-3-5-sonnet-20241022',
-          max_tokens: config.maxTokens || 4096,
-          temperature: config.temperature || 0.7,
-          system: anthropicSystem,
-          messages,
-          tools: toolsParam
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {
@@ -1070,6 +1151,11 @@ When running git clone without a user-specified destination, explicitly clone in
       }
 
       const result = await response.json();
+      console.debug(
+        '[LLM-IO] Anthropic response payload | round=%d payload=%s',
+        round + 1,
+        formatJsonForLog(result)
+      );
       const contents = Array.isArray(result.content) ? result.content : [];
       const toolUses: Array<{ id: string; name?: string; input?: unknown }> = contents
         .filter((content: any) => content.type === 'tool_use')
@@ -1125,6 +1211,17 @@ When running git clone without a user-specified destination, explicitly clone in
             });
             continue;
           }
+          const hardBlockMessage = buildToolInvocationHardBlockMessage(consistency.reason);
+          appendAgentLog('executor', 'warn', 'Tool invocation hard block', {
+            provider: 'anthropic',
+            round: round + 1,
+            reason: consistency.reason,
+            claimSignals: consistency.claimSignals,
+            selectedToolNames: consistency.selectedToolNames,
+            executedToolNames: consistency.executedToolNames,
+            remediationAttempts,
+          });
+          return hardBlockMessage;
         }
         return finalText || '';
       }

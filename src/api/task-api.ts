@@ -28,6 +28,7 @@ import { CronListTool } from '../tools/cron-list';
 import { CronStatusTool } from '../tools/cron-status';
 import { CronRunsTool } from '../tools/cron-runs';
 import { SkillTool } from '../tools/skill';
+import { SkillHubInstallTool } from '../tools/skillhub-install';
 import { BriefTool } from '../tools/brief';
 import { AgentTool } from '../tools/agent';
 import { ReadFileTool } from '../tools/read-file';
@@ -50,6 +51,7 @@ import {
   type QueuePriority,
 } from '../utils/messageQueueManager';
 import { appendAgentLog, truncateMiddleText, truncateText } from '../utils/agent-execution-log';
+import { getSquidProjectRoot } from '../channels/extensions/config';
 
 import { TaskAPIConversationBusyError } from './task-api-channel-errors';
 
@@ -683,6 +685,7 @@ export class TaskAPI {
     this.toolRegistry.register(CronStatusTool);
     this.toolRegistry.register(CronRunsTool);
     this.toolRegistry.register(SkillTool);
+    this.toolRegistry.register(SkillHubInstallTool);
     this.toolRegistry.register(BriefTool);
     this.toolRegistry.register(AgentTool);
 
@@ -695,10 +698,136 @@ export class TaskAPI {
     this.conversationManager.init();
     this.memoryManager.init();
 
+    // Fire-and-forget startup self-healing: ensure local skillhub CLI exists for squid.
+    this.ensureSkillHubInstalledForSquid().catch((error) => {
+      console.warn('[SkillHub] startup install skipped:', error?.message || error);
+    });
+
     // Fire-and-forget self-healing: restore installed SkillHub files if lock exists.
     this.repairTencentInstalledSkills().catch((error) => {
       console.warn('[SkillHub] repair skipped:', error?.message || error);
     });
+  }
+
+  private shouldAutoInstallSkillHubOnStartup(): boolean {
+    if (process.env.NODE_ENV === 'test') return false;
+    const raw = (process.env.SQUID_AUTO_INSTALL_SKILLHUB || '').trim().toLowerCase();
+    if (!raw) return true;
+    return !['0', 'false', 'off', 'no'].includes(raw);
+  }
+
+  private async commandExists(commandName: string): Promise<boolean> {
+    const { spawn } = await import('child_process');
+    return await new Promise<boolean>((resolve) => {
+      const child = spawn('bash', ['-lc', `command -v ${commandName} >/dev/null 2>&1`], {
+        stdio: 'ignore',
+      });
+      child.on('exit', (code) => resolve(code === 0));
+      child.on('error', () => resolve(false));
+    });
+  }
+
+  private async fileExists(path: string): Promise<boolean> {
+    const { access } = await import('fs/promises');
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async hasFindSkillsInstalledForSquid(): Promise<boolean> {
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    const nestedPath = join(homedir(), '.squid', 'skills', 'find-skills', 'SKILL.md');
+    const flatPath = join(homedir(), '.squid', 'skills', 'find-skills.md');
+    const [nestedExists, flatExists] = await Promise.all([
+      this.fileExists(nestedPath),
+      this.fileExists(flatPath),
+    ]);
+    return nestedExists || flatExists;
+  }
+
+  private async hasSkillHubInstalledForSquid(): Promise<boolean> {
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    const wrapperPath = join(homedir(), '.local', 'bin', 'skillhub');
+    const [fromPath, wrapperExists] = await Promise.all([
+      this.commandExists('skillhub'),
+      this.fileExists(wrapperPath),
+    ]);
+    return fromPath || wrapperExists;
+  }
+
+  private async ensureSkillHubInstalledForSquid(): Promise<void> {
+    if (!this.shouldAutoInstallSkillHubOnStartup()) return;
+    const [hasSkillHub, hasFindSkills] = await Promise.all([
+      this.hasSkillHubInstalledForSquid(),
+      this.hasFindSkillsInstalledForSquid(),
+    ]);
+    if (hasSkillHub && hasFindSkills) return;
+
+    const { existsSync } = await import('fs');
+    const { join } = await import('path');
+    const { spawn } = await import('child_process');
+    const squidRoot = getSquidProjectRoot();
+    const installerPath = join(squidRoot, 'scripts', 'install-skillhub-for-squid.sh');
+    if (!existsSync(installerPath)) {
+      throw new Error(`installer script not found: ${installerPath}`);
+    }
+
+    const timeoutMs = 180000;
+    await new Promise<void>((resolve, reject) => {
+      let stderr = '';
+      let timedOut = false;
+      const child = spawn('bash', [installerPath, '--with-skills'], {
+        cwd: squidRoot,
+        env: process.env,
+      });
+
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+      }, timeoutMs);
+
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('exit', (code) => {
+        clearTimeout(timeoutId);
+        if (timedOut) {
+          reject(new Error(`skillhub auto-install timeout (${timeoutMs}ms)`));
+          return;
+        }
+        if (code !== 0) {
+          reject(
+            new Error(
+              `skillhub auto-install failed (exit ${code}): ${truncateText(stderr, 300)}`
+            )
+          );
+          return;
+        }
+        resolve();
+      });
+
+      child.on('error', (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
+
+    const [installedSkillHub, installedFindSkills] = await Promise.all([
+      this.hasSkillHubInstalledForSquid(),
+      this.hasFindSkillsInstalledForSquid(),
+    ]);
+    if (!installedSkillHub || !installedFindSkills) {
+      throw new Error(
+        `skillhub auto-install finished but targets are incomplete (skillhub=${installedSkillHub}, find-skills=${installedFindSkills})`
+      );
+    }
+    console.info('[SkillHub] skillhub + find-skills are auto-installed for squid.');
   }
 
   private async repairTencentInstalledSkills(): Promise<void> {

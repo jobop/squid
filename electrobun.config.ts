@@ -22,6 +22,7 @@ export default {
       config: 'config',
       extensions: 'extensions',
       skills: 'skills',
+      'scripts/install-skillhub-for-squid.sh': 'scripts/install-skillhub-for-squid.sh',
       'src/api/task-api-channel-errors.ts': 'src/api/task-api-channel-errors.ts',
       'build/extension-node_modules': 'node_modules'
     },

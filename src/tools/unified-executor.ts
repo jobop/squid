@@ -18,6 +18,7 @@ import { CronListTool } from './cron-list';
 import { CronStatusTool } from './cron-status';
 import { CronRunsTool } from './cron-runs';
 import { BriefTool } from './brief';
+import { SkillHubInstallTool } from './skillhub-install';
 
 export type UnifiedExecutionErrorType = 'timeout' | 'config' | 'execution';
 
@@ -60,6 +61,7 @@ function createRegistry(): ToolRegistry {
   registry.register(CronListTool);
   registry.register(CronStatusTool);
   registry.register(CronRunsTool);
+  registry.register(SkillHubInstallTool);
   registry.register(BriefTool);
   return registry;
 }

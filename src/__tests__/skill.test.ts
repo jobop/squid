@@ -77,6 +77,33 @@ Skill with parameters.`;
     expect(result.data.result).toContain('test arguments');
   });
 
+  it('应注入技能基目录并替换 CLAUDE_SKILL_DIR 变量', async () => {
+    const skillContent = `---
+name: root-aware-skill
+description: skill with runtime dir binding
+when-to-use: runtime path test
+allowed-tools:
+  - bash
+effort: low
+user-invocable: true
+---
+
+Run script via \${CLAUDE_SKILL_DIR}/scripts/usage.sh`;
+
+    await writeFile(join(testSkillsDir, 'root-aware-skill.md'), skillContent);
+    const result = await SkillTool.call(
+      {
+        skill_name: 'root-aware-skill',
+      },
+      mockContext
+    );
+
+    expect(result.data.success).toBe(true);
+    expect(result.data.result).toContain('Base directory for this skill:');
+    expect(result.data.result).toContain('/scripts/usage.sh');
+    expect(result.data.result).not.toContain('${CLAUDE_SKILL_DIR}');
+  });
+
   it('应该返回错误当技能不存在', async () => {
     const result = await SkillTool.call(
       {

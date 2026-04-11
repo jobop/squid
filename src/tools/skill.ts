@@ -1,6 +1,5 @@
 import type { Tool, ToolResult, ToolContext } from './base';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
-import { execSync } from 'node:child_process';
 import { z } from 'zod';
 import { SkillLoader } from '../skills/loader';
 
@@ -8,7 +7,7 @@ const SkillInputSchema = z.object({
   skill_name: z
     .string()
     .describe(
-      '技能名称。仅当需要列出本应用已注册技能时，必须填 list-skills（不要用 SkillHub 类技能代替）。'
+      '技能名称。仅当需要列出本应用已注册技能时，必须填 list-skills。'
     ),
   args: z.string().optional().describe('传递给技能的参数（可选）')
 });
@@ -35,26 +34,23 @@ function isListSkillsAlias(name: string): boolean {
   );
 }
 
-const TENCENT_SKILLHUB_SKILL = 'find-skills-in-tencent-skillhub';
-
-function commandAvailable(cmd: string): boolean {
-  try {
-    if (process.platform === 'win32') {
-      execSync(`where ${cmd}`, { stdio: 'ignore', windowsHide: true });
-    } else {
-      execSync(`command -v ${cmd}`, { stdio: 'ignore' });
-    }
-    return true;
-  } catch {
-    return false;
-  }
+function normalizeSkillDirForPrompt(pathValue: string): string {
+  return process.platform === 'win32' ? pathValue.replace(/\\/g, '/') : pathValue;
 }
 
+function buildSkillPromptWithRuntimeContext(systemPrompt: string, skillRoot?: string): string {
+  const trimmed = systemPrompt.trim();
+  if (!skillRoot) return trimmed;
+  const normalizedSkillRoot = normalizeSkillDirForPrompt(skillRoot);
+  return `Base directory for this skill: ${normalizedSkillRoot}\n\n${trimmed}`
+    .replace(/\$\{CLAUDE_SKILL_DIR\}/g, normalizedSkillRoot)
+    .replace(/\$\{SQUID_SKILL_DIR\}/g, normalizedSkillRoot);
+}
 
 export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
   name: 'skill',
   description:
-    '调用本应用已注册的技能。若用户只想查看当前环境可用技能列表（含内置与用户目录），必须使用 skill_name=`list-skills`，不要为此调用腾讯 SkillHub / skillhub CLI 类技能。',
+    '调用本应用已注册的技能。若用户只想查看当前环境可用技能列表（含内置与用户目录），必须使用 skill_name=`list-skills`。',
   inputSchema: SkillInputSchema,
   maxResultSizeChars: 100000,
 
@@ -110,26 +106,6 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
         };
       }
 
-      // 腾讯 SkillHub CLI 技能依赖本机 skillhub 与 jq；缺失时尽快失败并引导 list-skills，避免模型多轮空转。
-      if (skill.metadata.name === TENCENT_SKILLHUB_SKILL) {
-        const missing: string[] = [];
-        if (!commandAvailable('skillhub')) missing.push('skillhub');
-        if (!commandAvailable('jq')) missing.push('jq');
-        if (missing.length > 0) {
-          const hint =
-            `本机未检测到 ${missing.join('、')}（PATH 中不可用），无法执行 ${TENCENT_SKILLHUB_SKILL}。` +
-            '若用户只是想列出当前应用已注册的技能，请立即改用 skill 工具且 skill_name 为 `list-skills`，勿再调用本技能。';
-          return {
-            data: {
-              success: false,
-              skillName: input.skill_name,
-              error: hint
-            },
-            error: hint
-          };
-        }
-      }
-
       // 采用 inline skill：仅展开技能内容并返回给当前主执行器继续。
       // 这样避免再起一层 TaskExecutor（防止 skill->skill 递归套娃）。
       const instructionParts: string[] = [];
@@ -137,7 +113,9 @@ export const SkillTool: Tool<typeof SkillInputSchema, SkillOutput> = {
       instructionParts.push(
         '以下为技能内容。请在当前对话中继续完成任务；不要再次调用同名 skill，以避免递归。'
       );
-      instructionParts.push(skill.systemPrompt.trim());
+      instructionParts.push(
+        buildSkillPromptWithRuntimeContext(skill.systemPrompt, skill.skillRoot)
+      );
       if (input.args?.trim()) {
         instructionParts.push(`## Skill Arguments\n${input.args.trim()}`);
       }

@@ -9,6 +9,7 @@ import { CronListTool } from '../tools/cron-list';
 import { CronStatusTool } from '../tools/cron-status';
 import { CronRunsTool } from '../tools/cron-runs';
 import { SkillTool } from '../tools/skill';
+import { SkillHubInstallTool } from '../tools/skillhub-install';
 import { BriefTool } from '../tools/brief';
 import { AgentTool } from '../tools/agent';
 import type { Tool } from '../tools/base';
@@ -25,6 +26,7 @@ describe('Tool Interface Compliance', () => {
     { name: 'CronStatusTool', tool: CronStatusTool },
     { name: 'CronRunsTool', tool: CronRunsTool },
     { name: 'SkillTool', tool: SkillTool },
+    { name: 'SkillHubInstallTool', tool: SkillHubInstallTool },
     { name: 'BriefTool', tool: BriefTool },
     { name: 'AgentTool', tool: AgentTool }
   ];
