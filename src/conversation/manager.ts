@@ -2,7 +2,7 @@
 import { readFile, writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
-import { ConversationCompressor } from './compressor';
+import { ConversationCompressor, loadConversationCompressionOptionsFromEnv } from './compressor';
 import { MemoryExtractor } from '../memory/extractor';
 import { MemoryManager } from '../memory/manager';
 import { ExtractionMarker } from '../memory/extraction-marker';
@@ -22,6 +22,27 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
   workspace?: string;
+  /**
+   * Cross-request tool compaction state for round-aware context trimming.
+   * Stored with conversation to preserve tool-round aging across executeTaskStream calls.
+   */
+  toolCompactionState?: {
+    roundCounter: number;
+    records: Array<{
+      round: number;
+      toolName: string;
+      toolCallId: string;
+      rawArguments?: string;
+      content: string;
+      isError?: boolean;
+      compacted?: boolean;
+      pruned?: boolean;
+      lastReferencedRound?: number;
+      tokenBucket?: 'short' | 'mid' | 'long';
+      policyTag?: 'always_keep' | 'always_compact' | 'normal';
+      anchors?: string[];
+    }>;
+  };
 }
 
 export class ConversationManager {
@@ -38,7 +59,7 @@ export class ConversationManager {
 
   constructor() {
     this.configDir = join(homedir(), '.squid', 'conversations');
-    this.compressor = new ConversationCompressor(100000); // 100k token limit
+    this.compressor = new ConversationCompressor(loadConversationCompressionOptionsFromEnv());
 
     // Initialize memory extraction components
     const memoryManager = new MemoryManager();
@@ -126,12 +147,21 @@ export class ConversationManager {
 
     // Auto-compress if needed
     const usage = this.compressor.getUsagePercentage(conversation.messages);
-    if (usage > 70) {
+    const estimatedTokens = this.compressor.getEstimatedTokens(conversation.messages);
+    const triggerUsage = this.compressor.getAutoCompressTriggerPercentage();
+    if (usage > triggerUsage) {
       try {
         const result = await this.compressor.compress(conversation.messages);
+        const usageAfter = this.compressor.getUsagePercentage(result.messages);
         if (result.compressed) {
           conversation.messages = result.messages;
-          console.log(`Conversation auto-compressed using ${result.strategy} strategy, saved ${result.tokensSaved} tokens`);
+          console.log(
+            `[ConversationCompression] compressed conversation=${conversationId} strategy=${result.strategy} tokens_before=${estimatedTokens} tokens_saved=${result.tokensSaved} usage_before=${usage.toFixed(2)}% usage_after=${usageAfter.toFixed(2)}%`
+          );
+        } else {
+          console.log(
+            `[ConversationCompression] skipped conversation=${conversationId} usage=${usage.toFixed(2)}% trigger=${triggerUsage.toFixed(2)}% estimated_tokens=${estimatedTokens}`
+          );
         }
       } catch (error) {
         console.error('Auto-compression failed:', error);
@@ -148,6 +178,22 @@ export class ConversationManager {
 
   getConversation(conversationId: string): Conversation | null {
     return this.conversations.get(conversationId) || null;
+  }
+
+  getToolCompactionState(conversationId: string): Conversation['toolCompactionState'] {
+    const conversation = this.conversations.get(conversationId);
+    return conversation?.toolCompactionState;
+  }
+
+  async setToolCompactionState(
+    conversationId: string,
+    state: Conversation['toolCompactionState']
+  ): Promise<void> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) return;
+    conversation.toolCompactionState = state;
+    conversation.updatedAt = new Date().toISOString();
+    await this.saveConversation(conversationId);
   }
 
   async setConversationWorkspace(conversationId: string, workspace: string): Promise<void> {
@@ -199,8 +245,9 @@ export class ConversationManager {
       }
 
       conversation.messages = [];
+      conversation.toolCompactionState = undefined;
       conversation.updatedAt = new Date().toISOString();
-      this.saveConversation(conversationId);
+      await this.saveConversation(conversationId);
 
       // Reset extraction state
       await this.extractionStateManager.resetState(conversationId);

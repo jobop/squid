@@ -104,6 +104,54 @@ function formatJsonForLog(value: unknown): string {
   }
 }
 
+function countCompactionFlags(records: RoundToolRecord[]): { compacted: number; pruned: number } {
+  let compacted = 0;
+  let pruned = 0;
+  for (const record of records) {
+    if (record.compacted) compacted += 1;
+    if (record.pruned) pruned += 1;
+  }
+  return { compacted, pruned };
+}
+
+function logRoundCompactionStats(params: {
+  provider: 'openai' | 'openai-stream' | 'anthropic';
+  requestRound: number;
+  toolRound: number;
+  records: RoundToolRecord[];
+  beforeMessages: number;
+  afterMessages: number;
+  beforeCompacted: number;
+  beforePruned: number;
+}): void {
+  const { compacted, pruned } = countCompactionFlags(params.records);
+  const deltaCompacted = Math.max(compacted - params.beforeCompacted, 0);
+  const deltaPruned = Math.max(pruned - params.beforePruned, 0);
+  appendAgentLog('executor', 'info', 'Round compaction summary', {
+    provider: params.provider,
+    requestRound: params.requestRound,
+    toolRound: params.toolRound,
+    records: params.records.length,
+    compactedTotal: compacted,
+    prunedTotal: pruned,
+    compactedAddedThisRound: deltaCompacted,
+    prunedAddedThisRound: deltaPruned,
+    messagesBefore: params.beforeMessages,
+    messagesAfter: params.afterMessages,
+  });
+  console.log(
+    '[RoundCompaction] provider=%s requestRound=%d toolRound=%d records=%d +compacted=%d +pruned=%d messages=%d->%d',
+    params.provider,
+    params.requestRound,
+    params.toolRound,
+    params.records.length,
+    deltaCompacted,
+    deltaPruned,
+    params.beforeMessages,
+    params.afterMessages
+  );
+}
+
 const SKILL_INVOCATION_BLOCKING_POLICY =
   '\n\nSkill invocation policy (blocking): ' +
   'Before answering, first decide whether tool-obtained evidence is required. ' +
@@ -164,6 +212,8 @@ export interface ExecuteRequest {
   attachments?: ImageAttachment[];
   /** 用于 Plan 模式计划文件路径：`.squid/plan-<id>.md` */
   conversationId?: string;
+  /** 会话级工具压缩状态（跨多次 executeStream 持续累计） */
+  toolCompactionState?: ToolCompactionState;
   /** 任务级取消信号（Esc/主动中断） */
   abortSignal?: AbortSignal;
 }
@@ -174,6 +224,31 @@ export interface ExecuteResult {
   error?: string;
 }
 
+export interface PersistedToolCompactionRecord {
+  round: number;
+  toolName: string;
+  toolCallId: string;
+  rawArguments?: string;
+  content: string;
+  isError?: boolean;
+  compacted?: boolean;
+  pruned?: boolean;
+  lastReferencedRound?: number;
+  tokenBucket?: 'short' | 'mid' | 'long';
+  policyTag?: 'always_keep' | 'always_compact' | 'normal';
+  anchors?: string[];
+}
+
+export interface ToolCompactionState {
+  /** 会话级“用户输入轮次”计数：每次 executeTaskStream 请求 +1 */
+  roundCounter: number;
+  records: PersistedToolCompactionRecord[];
+}
+
+export interface ExecuteStreamResult {
+  toolCompactionState?: ToolCompactionState;
+}
+
 interface ModelConfig {
   provider: string;
   apiKey: string;
@@ -182,6 +257,82 @@ interface ModelConfig {
   apiProtocol?: string;
   temperature?: number;
   maxTokens?: number;
+}
+
+function extractMessageContentAsString(content: unknown): string {
+  if (typeof content === 'string') return content;
+  try {
+    return JSON.stringify(content ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function reviveToolHistoryIntoMessages(
+  messages: Array<Record<string, any>>,
+  persistedState: ToolCompactionState | undefined
+): RoundToolRecord[] {
+  if (!persistedState?.records?.length) return [];
+  const insertAt = Math.max(messages.length - 1, 1);
+  const revived: RoundToolRecord[] = [];
+  let offset = 0;
+  for (const record of persistedState.records) {
+    if (record.pruned) continue;
+    const syntheticMessage: Record<string, unknown> = {
+      role: 'assistant',
+      content: record.content || '',
+    };
+    messages.splice(insertAt + offset, 0, syntheticMessage);
+    offset += 1;
+    revived.push({
+      round: record.round,
+      toolName: record.toolName,
+      toolCallId: record.toolCallId,
+      rawArguments: record.rawArguments || '',
+      retention: classifyToolRetention(record.toolName),
+      messageRef: syntheticMessage,
+      compacted: record.compacted,
+      pruned: record.pruned,
+      isError: record.isError,
+      lastReferencedRound: record.lastReferencedRound,
+      tokenBucket: record.tokenBucket,
+      policyTag: record.policyTag,
+      anchors: Array.isArray(record.anchors) ? [...record.anchors] : [],
+    });
+  }
+  return revived;
+}
+
+function persistRoundToolState(
+  records: RoundToolRecord[],
+  nextRoundCounter: number
+): ToolCompactionState {
+  const persisted: PersistedToolCompactionRecord[] = [];
+  for (const record of records) {
+    const content = extractMessageContentAsString(record.messageRef?.content);
+    if (record.pruned || !content.trim()) continue;
+    const toolCallId =
+      record.toolCallId || `tool_${record.round}_${Math.random().toString(36).slice(2, 8)}`;
+    persisted.push({
+      round: record.round,
+      toolName: record.toolName,
+      toolCallId,
+      rawArguments: record.rawArguments || '',
+      content,
+      isError: record.isError,
+      compacted: record.compacted,
+      pruned: record.pruned,
+      lastReferencedRound: record.lastReferencedRound,
+      tokenBucket: record.tokenBucket,
+      policyTag: record.policyTag,
+      anchors: record.anchors || [],
+    });
+  }
+  persisted.sort((a, b) => b.round - a.round);
+  return {
+    roundCounter: Math.max(0, nextRoundCounter),
+    records: persisted.slice(0, 120),
+  };
 }
 
 function buildOpenAIUserContent(instruction: string, attachments: ImageAttachment[]): string | Array<Record<string, unknown>> {
@@ -674,11 +825,16 @@ export class TaskExecutor {
         };
         messages.push(toolMessage);
         const selected = selectedTools.find((item) => item.toolCallId === row.tool_call_id);
+        const executed = executedTools.find((item) => item.toolCallId === row.tool_call_id);
+        const meta = toolMetas.find((item) => item.toolCallId === row.tool_call_id);
         roundToolRecords.push({
           round: round + 1,
           toolName: selected?.toolName || '',
+          toolCallId: row.tool_call_id,
+          rawArguments: meta?.rawArguments || '',
           retention: classifyToolRetention(selected?.toolName || ''),
           messageRef: toolMessage,
+          isError: executed?.status === 'failed',
         });
       }
 
@@ -690,7 +846,23 @@ export class TaskExecutor {
         });
       }
 
-      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
+      const beforeMessages = messages.length;
+      const beforeFlags = countCompactionFlags(roundToolRecords);
+      roundCompactor.compact(messages, roundToolRecords, round + 1, {
+        ...roundCompactOptions,
+        referenceAssistantText: assistantContent,
+        referenceToolArguments: toolMetas.map((item) => item.rawArguments),
+      });
+      logRoundCompactionStats({
+        provider: 'openai',
+        requestRound: round + 1,
+        toolRound: round + 1,
+        records: roundToolRecords,
+        beforeMessages,
+        afterMessages: messages.length,
+        beforeCompacted: beforeFlags.compacted,
+        beforePruned: beforeFlags.pruned,
+      });
     }
 
     return `${finalText}\n\n⚠️ 工具调用轮次达到上限，已停止自动继续。`.trim();
@@ -705,8 +877,9 @@ export class TaskExecutor {
     mode: TaskMode,
     attachments: ImageAttachment[] = [],
     conversationId?: string,
-    abortSignal?: AbortSignal
-  ): Promise<void> {
+    abortSignal?: AbortSignal,
+    persistedToolState?: ToolCompactionState
+  ): Promise<ExecuteStreamResult> {
     const endpoint = config.apiEndpoint || 'https://api.openai.com/v1';
     const initialMessages = await this.buildMessages(
       instruction,
@@ -719,7 +892,11 @@ export class TaskExecutor {
     const messages: Array<Record<string, any>> = [...initialMessages];
     const roundCompactor = new RoundContextCompactor();
     const roundCompactOptions = loadRoundCompactOptionsFromEnv();
-    const roundToolRecords: RoundToolRecord[] = [];
+    const roundToolRecords: RoundToolRecord[] = reviveToolHistoryIntoMessages(
+      messages,
+      persistedToolState
+    );
+    const currentInputRound = Math.max(0, persistedToolState?.roundCounter || 0) + 1;
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
     console.log(
@@ -886,13 +1063,51 @@ export class TaskExecutor {
             remediationAttempts,
           });
           onChunk(`\n\n${hardBlockMessage}\n`);
-          return;
+          const beforeMessages = messages.length;
+          const beforeFlags = countCompactionFlags(roundToolRecords);
+          roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+            ...roundCompactOptions,
+            referenceAssistantText: assistantContent,
+            referenceToolArguments: [],
+          });
+          logRoundCompactionStats({
+            provider: 'openai-stream',
+            requestRound: round + 1,
+            toolRound: currentInputRound,
+            records: roundToolRecords,
+            beforeMessages,
+            afterMessages: messages.length,
+            beforeCompacted: beforeFlags.compacted,
+            beforePruned: beforeFlags.pruned,
+          });
+          return {
+            toolCompactionState: persistRoundToolState(roundToolRecords, currentInputRound),
+          };
         }
         console.log(`[Executor] No tool calls detected in round ${round + 1}, stream completed`);
         appendAgentLog('executor', 'info', `OpenAI stream round ${round + 1} finished (no tool calls)`, {
           assistantChars: assistantContent.length,
         });
-        return;
+        const beforeMessages = messages.length;
+        const beforeFlags = countCompactionFlags(roundToolRecords);
+        roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+          ...roundCompactOptions,
+          referenceAssistantText: assistantContent,
+          referenceToolArguments: [],
+        });
+        logRoundCompactionStats({
+          provider: 'openai-stream',
+          requestRound: round + 1,
+          toolRound: currentInputRound,
+          records: roundToolRecords,
+          beforeMessages,
+          afterMessages: messages.length,
+          beforeCompacted: beforeFlags.compacted,
+          beforePruned: beforeFlags.pruned,
+        });
+        return {
+          toolCompactionState: persistRoundToolState(roundToolRecords, currentInputRound),
+        };
       }
       console.log(`[Executor] Detected ${resolvedToolCalls.length} tool calls in round ${round + 1}`);
       appendAgentLog('executor', 'info', `OpenAI stream round ${round + 1}: tool calls`, {
@@ -1041,11 +1256,16 @@ export class TaskExecutor {
         };
         messages.push(toolMessage);
         const selected = selectedTools.find((item) => item.toolCallId === row.tool_call_id);
+        const executed = executedTools.find((item) => item.toolCallId === row.tool_call_id);
+        const meta = streamMetas.find((item) => item.toolCallId === row.tool_call_id);
         roundToolRecords.push({
-          round: round + 1,
+          round: currentInputRound,
           toolName: selected?.toolName || '',
+          toolCallId: row.tool_call_id,
+          rawArguments: meta?.rawArguments || '',
           retention: classifyToolRetention(selected?.toolName || ''),
           messageRef: toolMessage,
+          isError: executed?.status === 'failed',
         });
       }
 
@@ -1058,13 +1278,32 @@ export class TaskExecutor {
         onChunk('\n\n[Detected tool execution inconsistency, asking model to retry tool call...]\n');
       }
 
-      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
+      const beforeMessages = messages.length;
+      const beforeFlags = countCompactionFlags(roundToolRecords);
+      roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+        ...roundCompactOptions,
+        referenceAssistantText: assistantContent,
+        referenceToolArguments: streamMetas.map((item) => item.rawArguments),
+      });
+      logRoundCompactionStats({
+        provider: 'openai-stream',
+        requestRound: round + 1,
+        toolRound: currentInputRound,
+        records: roundToolRecords,
+        beforeMessages,
+        afterMessages: messages.length,
+        beforeCompacted: beforeFlags.compacted,
+        beforePruned: beforeFlags.pruned,
+      });
 
       console.log(`[Executor] Tool calls completed in round ${round + 1}, requesting next output`);
       onChunk('\n\n[Tool calls completed, continuing generation...]\n');
     }
 
     onChunk('\n⚠️ Tool-call round limit reached, auto-continue stopped.\n');
+    return {
+      toolCompactionState: persistRoundToolState(roundToolRecords, currentInputRound),
+    };
   }
 
   private async callAnthropicAPI(
@@ -1398,12 +1637,17 @@ When running git clone without a user-specified destination, explicitly clone in
         const item = toolResults[i];
         if (!item || item.type !== 'tool_result') continue;
         const selected = selectedTools.find((s) => s.toolCallId === item.tool_use_id);
+        const executed = executedTools.find((s) => s.toolCallId === item.tool_use_id);
+        const meta = anthropicMetas.find((s) => s.toolUseId === item.tool_use_id);
         roundToolRecords.push({
           round: round + 1,
           toolName: selected?.toolName || '',
+          toolCallId: item.tool_use_id,
+          rawArguments: meta?.rawArguments || '',
           retention: classifyToolRetention(selected?.toolName || ''),
           messageRef: toolResultsMessage,
           blockIndex: i,
+          isError: executed?.status === 'failed',
         });
       }
       if (consistency.status === 'warning' && remediation && remediationAttempts < 2) {
@@ -1414,7 +1658,23 @@ When running git clone without a user-specified destination, explicitly clone in
         });
       }
 
-      roundCompactor.compact(messages, roundToolRecords, round + 1, roundCompactOptions);
+      const beforeMessages = messages.length;
+      const beforeFlags = countCompactionFlags(roundToolRecords);
+      roundCompactor.compact(messages, roundToolRecords, round + 1, {
+        ...roundCompactOptions,
+        referenceAssistantText: text,
+        referenceToolArguments: anthropicMetas.map((item) => item.rawArguments),
+      });
+      logRoundCompactionStats({
+        provider: 'anthropic',
+        requestRound: round + 1,
+        toolRound: round + 1,
+        records: roundToolRecords,
+        beforeMessages,
+        afterMessages: messages.length,
+        beforeCompacted: beforeFlags.compacted,
+        beforePruned: beforeFlags.pruned,
+      });
     }
 
     return `${finalText}\n\n⚠️ Tool-call round limit reached, auto-continue stopped.`.trim();
@@ -1551,7 +1811,10 @@ When running git clone without a user-specified destination, explicitly clone in
     }
   }
 
-  async executeStream(request: ExecuteRequest, onChunk: (chunk: string) => void): Promise<void> {
+  async executeStream(
+    request: ExecuteRequest,
+    onChunk: (chunk: string) => void
+  ): Promise<ExecuteStreamResult> {
     try {
       const fileConfig = await this.loadModelConfig();
       if (!fileConfig?.apiKey?.trim()) {
@@ -1577,7 +1840,7 @@ When running git clone without a user-specified destination, explicitly clone in
 
       // 根据提供商和协议类型调用相应的 API
       if (config.provider === 'openai') {
-        await this.callOpenAIAPIStream(
+        return await this.callOpenAIAPIStream(
           config,
           request.instruction,
           request.conversationHistory,
@@ -1586,7 +1849,8 @@ When running git clone without a user-specified destination, explicitly clone in
           request.mode,
           request.attachments || [],
           request.conversationId,
-          request.abortSignal
+          request.abortSignal,
+          request.toolCompactionState
         );
       } else if (config.provider === 'anthropic') {
         if ((request.attachments || []).length > 0) {
@@ -1603,6 +1867,7 @@ When running git clone without a user-specified destination, explicitly clone in
           request.abortSignal,
         );
         onChunk(response);
+        return { toolCompactionState: request.toolCompactionState };
       } else if (config.provider === 'custom') {
         // Custom endpoint, route by protocol type
         if (config.apiProtocol === 'anthropic') {
@@ -1619,9 +1884,10 @@ When running git clone without a user-specified destination, explicitly clone in
             request.abortSignal,
           );
           onChunk(response);
+          return { toolCompactionState: request.toolCompactionState };
         } else {
           // Default to OpenAI protocol
-          await this.callOpenAIAPIStream(
+          return await this.callOpenAIAPIStream(
             config,
             request.instruction,
             request.conversationHistory,
@@ -1630,7 +1896,8 @@ When running git clone without a user-specified destination, explicitly clone in
             request.mode,
             request.attachments || [],
             request.conversationId,
-            request.abortSignal
+            request.abortSignal,
+            request.toolCompactionState
           );
         }
       } else {

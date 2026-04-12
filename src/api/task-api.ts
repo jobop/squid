@@ -8,6 +8,10 @@ import { ExpertManager } from '../experts/manager';
 import type { Expert } from '../experts/types';
 import { ConversationManager } from '../conversation/manager';
 import type { Message as ConversationMessage } from '../conversation/manager';
+import {
+  distillAssistantHistoryContent,
+  loadAssistantHistoryDistillOptionsFromEnv,
+} from '../conversation/history-distiller';
 import { MemoryManager } from '../memory/manager';
 import type { MemoryCreateInput, MemoryUpdateInput } from '../memory/types';
 import { saveMemoryTool } from '../tools/save-memory';
@@ -1755,13 +1759,14 @@ Complete tasks based on the user's instructions.`;
 
         const executorConversationId =
           normalizeSyntheticConversationId(conversationId);
-        await this.executor.executeStream(
+        const streamResult = await this.executor.executeStream(
           {
             mode: normalizedRequest.mode,
             instruction: effectiveInstruction,
             workspace: normalizedRequest.workspace,
             conversationHistory,
             conversationId: executorConversationId,
+            toolCompactionState: this.conversationManager.getToolCompactionState(conversationId),
             attachments: mergedAttachments,
             abortSignal: runAbortController.signal,
           },
@@ -1770,12 +1775,31 @@ Complete tasks based on the user's instructions.`;
             onChunk(chunk);
           }
         );
+        if (streamResult?.toolCompactionState) {
+          await this.conversationManager.setToolCompactionState(
+            conversationId,
+            streamResult.toolCompactionState
+          );
+        }
 
         await this.conversationManager.addMessage(conversationId, 'user', normalizedRequest.instruction);
+        const assistantHistoryRaw = this.stripExecutionDecorationForHistory(fullResponse);
+        const distilledHistory = distillAssistantHistoryContent(
+          assistantHistoryRaw,
+          loadAssistantHistoryDistillOptionsFromEnv()
+        );
+        if (distilledHistory.compacted) {
+          appendAgentLog('task-stream', 'info', 'assistant history compacted before persistence', {
+            conversationId,
+            originalChars: distilledHistory.originalChars,
+            storedChars: distilledHistory.storedChars,
+            savedChars: distilledHistory.originalChars - distilledHistory.storedChars,
+          });
+        }
         await this.conversationManager.addMessage(
           conversationId,
           'assistant',
-          this.stripExecutionDecorationForHistory(fullResponse)
+          distilledHistory.content
         );
 
         const task = this.tasks.get(taskId);

@@ -86,6 +86,34 @@ export interface ModelProvider {
 }
 ```
 
+### 轮次感知上下文压缩（Round-aware）
+
+当前工具结果压缩基于 `src/tasks/round-context-compactor.ts`，核心规则如下：
+
+1. 轮次定义
+   - `requestRound`：单次 `executeTaskStream` 内部轮次（每次请求从 1 开始）。
+   - `toolRound`：会话级年龄轮次（跨请求累计），每次用户输入触发一次 `executeTaskStream` 时递增 1。
+   - 压缩年龄计算统一使用 `toolRound`。
+
+2. 年龄计算
+   - `baseRound = max(record.round, record.lastReferencedRound ?? record.round)`
+   - `age = currentToolRound - baseRound`
+   - 当 `age >= keepRounds` 时触发压缩。
+
+3. R0 优先剪裁（无占位）
+   - 错误结果（`isError=true`）可直接删除。
+   - 数据工具空结果（`[]/{}/null/""`）且未被后续引用时直接删除。
+
+4. 保留窗口
+   - 白名单数据工具 `read_file` / `grep` / `web_search` / `web_fetch`：强制 long 桶，固定 10 轮后压缩，不受 token 长度影响。
+   - 其余工具按输出长度分层：`short(<500)=2轮`，`mid(500-1999)=5轮`，`long(>=2000)=10轮`。
+
+5. 引用续命
+   - 若后续 assistant 文本或工具参数命中该结果锚点（路径、ID、关键词等），刷新 `lastReferencedRound`，从新基准轮次重新计龄。
+
+6. 窗口裁剪并行
+   - 除单条 tool_result 压缩外，当消息数或上下文占用超阈值时，仍会触发消息窗口裁剪（保留系统头 + 最近消息）。
+
 ## 扩展指南
 
 ### 添加新工具

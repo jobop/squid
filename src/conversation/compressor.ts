@@ -1,13 +1,22 @@
 // Conversation history compressor with 4-layer progressive strategy
 import type { Message } from './manager';
 
-const MICROCOMPACT_THRESHOLD = 0.70;
-const TRUNCATE_THRESHOLD = 0.75;
-const PARTIAL_COMPACT_THRESHOLD = 0.80;
-const FULL_COMPACT_THRESHOLD = 0.85;
+const DEFAULT_CONTEXT_LIMIT_TOKENS = 28_000;
+const DEFAULT_MICROCOMPACT_THRESHOLD = 0.50;
+const DEFAULT_TRUNCATE_THRESHOLD = 0.60;
+const DEFAULT_PARTIAL_COMPACT_THRESHOLD = 0.72;
+const DEFAULT_FULL_COMPACT_THRESHOLD = 0.82;
 
 const KEEP_RECENT_MESSAGES = 20;
 const KEEP_RECENT_AFTER_COMPACT = 10;
+
+export interface ConversationCompressionOptions {
+  contextLimitTokens?: number;
+  microcompactThreshold?: number;
+  truncateThreshold?: number;
+  partialCompactThreshold?: number;
+  fullCompactThreshold?: number;
+}
 
 export interface CompressionResult {
   messages: Message[];
@@ -17,10 +26,19 @@ export interface CompressionResult {
 }
 
 export class ConversationCompressor {
-  private modelContextLimit: number;
+  private readonly modelContextLimit: number;
+  private readonly microcompactThreshold: number;
+  private readonly truncateThreshold: number;
+  private readonly partialCompactThreshold: number;
+  private readonly fullCompactThreshold: number;
 
-  constructor(modelContextLimit: number = 100000) {
-    this.modelContextLimit = modelContextLimit;
+  constructor(options: ConversationCompressionOptions = {}) {
+    this.modelContextLimit = options.contextLimitTokens ?? DEFAULT_CONTEXT_LIMIT_TOKENS;
+    this.microcompactThreshold = options.microcompactThreshold ?? DEFAULT_MICROCOMPACT_THRESHOLD;
+    this.truncateThreshold = options.truncateThreshold ?? DEFAULT_TRUNCATE_THRESHOLD;
+    this.partialCompactThreshold =
+      options.partialCompactThreshold ?? DEFAULT_PARTIAL_COMPACT_THRESHOLD;
+    this.fullCompactThreshold = options.fullCompactThreshold ?? DEFAULT_FULL_COMPACT_THRESHOLD;
   }
 
   // Estimate token count (rough approximation: 1 token ≈ 4 characters)
@@ -156,12 +174,12 @@ export class ConversationCompressor {
     let strategy: CompressionResult['strategy'] = 'none';
 
     // Layer 1: Microcompact
-    if (usage > MICROCOMPACT_THRESHOLD) {
+    if (usage > this.microcompactThreshold) {
       result = this.microcompact(result);
       strategy = 'microcompact';
 
       const newUsage = this.estimateTokens(result) / this.modelContextLimit;
-      if (newUsage < TRUNCATE_THRESHOLD) {
+      if (newUsage < this.truncateThreshold) {
         return {
           messages: result,
           compressed: true,
@@ -172,12 +190,12 @@ export class ConversationCompressor {
     }
 
     // Layer 2: Smart Truncation
-    if (usage > TRUNCATE_THRESHOLD) {
+    if (usage > this.truncateThreshold) {
       result = this.truncate(result);
       strategy = 'truncate';
 
       const newUsage = this.estimateTokens(result) / this.modelContextLimit;
-      if (newUsage < PARTIAL_COMPACT_THRESHOLD) {
+      if (newUsage < this.partialCompactThreshold) {
         return {
           messages: result,
           compressed: true,
@@ -188,12 +206,12 @@ export class ConversationCompressor {
     }
 
     // Layer 3: Partial Compact
-    if (usage > PARTIAL_COMPACT_THRESHOLD && aiSummarizeFn) {
+    if (usage > this.partialCompactThreshold && aiSummarizeFn) {
       result = await this.partialCompact(result, aiSummarizeFn);
       strategy = 'partial';
 
       const newUsage = this.estimateTokens(result) / this.modelContextLimit;
-      if (newUsage < FULL_COMPACT_THRESHOLD) {
+      if (newUsage < this.fullCompactThreshold) {
         return {
           messages: result,
           compressed: true,
@@ -204,7 +222,7 @@ export class ConversationCompressor {
     }
 
     // Layer 4: Full Compact
-    if (usage > FULL_COMPACT_THRESHOLD && aiSummarizeFn) {
+    if (usage > this.fullCompactThreshold && aiSummarizeFn) {
       result = await this.fullCompact(result, aiSummarizeFn);
       strategy = 'full';
     }
@@ -239,4 +257,57 @@ export class ConversationCompressor {
     const tokens = this.estimateTokens(messages);
     return (tokens / this.modelContextLimit) * 100;
   }
+
+  getEstimatedTokens(messages: Message[]): number {
+    return this.estimateTokens(messages);
+  }
+
+  getAutoCompressTriggerPercentage(): number {
+    return this.microcompactThreshold * 100;
+  }
+}
+
+function parsePositiveInteger(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFraction(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 1 ? parsed : fallback;
+}
+
+export function loadConversationCompressionOptionsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): ConversationCompressionOptions {
+  const microRaw = parseFraction(
+    env.SQUID_CONV_MICRO_THRESHOLD,
+    DEFAULT_MICROCOMPACT_THRESHOLD
+  );
+  const truncateRaw = parseFraction(env.SQUID_CONV_TRUNCATE_THRESHOLD, DEFAULT_TRUNCATE_THRESHOLD);
+  const partialRaw = parseFraction(
+    env.SQUID_CONV_PARTIAL_THRESHOLD,
+    DEFAULT_PARTIAL_COMPACT_THRESHOLD
+  );
+  const fullRaw = parseFraction(env.SQUID_CONV_FULL_THRESHOLD, DEFAULT_FULL_COMPACT_THRESHOLD);
+
+  const microcompactThreshold = microRaw;
+  const truncateThreshold = truncateRaw > microcompactThreshold ? truncateRaw : microcompactThreshold;
+  const partialCompactThreshold =
+    partialRaw > truncateThreshold ? partialRaw : truncateThreshold;
+  const fullCompactThreshold =
+    fullRaw > partialCompactThreshold ? fullRaw : partialCompactThreshold;
+
+  return {
+    contextLimitTokens: parsePositiveInteger(
+      env.SQUID_CONV_CONTEXT_LIMIT_TOKENS,
+      DEFAULT_CONTEXT_LIMIT_TOKENS
+    ),
+    microcompactThreshold,
+    truncateThreshold,
+    partialCompactThreshold,
+    fullCompactThreshold,
+  };
 }
