@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODE="all" # all | cli | skill
-INSTALL_SKILLS=1
+MODE="all" # all | cli
 KIT_URL="https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/latest.tar.gz"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLED_SKILLS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)/skills"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -14,16 +12,12 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --skill-only)
-      MODE="skill"
-      shift
+      echo "Error: --skill-only is no longer supported. Skills are synced by TaskAPI startup." >&2
+      exit 1
       ;;
-    --no-skills)
-      INSTALL_SKILLS=0
-      shift
-      ;;
-    --with-skills)
-      INSTALL_SKILLS=1
-      shift
+    --no-skills|--with-skills)
+      echo "Error: --no-skills/--with-skills are no longer supported. Skills are synced by TaskAPI startup." >&2
+      exit 1
       ;;
     --kit-url)
       if [[ $# -lt 2 ]]; then
@@ -35,18 +29,17 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'USAGE'
-Usage: install-skillhub-for-squid.sh [--cli-only|--skill-only] [--no-skills|--with-skills] [--kit-url <url>]
+Usage: install-skillhub-for-squid.sh [--cli-only] [--kit-url <url>]
 
-Install skillhub CLI and optional skill templates for squid.
+Install skillhub CLI for squid.
 
 Defaults:
-  mode: all (install CLI + skills)
+  mode: all (install CLI)
   kit:  https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/latest.tar.gz
 
 Examples:
   bash scripts/install-skillhub-for-squid.sh
   bash scripts/install-skillhub-for-squid.sh --cli-only
-  bash scripts/install-skillhub-for-squid.sh --skill-only --with-skills
 USAGE
       exit 0
       ;;
@@ -90,10 +83,6 @@ INDEX_TARGET="${INSTALL_BASE}/skills_index.local.json"
 WRAPPER_TARGET="${BIN_DIR}/skillhub"
 INSTALL_WRAPPER_TARGET="${INSTALL_BASE}/skillhub"
 LEGACY_WRAPPER_TARGET="${BIN_DIR}/oc-skills"
-
-SQUID_SKILLS_DIR="${HOME}/.squid/skills"
-FIND_SKILL_TARGET_DIR="${SQUID_SKILLS_DIR}/find-skills"
-PREFERENCE_SKILL_TARGET_DIR="${SQUID_SKILLS_DIR}/skillhub-preference"
 
 install_cli() {
   mkdir -p "$INSTALL_BASE" "$BIN_DIR"
@@ -149,46 +138,8 @@ WRAPPER
   chmod +x "$LEGACY_WRAPPER_TARGET"
 }
 
-install_skills_for_squid() {
-  local bundled_find_skill_src="$BUNDLED_SKILLS_DIR/find-skills/SKILL.md"
-  local remote_find_skill_src="$CLI_SRC_DIR/skill/SKILL.md"
-  local find_skill_src="$remote_find_skill_src"
-  local preference_skill_src="$CLI_SRC_DIR/skill/SKILL.skillhub-preference.md"
-  local installed=0
-
-  if [[ -f "$bundled_find_skill_src" ]]; then
-    find_skill_src="$bundled_find_skill_src"
-  fi
-
-  if [[ -f "$find_skill_src" ]]; then
-    mkdir -p "$FIND_SKILL_TARGET_DIR"
-    cp "$find_skill_src" "$FIND_SKILL_TARGET_DIR/SKILL.md"
-    installed=1
-  else
-    echo "Warn: find-skills template not found (bundled=$bundled_find_skill_src, remote=$remote_find_skill_src)" >&2
-  fi
-
-  if [[ -f "$preference_skill_src" ]]; then
-    mkdir -p "$PREFERENCE_SKILL_TARGET_DIR"
-    cp "$preference_skill_src" "$PREFERENCE_SKILL_TARGET_DIR/SKILL.md"
-    installed=1
-  fi
-
-  if [[ "$installed" -ne 1 ]]; then
-    echo "Warn: no skill templates installed." >&2
-  fi
-}
-
 if [[ "$MODE" == "all" || "$MODE" == "cli" ]]; then
   install_cli
-fi
-
-if [[ "$MODE" == "all" || "$MODE" == "skill" ]]; then
-  if [[ "$INSTALL_SKILLS" -eq 1 ]]; then
-    install_skills_for_squid
-  else
-    echo "Info: skipped skill template installation by --no-skills"
-  fi
 fi
 
 echo "Install complete."
@@ -197,25 +148,10 @@ if [[ "$MODE" == "all" || "$MODE" == "cli" ]]; then
   echo "  cli: $WRAPPER_TARGET"
   echo "  cli: $INSTALL_WRAPPER_TARGET"
 fi
-if [[ "$MODE" == "all" || "$MODE" == "skill" ]]; then
-  if [[ "$INSTALL_SKILLS" -eq 1 ]]; then
-    echo "  skill: $FIND_SKILL_TARGET_DIR/SKILL.md"
-    if [[ -f "$PREFERENCE_SKILL_TARGET_DIR/SKILL.md" ]]; then
-      echo "  skill: $PREFERENCE_SKILL_TARGET_DIR/SKILL.md"
-    fi
-  else
-    echo "  skill: skipped (--no-skills)"
-  fi
-fi
 echo
 echo "Quick check:"
 if [[ "$MODE" == "all" || "$MODE" == "cli" ]]; then
   echo "  command -v skillhub && skillhub --help"
   echo "  test -x $INSTALL_WRAPPER_TARGET && $INSTALL_WRAPPER_TARGET --help"
-fi
-if [[ "$MODE" == "all" || "$MODE" == "skill" ]]; then
-  if [[ "$INSTALL_SKILLS" -eq 1 ]]; then
-    echo "  test -f $FIND_SKILL_TARGET_DIR/SKILL.md && echo find-skills-installed"
-  fi
 fi
 
