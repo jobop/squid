@@ -1799,15 +1799,6 @@
               </small>
             </div>
             <button class="btn" id="saveCompressionConfigBtn">Save Configuration</button>
-            <div style="margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 13px; color: #666;">
-              <strong id="compressionStrategyTitle">Compression strategy:</strong>
-              <ul style="margin: 8px 0 0 20px; padding: 0;">
-                <li id="compressionStrategyItem70">70%: Light compression - remove redundant content</li>
-                <li id="compressionStrategyItem75">75%: Smart truncation - keep recent messages</li>
-                <li id="compressionStrategyItem80">80%: Partial compression - summarize middle history</li>
-                <li id="compressionStrategyItem85">85%: Full compression - summarize all history</li>
-              </ul>
-            </div>
           </div>
         </div>
       </div>
@@ -3038,6 +3029,10 @@
       const saveWebSearchConfigBtn = document.getElementById('saveWebSearchConfigBtn');
       if (saveWebSearchConfigBtn) {
         saveWebSearchConfigBtn.addEventListener('click', () => saveWebSearchConfig());
+      }
+      const saveCompressionConfigBtn = document.getElementById('saveCompressionConfigBtn');
+      if (saveCompressionConfigBtn) {
+        saveCompressionConfigBtn.addEventListener('click', () => saveCompressionConfig());
       }
 
       const channelsBackBtn = document.getElementById('channelsBackBtn');
@@ -5038,6 +5033,7 @@
         sessionNewSuccess: 'Current session context cleared.',
         expertDescriptionRequired: 'Please enter an expert description',
         webSearchConfigSaved: 'Web search tool settings saved!',
+        compressionConfigSaved: 'Compression settings saved!',
         workspaceConfigSaved: 'Workspace configuration saved!',
         selectSessionFirst: 'Please select a session to delete first',
         deleteSessionConfirmPrefix: 'Delete session',
@@ -5062,11 +5058,6 @@
         webSearchProviderHelp: 'Maps to tools.webSearch.provider. WEB_SEARCH_PROVIDER (bing / duckduckgo) takes precedence.',
         compressionThresholdHelp: 'Auto compression triggers when token usage reaches this threshold (recommended 70-80%)',
         contextLimitHelp: 'Maximum context window size for the model',
-        compressionStrategyTitle: 'Compression strategy:',
-        compressionStrategyItem70: '70%: Light compression - remove redundant content',
-        compressionStrategyItem75: '75%: Smart truncation - keep recent messages',
-        compressionStrategyItem80: '80%: Partial compression - summarize middle history',
-        compressionStrategyItem85: '85%: Full compression - summarize all history',
         agentLogsAutoRefreshLabel: 'Auto refresh',
         agentLogsDescription: 'Records local agent tasks and tool calls (keeps about 800 recent in memory, excluding API keys). Channel-queued tasks are included too.',
         imagePreviewAriaLabel: 'Image Preview',
@@ -5336,6 +5327,7 @@
         sessionNewSuccess: '已清空当前会话上下文',
         expertDescriptionRequired: '请输入专家描述',
         webSearchConfigSaved: '工具设置（联网搜索）已保存！',
+        compressionConfigSaved: '压缩设置已保存！',
         workspaceConfigSaved: '工作目录配置保存成功！',
         selectSessionFirst: '请先在左侧选择要删除的会话',
         deleteSessionConfirmPrefix: '确定要删除会话',
@@ -5360,11 +5352,6 @@
         webSearchProviderHelp: '对应 tools.webSearch.provider。环境变量 WEB_SEARCH_PROVIDER（bing / duckduckgo）优先。',
         compressionThresholdHelp: '当对话 token 使用率达到此阈值时自动触发压缩（建议 70-80%）',
         contextLimitHelp: '模型的最大上下文窗口大小',
-        compressionStrategyTitle: '压缩策略：',
-        compressionStrategyItem70: '70%：微压缩 - 清除冗余内容',
-        compressionStrategyItem75: '75%：智能截断 - 保留最近消息',
-        compressionStrategyItem80: '80%：部分压缩 - AI 摘要中间部分',
-        compressionStrategyItem85: '85%：完整压缩 - AI 摘要全部历史',
         agentLogsAutoRefreshLabel: '自动刷新',
         agentLogsDescription: '记录本机 Agent 任务与工具调用（内存保留最近约 800 条，不含 API Key）。渠道队列触发的任务也会写入。',
         imagePreviewAriaLabel: '图片预览',
@@ -5661,11 +5648,6 @@
       setTextById('compressionThresholdHelp', getUiText('compressionThresholdHelp'));
       setTextById('contextLimitLabel', getUiText('contextLimitLabel'));
       setTextById('contextLimitHelp', getUiText('contextLimitHelp'));
-      setTextById('compressionStrategyTitle', getUiText('compressionStrategyTitle'));
-      setTextById('compressionStrategyItem70', getUiText('compressionStrategyItem70'));
-      setTextById('compressionStrategyItem75', getUiText('compressionStrategyItem75'));
-      setTextById('compressionStrategyItem80', getUiText('compressionStrategyItem80'));
-      setTextById('compressionStrategyItem85', getUiText('compressionStrategyItem85'));
       setTextById('agentLogsAutoRefreshLabel', getUiText('agentLogsAutoRefreshLabel'));
       setTextById('agentLogsDescription', getUiText('agentLogsDescription'));
       setAriaLabelById('imagePreviewDialog', getUiText('imagePreviewAriaLabel'));
@@ -5867,6 +5849,27 @@
       }
     }
 
+    async function saveCompressionConfig() {
+      const compressionThreshold = Number(document.getElementById('compressionThreshold').value);
+      const contextLimit = Number(document.getElementById('contextLimit').value);
+
+      try {
+        const response = await fetch('http://localhost:50001/api/config/compression', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ compressionThreshold, contextLimit })
+        });
+        const result = await response.json();
+        if (result.success) {
+          showNotification(getUiText('compressionConfigSaved') || getUiText('workspaceConfigSaved'), 'success');
+        } else {
+          showNotification(getUiText('saveFailed') + (result.error || 'unknown'), 'error');
+        }
+      } catch (error) {
+        showNotification(getUiText('genericError') + error.message, 'error');
+      }
+    }
+
     async function loadModelConfig() {
       try {
         const response = await fetch('http://localhost:50001/api/config/model');
@@ -5906,6 +5909,23 @@
           if (workspaceConfig.workspace) {
             document.getElementById('defaultWorkspace').value = workspaceConfig.workspace;
             document.getElementById('workspace').value = workspaceConfig.workspace;
+          }
+        }
+
+        const compressionResponse = await fetch('http://localhost:50001/api/config/compression');
+        if (compressionResponse.ok) {
+          const compressionConfig = await compressionResponse.json();
+          const thresholdInput = document.getElementById('compressionThreshold');
+          const contextLimitInput = document.getElementById('contextLimit');
+          if (thresholdInput) {
+            thresholdInput.value = Number.isFinite(Number(compressionConfig.compressionThreshold))
+              ? String(compressionConfig.compressionThreshold)
+              : '70';
+          }
+          if (contextLimitInput) {
+            contextLimitInput.value = Number.isFinite(Number(compressionConfig.contextLimit))
+              ? String(compressionConfig.contextLimit)
+              : '100000';
           }
         }
       } catch (error) {

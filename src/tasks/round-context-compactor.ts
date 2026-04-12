@@ -31,6 +31,7 @@ interface CompactOptions {
   recentMessagesToKeep?: number;
   referenceAssistantText?: string;
   referenceToolArguments?: string[];
+  aiSummarizeFn?: (messages: GenericMessage[]) => Promise<string>;
 }
 export type RoundCompactOptions = CompactOptions;
 
@@ -41,6 +42,7 @@ const DEFAULT_MID_KEEP_ROUNDS = 5;
 const DEFAULT_LONG_KEEP_ROUNDS = 10;
 const DEFAULT_MAX_MESSAGES = 44;
 const DEFAULT_RECENT_MESSAGES_TO_KEEP = 28;
+const LAYER3_WINDOW_USAGE_THRESHOLD = 0.95;
 const SHORT_OUTPUT_TOKENS = 500;
 const LONG_OUTPUT_TOKENS = 2000;
 
@@ -80,6 +82,28 @@ function truncateMiddle(text: string, maxChars: number): string {
   const head = Math.floor((maxChars - 3) / 2);
   const tail = maxChars - 3 - head;
   return `${text.slice(0, head)}...${text.slice(text.length - tail)}`;
+}
+
+function contentToText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue;
+      const typed = block as Record<string, unknown>;
+      if (typeof typed.content === 'string') {
+        parts.push(typed.content);
+      } else if (typeof typed.text === 'string') {
+        parts.push(typed.text);
+      }
+    }
+    if (parts.length > 0) return parts.join('\n');
+  }
+  try {
+    return JSON.stringify(content ?? '');
+  } catch {
+    return '';
+  }
 }
 
 function normalizeToolName(toolName: string): string {
@@ -266,17 +290,15 @@ export function loadRoundCompactOptionsFromEnv(
 }
 
 export class RoundContextCompactor {
-  compact(
+  async compact(
     messages: GenericMessage[],
     records: RoundToolRecord[],
     currentRound: number,
     options: CompactOptions = {}
-  ): void {
+  ): Promise<void> {
     const contextLimitTokens = options.contextLimitTokens ?? DEFAULT_CONTEXT_LIMIT_TOKENS;
     const compactUsageThreshold = options.compactUsageThreshold ?? DEFAULT_COMPACT_USAGE_THRESHOLD;
-    const maxMessages = options.maxMessages ?? DEFAULT_MAX_MESSAGES;
     const recentMessagesToKeep = options.recentMessagesToKeep ?? DEFAULT_RECENT_MESSAGES_TO_KEEP;
-    const usage = estimateTokens(messages) / contextLimitTokens;
 
     const referenceAssistantText = options.referenceAssistantText || '';
     const referenceToolArguments = options.referenceToolArguments || [];
@@ -336,32 +358,130 @@ export class RoundContextCompactor {
       record.compacted = true;
     }
 
-    const shouldWindowMessages = usage >= compactUsageThreshold || messages.length > maxMessages;
-    if (!shouldWindowMessages || messages.length <= maxMessages) {
+    const usageAfterRoundLayer = estimateTokens(messages) / contextLimitTokens;
+    if (usageAfterRoundLayer < compactUsageThreshold) {
       return;
     }
 
-    this.applyWindow(messages, recentMessagesToKeep);
+    const summarized = await this.applyUsageSummary(
+      messages,
+      recentMessagesToKeep,
+      options.aiSummarizeFn
+    );
+    if (!summarized) {
+      return;
+    }
+    const usageAfterSummary = estimateTokens(messages) / contextLimitTokens;
+    if (usageAfterSummary < LAYER3_WINDOW_USAGE_THRESHOLD) {
+      return;
+    }
+
+    this.applyWindow(messages, recentMessagesToKeep, contextLimitTokens, LAYER3_WINDOW_USAGE_THRESHOLD);
   }
 
-  private applyWindow(messages: GenericMessage[], recentMessagesToKeep: number): void {
-    if (messages.length <= recentMessagesToKeep + 1) return;
-    const systemHead = messages[0];
-    const tail = messages.slice(-recentMessagesToKeep);
-    const keptTail = tail.filter((msg) => msg !== systemHead);
-    const droppedCount = messages.length - (1 + keptTail.length);
-    if (droppedCount <= 0) return;
+  private async applyUsageSummary(
+    messages: GenericMessage[],
+    recentMessagesToKeep: number,
+    aiSummarizeFn?: (messages: GenericMessage[]) => Promise<string>
+  ): Promise<boolean> {
+    if (messages.length <= 2) return false;
+    if (!aiSummarizeFn) return false;
+    const keepRecent = Math.max(2, recentMessagesToKeep);
+    const hasSystemHead =
+      typeof messages[0]?.role === 'string' && String(messages[0].role) === 'system';
+    const summaryStart = hasSystemHead ? 1 : 0;
+    const summaryEnd = Math.max(summaryStart + 1, messages.length - keepRecent);
+    if (summaryEnd <= summaryStart) return false;
 
-    if (typeof systemHead?.role === 'string' && systemHead.role === 'system') {
-      const marker: GenericMessage = {
-        role: 'system',
-        content: `[round_context_windowed] Omitted ${droppedCount} earlier intermediate messages to control context size.`,
-      };
-      messages.splice(0, messages.length, systemHead, marker, ...keptTail);
-      return;
+    const source = messages.slice(summaryStart, summaryEnd);
+    if (source.length < 2) return false;
+    const sourceChars = source.reduce((acc, msg) => acc + contentToText(msg.content).length + 16, 0);
+    if (sourceChars <= 0) return false;
+
+    const briefLine = (msg: GenericMessage, maxChars = 180): string => {
+      const role = typeof msg.role === 'string' ? msg.role : 'unknown';
+      const text = truncateMiddle(contentToText(msg.content), maxChars).replace(/\s+/g, ' ').trim();
+      return `[${role}] ${text}`;
+    };
+    const summaryHeader = `[round_context_summary] summarized_messages=${source.length}`;
+    const llmInput = source.map((msg) => ({
+      role: typeof msg.role === 'string' ? msg.role : 'unknown',
+      content: truncateMiddle(contentToText(msg.content), 3200),
+    }));
+
+    let llmSummary = '';
+    try {
+      llmSummary = (await aiSummarizeFn(llmInput)).trim();
+    } catch {
+      return false;
+    }
+    if (!llmSummary) return false;
+
+    const maxSummaryChars = Math.max(240, Math.min(1200, Math.floor(sourceChars * 0.45)));
+    let summaryText =
+      llmSummary.length > maxSummaryChars
+        ? `${summaryHeader}\n\n${truncateMiddle(llmSummary, Math.max(80, maxSummaryChars - summaryHeader.length - 2))}`
+        : `${summaryHeader}\n\n${llmSummary}`;
+
+    // Hard guard: summary must be shorter than original segment.
+    if (summaryText.length >= sourceChars) {
+      const fallback = source.slice(-3).map((msg) => briefLine(msg, 72)).join(' | ');
+      summaryText = `${summaryHeader}\n[summary_compacted] ${truncateMiddle(fallback, Math.max(80, Math.floor(sourceChars * 0.35)))}`;
+    }
+    const sourcePreview = truncateMiddle(
+      source
+        .map((msg) => `[${String(msg.role || 'unknown')}] ${contentToText(msg.content)}`)
+        .join('\n'),
+      3000
+    );
+    const summaryPreview = truncateMiddle(summaryText, 3000);
+    const summaryRatio = (summaryText.length / Math.max(sourceChars, 1)).toFixed(3);
+    const usedFallback = summaryText.includes('[summary_compacted]');
+    console.log(
+      `[RoundCompactor][Layer2] beforeChars=${sourceChars} afterChars=${summaryText.length} ratio=${summaryRatio} fallback=${usedFallback}`
+    );
+    console.log(`[RoundCompactor][Layer2][beforePreview]\n${sourcePreview}`);
+    console.log(`[RoundCompactor][Layer2][afterPreview]\n${summaryPreview}`);
+
+    const summaryMessage: GenericMessage = {
+      role: 'system',
+      content: summaryText,
+    };
+
+    const next = hasSystemHead
+      ? [messages[0], summaryMessage, ...messages.slice(summaryEnd)]
+      : [summaryMessage, ...messages.slice(summaryEnd)];
+    messages.splice(0, messages.length, ...next);
+    return true;
+  }
+
+  private applyWindow(
+    messages: GenericMessage[],
+    recentMessagesToKeep: number,
+    contextLimitTokens: number,
+    targetUsage: number
+  ): void {
+    const hasSystemHead =
+      typeof messages[0]?.role === 'string' && String(messages[0].role) === 'system';
+    const floorSize = hasSystemHead ? 1 : 0;
+    const removeAt = hasSystemHead ? 1 : 0;
+    let droppedCount = 0;
+
+    while (
+      messages.length > floorSize &&
+      estimateTokens(messages) / contextLimitTokens >= targetUsage
+    ) {
+      messages.splice(removeAt, 1);
+      droppedCount += 1;
     }
 
-    messages.splice(0, messages.length, systemHead, ...keptTail);
+    if (droppedCount <= 0) return;
+
+    const marker: GenericMessage = {
+      role: 'system',
+      content: `[round_context_windowed] Omitted ${droppedCount} earlier intermediate messages to satisfy usage threshold.`,
+    };
+    messages.splice(hasSystemHead ? 1 : 0, 0, marker);
   }
 }
 

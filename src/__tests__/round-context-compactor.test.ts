@@ -6,8 +6,27 @@ import {
   type RoundToolRecord,
 } from '../tasks/round-context-compactor';
 
+function estimateUsage(messages: Array<Record<string, unknown>>, contextLimitTokens: number): number {
+  let totalChars = 0;
+  for (const message of messages) {
+    const role = typeof message.role === 'string' ? message.role : '';
+    totalChars += role.length;
+    const content = message.content;
+    if (typeof content === 'string') {
+      totalChars += content.length;
+    } else {
+      try {
+        totalChars += JSON.stringify(content ?? '').length;
+      } catch {
+        totalChars += 0;
+      }
+    }
+  }
+  return Math.ceil(totalChars / 4) / contextLimitTokens;
+}
+
 describe('RoundContextCompactor', () => {
-  it('非工具轮不会推进工具结果年龄', () => {
+  it('非工具轮不会推进工具结果年龄', async () => {
     const compactor = new RoundContextCompactor();
     const readFileMessage: Record<string, unknown> = {
       role: 'tool',
@@ -29,7 +48,7 @@ describe('RoundContextCompactor', () => {
     ];
 
     // Simulate a non-tool text turn: current round still equals record round.
-    compactor.compact(messages, records, 2, {
+    await compactor.compact(messages, records, 2, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -38,7 +57,7 @@ describe('RoundContextCompactor', () => {
     expect(String(readFileMessage.content)).not.toContain('[tool_result_compacted_v2]');
   });
 
-  it('短输出超过2轮未引用后应压缩', () => {
+  it('短输出超过2轮未引用后应压缩', async () => {
     const compactor = new RoundContextCompactor();
     const processMessage: Record<string, unknown> = {
       role: 'tool',
@@ -59,7 +78,7 @@ describe('RoundContextCompactor', () => {
       },
     ];
 
-    compactor.compact(messages, records, 4, {
+    await compactor.compact(messages, records, 4, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -68,7 +87,7 @@ describe('RoundContextCompactor', () => {
     expect(String(processMessage.content)).toContain('bucket=short');
   });
 
-  it('长输出在10轮窗口内应保留，超过后压缩', () => {
+  it('长输出在10轮窗口内应保留，超过后压缩', async () => {
     const compactor = new RoundContextCompactor();
     const longMessage: Record<string, unknown> = {
       role: 'tool',
@@ -89,14 +108,14 @@ describe('RoundContextCompactor', () => {
       },
     ];
 
-    compactor.compact(messages, records, 10, {
+    await compactor.compact(messages, records, 10, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
     expect(String(longMessage.content)).toContain('LONG_RESULT:');
     expect(String(longMessage.content)).not.toContain('[tool_result_compacted_v2]');
 
-    compactor.compact(messages, records, 11, {
+    await compactor.compact(messages, records, 11, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -105,7 +124,7 @@ describe('RoundContextCompactor', () => {
     expect(String(longMessage.content)).toContain('bucket=long');
   });
 
-  it('白名单数据工具即使短输出也按10轮保留', () => {
+  it('白名单数据工具即使短输出也按10轮保留', async () => {
     const compactor = new RoundContextCompactor();
     const shortWebFetchMessage: Record<string, unknown> = {
       role: 'tool',
@@ -126,13 +145,13 @@ describe('RoundContextCompactor', () => {
       },
     ];
 
-    compactor.compact(messages, records, 10, {
+    await compactor.compact(messages, records, 10, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
     expect(String(shortWebFetchMessage.content)).not.toContain('[tool_result_compacted_v2]');
 
-    compactor.compact(messages, records, 11, {
+    await compactor.compact(messages, records, 11, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -140,7 +159,7 @@ describe('RoundContextCompactor', () => {
     expect(String(shortWebFetchMessage.content)).toContain('bucket=long');
   });
 
-  it('R0: 无效子调用直接删除且不留占位', () => {
+  it('R0: 无效子调用直接删除且不留占位', async () => {
     const compactor = new RoundContextCompactor();
     const validMessage: Record<string, unknown> = {
       role: 'tool',
@@ -176,7 +195,7 @@ describe('RoundContextCompactor', () => {
       },
     ];
 
-    compactor.compact(messages, records, 2, {
+    await compactor.compact(messages, records, 2, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -187,7 +206,7 @@ describe('RoundContextCompactor', () => {
     expect(allContent).not.toContain('tool_result_dropped');
   });
 
-  it('被后续参数引用的结果应续命并延迟压缩', () => {
+  it('被后续参数引用的结果应续命并延迟压缩', async () => {
     const compactor = new RoundContextCompactor();
     const shortMessage: Record<string, unknown> = {
       role: 'tool',
@@ -208,7 +227,7 @@ describe('RoundContextCompactor', () => {
       },
     ];
 
-    compactor.compact(messages, records, 3, {
+    await compactor.compact(messages, records, 3, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
       referenceToolArguments: ['{"target":"doc_123"}'],
@@ -218,7 +237,7 @@ describe('RoundContextCompactor', () => {
     expect(String(shortMessage.content)).toContain('doc_123');
     expect(String(shortMessage.content)).not.toContain('[tool_result_compacted_v2]');
 
-    compactor.compact(messages, records, 5, {
+    await compactor.compact(messages, records, 5, {
       contextLimitTokens: 60,
       compactUsageThreshold: 0.01,
     });
@@ -226,7 +245,7 @@ describe('RoundContextCompactor', () => {
     expect(String(shortMessage.content)).toContain('[tool_result_compacted_v2]');
   });
 
-  it('超长消息窗口化时保留系统头和最近消息', () => {
+  it('第二层仅由usage触发摘要，不受消息条数影响', async () => {
     const compactor = new RoundContextCompactor();
     const messages: Array<Record<string, unknown>> = [
       { role: 'system', content: 'system prompt' },
@@ -235,16 +254,71 @@ describe('RoundContextCompactor', () => {
       messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `m-${i}` });
     }
 
-    compactor.compact(messages, [], 1, {
+    await compactor.compact(messages, [], 1, {
       contextLimitTokens: 100000,
+      compactUsageThreshold: 0.99,
       maxMessages: 10,
       recentMessagesToKeep: 6,
     });
 
-    expect(messages.length).toBe(8);
+    expect(messages.length).toBe(21);
+    expect(String(messages[1]?.content)).toBe('m-0');
+    expect(messages.some((m) => String(m.content).includes('[round_context_summary]'))).toBe(false);
+    expect(messages.some((m) => String(m.content).includes('[round_context_windowed]'))).toBe(false);
+  });
+
+  it('第二层触发后应生成摘要，不做截断窗口', async () => {
+    const compactor = new RoundContextCompactor();
+    const messages: Array<Record<string, unknown>> = [
+      { role: 'system', content: 'system prompt' },
+    ];
+    for (let i = 0; i < 18; i++) {
+      messages.push({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `long-message-${i}-` + 'x'.repeat(420),
+      });
+    }
+
+    await compactor.compact(messages, [], 1, {
+      contextLimitTokens: 8000,
+      compactUsageThreshold: 0.2,
+      recentMessagesToKeep: 6,
+      aiSummarizeFn: async (source) =>
+        `LLM摘要：共${source.length}条，目标是执行 bash 并返回 ok，过程正常。`,
+    });
+
+    expect(messages[0]?.role).toBe('system');
+    expect(messages.some((m) => String(m.content).includes('[round_context_summary]'))).toBe(true);
+    expect(messages.some((m) => String(m.content).includes('[round_context_windowed]'))).toBe(false);
+  });
+
+  it('第三层在摘要后usage仍>=95%时执行历史截取', async () => {
+    const compactor = new RoundContextCompactor();
+    const contextLimitTokens = 1200;
+    const beforeMessagesCount = 21;
+    const messages: Array<Record<string, unknown>> = [
+      { role: 'system', content: 'system prompt' },
+    ];
+    for (let i = 0; i < 20; i++) {
+      messages.push({
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `very-long-${i}-` + 'y'.repeat(1800),
+      });
+    }
+
+    await compactor.compact(messages, [], 1, {
+      contextLimitTokens,
+      compactUsageThreshold: 0.2,
+      recentMessagesToKeep: 6,
+      aiSummarizeFn: async (source) =>
+        `LLM摘要：共${source.length}条，包含大量历史内容，继续压缩前仍可能超过阈值。`,
+    });
+
+    expect(messages.length).toBeLessThan(beforeMessagesCount);
     expect(messages[0]?.role).toBe('system');
     expect(String(messages[1]?.content)).toContain('[round_context_windowed]');
-    expect(String(messages[messages.length - 1]?.content)).toBe('m-19');
+    expect(String(messages[messages.length - 1]?.content)).toContain('very-long-19-');
+    expect(estimateUsage(messages, contextLimitTokens)).toBeLessThan(0.95);
   });
 
   it('支持从环境变量加载轮间压缩阈值', () => {

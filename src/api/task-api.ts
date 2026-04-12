@@ -2293,6 +2293,93 @@ Complete tasks based on the user's instructions.`;
     }
   }
 
+  async getCompressionConfig(): Promise<{ compressionThreshold: number; contextLimit: number }> {
+    try {
+      const { readFile } = await import('fs/promises');
+      const { join } = await import('path');
+      const { homedir } = await import('os');
+
+      const configPath = join(homedir(), '.squid', 'config.json');
+      const content = await readFile(configPath, 'utf-8');
+      const root = JSON.parse(content) as Record<string, any>;
+      const raw = (root.compression || {}) as Record<string, unknown>;
+      const compressionThreshold = Number(raw.compressionThreshold);
+      const contextLimit = Number(raw.contextLimit);
+      const normalizedThreshold =
+        Number.isFinite(compressionThreshold) && compressionThreshold >= 50 && compressionThreshold <= 90
+          ? Math.round(compressionThreshold)
+          : 70;
+      const normalizedContextLimit =
+        Number.isFinite(contextLimit) && contextLimit >= 10000
+          ? Math.round(contextLimit)
+          : 100000;
+      return {
+        compressionThreshold: normalizedThreshold,
+        contextLimit: normalizedContextLimit,
+      };
+    } catch {
+      return {
+        compressionThreshold: 70,
+        contextLimit: 100000,
+      };
+    }
+  }
+
+  async saveCompressionConfig(config: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { mkdir, readFile, writeFile } = await import('fs/promises');
+      const { join } = await import('path');
+      const { homedir } = await import('os');
+
+      const threshold = Number(config?.compressionThreshold);
+      const contextLimit = Number(config?.contextLimit);
+      if (!Number.isFinite(threshold) || threshold < 50 || threshold > 90) {
+        return {
+          success: false,
+          error: 'compressionThreshold must be between 50 and 90',
+        };
+      }
+      if (!Number.isFinite(contextLimit) || contextLimit < 10000) {
+        return {
+          success: false,
+          error: 'contextLimit must be at least 10000',
+        };
+      }
+
+      const normalizedThreshold = Math.round(threshold);
+      const normalizedContextLimit = Math.round(contextLimit);
+
+      const configDir = join(homedir(), '.squid');
+      await mkdir(configDir, { recursive: true });
+
+      const configPath = join(configDir, 'config.json');
+      let existingConfig: Record<string, unknown> = {};
+      try {
+        const content = await readFile(configPath, 'utf-8');
+        existingConfig = JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        // File doesn't exist
+      }
+
+      existingConfig.compression = {
+        compressionThreshold: normalizedThreshold,
+        contextLimit: normalizedContextLimit,
+      };
+      await writeFile(configPath, JSON.stringify(existingConfig, null, 2), 'utf-8');
+
+      // 同步到进程环境变量，供 round-aware 压缩实时生效。
+      process.env.SQUID_ROUND_COMPACT_USAGE_THRESHOLD = String(normalizedThreshold / 100);
+      process.env.SQUID_ROUND_COMPACT_CONTEXT_LIMIT_TOKENS = String(normalizedContextLimit);
+
+      return { success: true };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
   /** 联网搜索：config.json → tools.webSearch.provider（与大模型无关） */
   async getWebSearchConfig(): Promise<{ webSearchProvider: 'duckduckgo' | 'bing' }> {
     try {

@@ -386,10 +386,167 @@ export class TaskExecutor {
       const configPath = join(homedir(), '.squid', 'config.json');
       const content = await readFile(configPath, 'utf-8');
       const config = JSON.parse(content);
+      const compression = config?.compression as
+        | { compressionThreshold?: unknown; contextLimit?: unknown }
+        | undefined;
+      const threshold = Number(compression?.compressionThreshold);
+      const contextLimit = Number(compression?.contextLimit);
+      if (Number.isFinite(threshold) && threshold > 0 && threshold < 100) {
+        process.env.SQUID_ROUND_COMPACT_USAGE_THRESHOLD = String(threshold / 100);
+      }
+      if (Number.isFinite(contextLimit) && contextLimit > 0) {
+        process.env.SQUID_ROUND_COMPACT_CONTEXT_LIMIT_TOKENS = String(Math.floor(contextLimit));
+      }
       return config.model || null;
     } catch (error) {
       return null;
     }
+  }
+
+  private buildRoundUsageSummaryFn(
+    config: ModelConfig,
+    abortSignal?: AbortSignal
+  ): (messages: Array<Record<string, unknown>>) => Promise<string> {
+    const formatCompactSummary = (raw: string): string => {
+      let text = (raw || '').trim();
+      if (!text) return '';
+      text = text.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim();
+      const summaryMatch = text.match(/<summary>([\s\S]*?)<\/summary>/i);
+      if (summaryMatch && typeof summaryMatch[1] === 'string') {
+        text = summaryMatch[1].trim();
+      }
+      return text.replace(/\n{3,}/g, '\n\n').trim();
+    };
+
+    return async (messages: Array<Record<string, unknown>>) => {
+      if (!messages.length) return '';
+      const compactMessages = messages.map((msg, index) => ({
+        i: index + 1,
+        role: typeof msg.role === 'string' ? msg.role : 'unknown',
+        content: truncateMiddleText(extractMessageContentAsString(msg.content), 1200),
+      }));
+      const sourceChars = compactMessages.reduce((acc, msg) => acc + msg.content.length + 16, 0);
+      const targetChars = Math.max(160, Math.min(900, Math.floor(sourceChars * 0.4)));
+      const sourceText = compactMessages
+        .map((msg) => `[${msg.i}|${msg.role}] ${msg.content}`)
+        .join('\n');
+      appendAgentLog('executor', 'info', 'Layer2 summary before (llm input)', {
+        sourceMessageCount: compactMessages.length,
+        sourceChars,
+        targetChars,
+        sourcePreview: truncateMiddleText(sourceText, 3000),
+      });
+      const summarizeInstruction = [
+        'CRITICAL: 仅输出文本，不允许调用任何工具。',
+        '',
+        '你是上下文压缩器，不是问答助手。你的任务是压缩历史对话，供后续续写使用。',
+        '先在 <analysis> 中简要思考，再在 <summary> 中给出最终结果。',
+        '最终仅 <summary> 会被使用，因此必须把有效信息写进 <summary>。',
+        '',
+        '硬约束（必须满足）：',
+        `1) 摘要总长度 <= ${targetChars} 字符；`,
+        '2) 最多 6 行，每行一个要点；',
+        '3) 不得复制大段 payload / 日志正文 / 长输出；',
+        '4) 保留：用户目标、关键结论、关键工具证据（工具名+结论）、待办；',
+        '5) 若信息不足，写“信息不足”而不是编造。',
+        '',
+        '建议格式（保持精简）：',
+        '- 目标: ...',
+        '- 结论: ...',
+        '- 工具证据: ...',
+        '- 待办: ...',
+        '',
+        '输出模板（严格遵守）：',
+        '<analysis>',
+        '...你的简短分析...',
+        '</analysis>',
+        '<summary>',
+        '- 目标: ...',
+        '- 结论: ...',
+        '- 工具证据: ...',
+        '- 待办: ...',
+        '</summary>',
+        '',
+        JSON.stringify(compactMessages),
+        '',
+        'REMINDER: 不要调用任何工具；不要输出 <summary> 之外的额外解释文本。',
+      ].join('\n');
+
+      const protocol =
+        config.provider === 'anthropic' || config.apiProtocol === 'anthropic' ? 'anthropic' : 'openai';
+      const endpoint = config.apiEndpoint || (protocol === 'anthropic'
+        ? 'https://api.anthropic.com/v1'
+        : 'https://api.openai.com/v1');
+
+      if (protocol === 'anthropic') {
+        const payload = {
+          model: config.modelName || 'claude-3-5-sonnet-20241022',
+          max_tokens: Math.min(config.maxTokens || 4096, 700),
+          temperature: 0.2,
+          messages: [{ role: 'user', content: summarizeInstruction }],
+        };
+        const response = await fetch(`${endpoint}/messages`, {
+          method: 'POST',
+          headers: {
+            'x-api-key': config.apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          signal: abortSignal,
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(`summary API failed: ${response.status} ${await response.text()}`);
+        const result = await response.json();
+        const text = Array.isArray(result.content)
+          ? result.content
+              .filter((item: any) => item?.type === 'text' && typeof item.text === 'string')
+              .map((item: any) => item.text)
+              .join('\n')
+          : '';
+        const summaryText = formatCompactSummary(text);
+        appendAgentLog('executor', 'info', 'Layer2 summary after (llm output)', {
+          provider: 'anthropic',
+          summaryChars: summaryText.length,
+          summaryPreview: truncateMiddleText(summaryText, 3000),
+        });
+        return summaryText;
+      }
+
+      const payload = {
+        model: config.modelName || 'gpt-4-turbo',
+        temperature: 0.2,
+        max_tokens: Math.min(config.maxTokens || 4096, 700),
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a context compressor. Return concise summary bullets only.',
+          },
+          {
+            role: 'user',
+            content: summarizeInstruction,
+          },
+        ],
+      };
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: abortSignal,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(`summary API failed: ${response.status} ${await response.text()}`);
+      const result = await response.json();
+      const text = result?.choices?.[0]?.message?.content;
+      const summaryText = formatCompactSummary(typeof text === 'string' ? text : '');
+      appendAgentLog('executor', 'info', 'Layer2 summary after (llm output)', {
+        provider: 'openai',
+        summaryChars: summaryText.length,
+        summaryPreview: truncateMiddleText(summaryText, 3000),
+      });
+      return summaryText;
+    };
   }
 
   private async executeToolAndFormatResult(params: {
@@ -624,6 +781,7 @@ export class TaskExecutor {
     const roundCompactor = new RoundContextCompactor();
     const roundCompactOptions = loadRoundCompactOptionsFromEnv();
     const roundToolRecords: RoundToolRecord[] = [];
+    const usageSummaryFn = this.buildRoundUsageSummaryFn(config);
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
     const toolsParam = tools.length > 0 ? tools.map(t => ({
@@ -848,10 +1006,11 @@ export class TaskExecutor {
 
       const beforeMessages = messages.length;
       const beforeFlags = countCompactionFlags(roundToolRecords);
-      roundCompactor.compact(messages, roundToolRecords, round + 1, {
+      await roundCompactor.compact(messages, roundToolRecords, round + 1, {
         ...roundCompactOptions,
         referenceAssistantText: assistantContent,
         referenceToolArguments: toolMetas.map((item) => item.rawArguments),
+        aiSummarizeFn: usageSummaryFn,
       });
       logRoundCompactionStats({
         provider: 'openai',
@@ -896,6 +1055,7 @@ export class TaskExecutor {
       messages,
       persistedToolState
     );
+    const usageSummaryFn = this.buildRoundUsageSummaryFn(config, abortSignal);
     const currentInputRound = Math.max(0, persistedToolState?.roundCounter || 0) + 1;
 
     const tools = getToolsForTaskMode(mode, this.toolRegistry);
@@ -1065,10 +1225,11 @@ export class TaskExecutor {
           onChunk(`\n\n${hardBlockMessage}\n`);
           const beforeMessages = messages.length;
           const beforeFlags = countCompactionFlags(roundToolRecords);
-          roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+          await roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
             ...roundCompactOptions,
             referenceAssistantText: assistantContent,
             referenceToolArguments: [],
+            aiSummarizeFn: usageSummaryFn,
           });
           logRoundCompactionStats({
             provider: 'openai-stream',
@@ -1090,10 +1251,11 @@ export class TaskExecutor {
         });
         const beforeMessages = messages.length;
         const beforeFlags = countCompactionFlags(roundToolRecords);
-        roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+        await roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
           ...roundCompactOptions,
           referenceAssistantText: assistantContent,
           referenceToolArguments: [],
+          aiSummarizeFn: usageSummaryFn,
         });
         logRoundCompactionStats({
           provider: 'openai-stream',
@@ -1280,10 +1442,11 @@ export class TaskExecutor {
 
       const beforeMessages = messages.length;
       const beforeFlags = countCompactionFlags(roundToolRecords);
-      roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
+      await roundCompactor.compact(messages, roundToolRecords, currentInputRound, {
         ...roundCompactOptions,
         referenceAssistantText: assistantContent,
         referenceToolArguments: streamMetas.map((item) => item.rawArguments),
+        aiSummarizeFn: usageSummaryFn,
       });
       logRoundCompactionStats({
         provider: 'openai-stream',
@@ -1322,6 +1485,7 @@ export class TaskExecutor {
     const roundCompactor = new RoundContextCompactor();
     const roundCompactOptions = loadRoundCompactOptionsFromEnv();
     const roundToolRecords: RoundToolRecord[] = [];
+    const usageSummaryFn = this.buildRoundUsageSummaryFn(config, abortSignal);
 
     // 添加历史消息
     if (history && history.length > 0) {
@@ -1660,10 +1824,11 @@ When running git clone without a user-specified destination, explicitly clone in
 
       const beforeMessages = messages.length;
       const beforeFlags = countCompactionFlags(roundToolRecords);
-      roundCompactor.compact(messages, roundToolRecords, round + 1, {
+      await roundCompactor.compact(messages, roundToolRecords, round + 1, {
         ...roundCompactOptions,
         referenceAssistantText: text,
         referenceToolArguments: anthropicMetas.map((item) => item.rawArguments),
+        aiSummarizeFn: usageSummaryFn,
       });
       logRoundCompactionStats({
         provider: 'anthropic',

@@ -676,6 +676,30 @@ async function main() {
         }
       }
 
+      // Get compression config
+      if (url.pathname === '/api/config/compression' && req.method === 'GET') {
+        try {
+          const config = await taskAPI.getCompressionConfig();
+          return new Response(JSON.stringify(config), { headers });
+        } catch {
+          return new Response(JSON.stringify({ compressionThreshold: 70, contextLimit: 100000 }), { headers });
+        }
+      }
+
+      // Save compression config
+      if (url.pathname === '/api/config/compression' && req.method === 'POST') {
+        try {
+          const body = await req.json();
+          const result = await taskAPI.saveCompressionConfig(body);
+          return new Response(JSON.stringify(result), { headers });
+        } catch (error: any) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error.message
+          }), { status: 500, headers });
+        }
+      }
+
       // Web search provider (not part of model config)
       if (url.pathname === '/api/config/web-search' && req.method === 'GET') {
         try {
