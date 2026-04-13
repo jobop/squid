@@ -70,8 +70,9 @@ export const SkillHubInstallTool: Tool<
   ): Promise<ToolResult<SkillHubInstallOutput>> {
     const timeout = input.timeout_ms ?? 180000;
     const { mode, installSkills, args } = buildScriptArgs(input);
-    const scriptPath = join(getSquidProjectRoot(), 'scripts', 'install-skillhub-for-squid.sh');
-    const command = `bash "${scriptPath}" ${args.join(' ')}`.trim();
+    const scriptsDir = join(getSquidProjectRoot(), 'scripts');
+    const scriptPath = join(scriptsDir, 'install-skillhub-for-squid.sh');
+    const command = `bash "./install-skillhub-for-squid.sh" ${args.join(' ')}`.trim();
 
     if (!existsSync(scriptPath)) {
       const error = `Installer script not found: ${scriptPath}`;
@@ -94,8 +95,8 @@ export const SkillHubInstallTool: Tool<
       let stderr = '';
       let timedOut = false;
 
-      const child = spawn('bash', [scriptPath, ...args], {
-        cwd: context.workDir,
+      const child = spawn('bash', ['./install-skillhub-for-squid.sh', ...args], {
+        cwd: scriptsDir,
       });
 
       const timeoutId = setTimeout(() => {

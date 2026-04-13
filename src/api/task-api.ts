@@ -773,7 +773,8 @@ export class TaskAPI {
     const { spawn } = await import('child_process');
 
     const squidRoot = getSquidProjectRoot();
-    const installerPath = join(squidRoot, 'scripts', 'install-skillhub-for-squid.sh');
+    const scriptsDir = join(squidRoot, 'scripts');
+    const installerPath = join(scriptsDir, 'install-skillhub-for-squid.sh');
     if (!existsSync(installerPath)) {
       throw new Error(`installer script not found: ${installerPath}`);
     }
@@ -782,8 +783,8 @@ export class TaskAPI {
     await new Promise<void>((resolve, reject) => {
       let stderr = '';
       let timedOut = false;
-      const child = spawn('bash', [installerPath], {
-        cwd: squidRoot,
+      const child = spawn('bash', ['./install-skillhub-for-squid.sh'], {
+        cwd: scriptsDir,
         env: process.env,
       });
 
