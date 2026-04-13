@@ -34,6 +34,29 @@ interface SkillHubInstallOutput {
   exitCode: number | null;
 }
 
+async function createNormalizedInstallerScript(scriptPath: string): Promise<{
+  scriptPath: string;
+  cleanup: () => Promise<void>;
+}> {
+  const { mkdtemp, readFile, writeFile, chmod, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join, basename } = await import('node:path');
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'squid-skillhub-installer-'));
+  const tempScriptPath = join(tempDir, basename(scriptPath));
+  const scriptContent = await readFile(scriptPath, 'utf8');
+  const normalizedContent = scriptContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  await writeFile(tempScriptPath, normalizedContent, 'utf8');
+  await chmod(tempScriptPath, 0o755);
+
+  return {
+    scriptPath: tempScriptPath,
+    cleanup: async () => {
+      await rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
 function buildScriptArgs(input: SkillHubInstallInput): {
   mode: 'all' | 'cli' | 'skill';
   installSkills: boolean;
@@ -102,13 +125,14 @@ export const SkillHubInstallTool: Tool<
         error,
       };
     }
+    const normalizedInstaller = await createNormalizedInstallerScript(scriptPath);
 
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
 
-      const child = spawn('bash', ['./install-skillhub-for-squid.sh', ...args], {
+      const child = spawn('bash', [normalizedInstaller.scriptPath, ...args], {
         cwd: scriptsDir,
       });
 
@@ -135,6 +159,7 @@ export const SkillHubInstallTool: Tool<
       child.on('exit', (code) => {
         clearTimeout(timeoutId);
         context.abortSignal?.removeEventListener('abort', onAbort);
+        void normalizedInstaller.cleanup();
         if (timedOut) {
           stderr = `${stderr}\n命令执行超时（${timeout}ms）`.trim();
         }
@@ -154,6 +179,7 @@ export const SkillHubInstallTool: Tool<
       child.on('error', (err) => {
         clearTimeout(timeoutId);
         context.abortSignal?.removeEventListener('abort', onAbort);
+        void normalizedInstaller.cleanup();
         resolve({
           data: {
             success: false,

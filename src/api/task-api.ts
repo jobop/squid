@@ -778,12 +778,13 @@ export class TaskAPI {
     if (!existsSync(installerPath)) {
       throw new Error(`installer script not found: ${installerPath}`);
     }
+    const normalizedInstaller = await this.createNormalizedInstallerScript(installerPath);
 
     const timeoutMs = 180000;
     await new Promise<void>((resolve, reject) => {
       let stderr = '';
       let timedOut = false;
-      const child = spawn('bash', ['./install-skillhub-for-squid.sh'], {
+      const child = spawn('bash', [normalizedInstaller.scriptPath], {
         cwd: scriptsDir,
         env: process.env,
       });
@@ -799,6 +800,7 @@ export class TaskAPI {
 
       child.on('exit', (code) => {
         clearTimeout(timeoutId);
+        void normalizedInstaller.cleanup();
         if (timedOut) {
           reject(new Error(`skillhub startup install timeout (${timeoutMs}ms)`));
           return;
@@ -814,9 +816,33 @@ export class TaskAPI {
 
       child.on('error', (error) => {
         clearTimeout(timeoutId);
+        void normalizedInstaller.cleanup();
         reject(error);
       });
     });
+  }
+
+  private async createNormalizedInstallerScript(scriptPath: string): Promise<{
+    scriptPath: string;
+    cleanup: () => Promise<void>;
+  }> {
+    const { mkdtemp, readFile, writeFile, chmod, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
+    const { join, basename } = await import('path');
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'squid-skillhub-installer-'));
+    const tempScriptPath = join(tempDir, basename(scriptPath));
+    const scriptContent = await readFile(scriptPath, 'utf8');
+    const normalizedContent = scriptContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    await writeFile(tempScriptPath, normalizedContent, 'utf8');
+    await chmod(tempScriptPath, 0o755);
+
+    return {
+      scriptPath: tempScriptPath,
+      cleanup: async () => {
+        await rm(tempDir, { recursive: true, force: true });
+      },
+    };
   }
 
 
