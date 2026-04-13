@@ -778,13 +778,13 @@ export class TaskAPI {
     if (!existsSync(installerPath)) {
       throw new Error(`installer script not found: ${installerPath}`);
     }
-    const normalizedInstaller = await this.createNormalizedInstallerScript(installerPath);
+    const normalizedInstaller = await this.createNormalizedInstallerScript(installerPath, scriptsDir);
 
     const timeoutMs = 180000;
     await new Promise<void>((resolve, reject) => {
       let stderr = '';
       let timedOut = false;
-      const child = spawn('bash', [normalizedInstaller.scriptPath], {
+      const child = spawn('bash', [normalizedInstaller.executablePath], {
         cwd: scriptsDir,
         env: process.env,
       });
@@ -822,23 +822,23 @@ export class TaskAPI {
     });
   }
 
-  private async createNormalizedInstallerScript(scriptPath: string): Promise<{
-    scriptPath: string;
+  private async createNormalizedInstallerScript(scriptPath: string, scriptsDir: string): Promise<{
+    executablePath: string;
     cleanup: () => Promise<void>;
   }> {
     const { mkdtemp, readFile, writeFile, chmod, rm } = await import('fs/promises');
-    const { tmpdir } = await import('os');
-    const { join, basename } = await import('path');
+    const { join, basename, relative, sep } = await import('path');
 
-    const tempDir = await mkdtemp(join(tmpdir(), 'squid-skillhub-installer-'));
+    const tempDir = await mkdtemp(join(scriptsDir, '.squid-skillhub-installer-'));
     const tempScriptPath = join(tempDir, basename(scriptPath));
+    const relativeScriptPath = relative(scriptsDir, tempScriptPath).split(sep).join('/');
     const scriptContent = await readFile(scriptPath, 'utf8');
     const normalizedContent = scriptContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     await writeFile(tempScriptPath, normalizedContent, 'utf8');
     await chmod(tempScriptPath, 0o755);
 
     return {
-      scriptPath: tempScriptPath,
+      executablePath: `./${relativeScriptPath}`,
       cleanup: async () => {
         await rm(tempDir, { recursive: true, force: true });
       },

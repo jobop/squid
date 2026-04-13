@@ -34,23 +34,23 @@ interface SkillHubInstallOutput {
   exitCode: number | null;
 }
 
-async function createNormalizedInstallerScript(scriptPath: string): Promise<{
-  scriptPath: string;
+async function createNormalizedInstallerScript(scriptPath: string, scriptsDir: string): Promise<{
+  executablePath: string;
   cleanup: () => Promise<void>;
 }> {
   const { mkdtemp, readFile, writeFile, chmod, rm } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join, basename } = await import('node:path');
+  const { join, basename, relative, sep } = await import('node:path');
 
-  const tempDir = await mkdtemp(join(tmpdir(), 'squid-skillhub-installer-'));
+  const tempDir = await mkdtemp(join(scriptsDir, '.squid-skillhub-installer-'));
   const tempScriptPath = join(tempDir, basename(scriptPath));
+  const relativeScriptPath = relative(scriptsDir, tempScriptPath).split(sep).join('/');
   const scriptContent = await readFile(scriptPath, 'utf8');
   const normalizedContent = scriptContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   await writeFile(tempScriptPath, normalizedContent, 'utf8');
   await chmod(tempScriptPath, 0o755);
 
   return {
-    scriptPath: tempScriptPath,
+    executablePath: `./${relativeScriptPath}`,
     cleanup: async () => {
       await rm(tempDir, { recursive: true, force: true });
     },
@@ -125,14 +125,14 @@ export const SkillHubInstallTool: Tool<
         error,
       };
     }
-    const normalizedInstaller = await createNormalizedInstallerScript(scriptPath);
+    const normalizedInstaller = await createNormalizedInstallerScript(scriptPath, scriptsDir);
 
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
 
-      const child = spawn('bash', [normalizedInstaller.scriptPath, ...args], {
+      const child = spawn('bash', [normalizedInstaller.executablePath, ...args], {
         cwd: scriptsDir,
       });
 
