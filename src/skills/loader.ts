@@ -37,6 +37,7 @@ export class SkillLoader {
   private readonly userSkillsDir: string;
   private readonly bundledSkillsDir: string | null;
   private readonly workspaceSkillsDir: string | null;
+  private readonly wslSkillsDirPromise: Promise<string | null> | null;
 
   /**
    * @param skillsDir 若传入，仅扫描该目录（测试用）；否则合并「包内 skills」与 `~/.squid/skills`。
@@ -47,11 +48,38 @@ export class SkillLoader {
       this.userSkillsDir = skillsDir;
       this.bundledSkillsDir = null;
       this.workspaceSkillsDir = null;
+      this.wslSkillsDirPromise = null;
     } else {
       this.userSkillsDir = join(homedir(), '.squid', 'skills');
       this.bundledSkillsDir = resolveBundledSkillsDir();
       const ws = (workspaceDir || '').trim();
       this.workspaceSkillsDir = ws ? join(resolve(ws), 'skills') : null;
+      this.wslSkillsDirPromise =
+        process.platform === 'win32' ? this.resolveWslSkillsDirOnWindows() : null;
+    }
+  }
+
+  private async resolveWslSkillsDirOnWindows(): Promise<string | null> {
+    try {
+      const { spawn } = await import('node:child_process');
+      const output = await new Promise<string>((resolveOutput) => {
+        const child = spawn('wsl.exe', ['sh', '-lc', 'wslpath -w "$HOME/.squid/skills"'], {
+          windowsHide: true,
+        });
+        let stdout = '';
+        child.stdout?.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.on('error', () => resolveOutput(''));
+        child.on('close', () => resolveOutput(stdout));
+      });
+      const wslSkillsPath = output.trim();
+      if (!wslSkillsPath || !existsSync(wslSkillsPath)) {
+        return null;
+      }
+      return wslSkillsPath;
+    } catch {
+      return null;
     }
   }
 
@@ -342,6 +370,12 @@ export class SkillLoader {
       await scanRoot(this.bundledSkillsDir);
     }
     await scanRoot(this.userSkillsDir);
+    if (this.wslSkillsDirPromise) {
+      const wslSkillsDir = await this.wslSkillsDirPromise;
+      if (wslSkillsDir && resolve(wslSkillsDir) !== resolve(this.userSkillsDir)) {
+        await scanRoot(wslSkillsDir);
+      }
+    }
     const dynamicWorkspaceSkillsDir = this.resolveWorkspaceSkillsDir(workspaceDir);
     if (dynamicWorkspaceSkillsDir) {
       await scanRoot(dynamicWorkspaceSkillsDir);
