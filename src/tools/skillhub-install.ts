@@ -10,11 +10,11 @@ const SkillHubInstallInputSchema = z.object({
   mode: z
     .enum(['all', 'cli', 'skill'])
     .optional()
-    .describe('安装模式：all（默认，CLI+技能模板）、cli（仅 CLI）、skill（仅技能模板）'),
+    .describe('安装模式：all（默认）或 cli（仅 CLI）；skill 模式已废弃'),
   install_skills: z
     .boolean()
     .optional()
-    .describe('是否安装技能模板到 ~/.squid/skills（默认 true）'),
+    .describe('兼容参数（已废弃，技能模板由启动流程自动同步）'),
   kit_url: z
     .string()
     .optional()
@@ -44,8 +44,6 @@ function buildScriptArgs(input: SkillHubInstallInput): {
   const args: string[] = [];
 
   if (mode === 'cli') args.push('--cli-only');
-  if (mode === 'skill') args.push('--skill-only');
-  args.push(installSkills ? '--with-skills' : '--no-skills');
 
   if (input.kit_url && input.kit_url.trim()) {
     args.push('--kit-url', input.kit_url.trim());
@@ -73,6 +71,21 @@ export const SkillHubInstallTool: Tool<
     const scriptsDir = join(getSquidProjectRoot(), 'scripts');
     const scriptPath = join(scriptsDir, 'install-skillhub-for-squid.sh');
     const command = `bash "./install-skillhub-for-squid.sh" ${args.join(' ')}`.trim();
+    if (mode === 'skill') {
+      const error = 'mode=skill 已废弃：技能模板由启动流程自动同步，请使用 mode=all 或 mode=cli';
+      return {
+        data: {
+          success: false,
+          mode,
+          installSkills,
+          command,
+          stdout: '',
+          stderr: error,
+          exitCode: null,
+        },
+        error,
+      };
+    }
 
     if (!existsSync(scriptPath)) {
       const error = `Installer script not found: ${scriptPath}`;

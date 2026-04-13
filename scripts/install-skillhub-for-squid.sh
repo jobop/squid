@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eu
+if (set -o pipefail) >/dev/null 2>&1; then
+  set -o pipefail
+fi
 
 MODE="all" # all | cli
 KIT_URL="https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/latest.tar.gz"
